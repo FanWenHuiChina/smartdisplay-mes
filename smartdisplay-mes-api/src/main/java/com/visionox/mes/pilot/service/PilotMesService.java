@@ -24,11 +24,13 @@ import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
 import com.visionox.mes.lot.entity.ProcessStep;
+import com.visionox.mes.lot.entity.SerialNumber;
 import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.lot.mapper.LotStepRecordMapper;
 import com.visionox.mes.lot.mapper.ProcessStepMapper;
+import com.visionox.mes.lot.mapper.SerialNumberMapper;
 import com.visionox.mes.lot.service.HoldService;
 import com.visionox.mes.lot.service.TrackInService;
 import com.visionox.mes.material.service.MaterialService;
@@ -87,6 +89,7 @@ public class PilotMesService {
 
     private final ProductionOrderMapper orderMapper;
     private final LotMapper lotMapper;
+    private final SerialNumberMapper serialNumberMapper;
     private final ProcessStepMapper processStepMapper;
     private final EquipmentMapper equipmentMapper;
     private final RecipeMapper recipeMapper;
@@ -182,28 +185,32 @@ public class PilotMesService {
         int lotQty = Math.max(1, intValue(value(request, "lotQty"), 100));
         int lotCount = Math.max(1, (int) Math.ceil(order.getPlannedQty() * 1.0 / lotQty));
         String firstStepCode = firstRouteStepCode(order.getProductCode());
+        String operator = currentUser();
         List<Lot> lots = new ArrayList<>();
+        List<SerialNumber> createdSerialNumbers = new ArrayList<>();
         for (int i = 1; i <= lotCount; i++) {
             String lotNo = orderNo.replace("MO", "LOT") + "-" + String.format("%03d", i);
             Long exists = lotMapper.selectCount(new LambdaQueryWrapper<Lot>().eq(Lot::getLotNo, lotNo));
-            if (exists > 0) {
+            if (longValue(exists, 0) > 0) {
                 continue;
             }
+            int actualQty = Math.min(lotQty, Math.max(0, order.getPlannedQty() - (i - 1) * lotQty));
             Lot lot = new Lot();
             lot.setLotNo(lotNo);
             lot.setOrderNo(orderNo);
             lot.setProductCode(order.getProductCode());
             lot.setLineCode(order.getLineCode());
-            lot.setQty(Math.min(lotQty, Math.max(0, order.getPlannedQty() - lots.size() * lotQty)));
+            lot.setQty(actualQty);
             lot.setCurrentStepCode(firstStepCode);
             lot.setCurrentEquipmentCode(null);
             lot.setStatus("READY");
             lot.setHoldFlag(0);
             lot.setPriority(order.getPriority());
-            lot.setCreatedBy(currentUser());
+            lot.setCreatedBy(operator);
             lot.setCreatedTime(LocalDateTime.now());
             lotMapper.insert(lot);
             lots.add(lot);
+            createdSerialNumbers.addAll(createSerialNumbers(order, lot, operator));
         }
         order.setStatus("RELEASED");
         order.setStartTime(order.getStartTime() == null ? LocalDateTime.now() : order.getStartTime());
@@ -211,9 +218,38 @@ public class PilotMesService {
         Map<String, Object> after = orderSnapshot(order);
         after.put("createdLotNos", lots.stream().map(Lot::getLotNo).toList());
         after.put("createdLotCount", lots.size());
+        after.put("createdSnCount", createdSerialNumbers.size());
         audit("ORDER_RELEASE", orderNo, "释放工单并生成 Lot: " + lots.size(), currentUser(),
                 auditSnapshot(before, after, safeRequest(request)));
-        return Map.of("order", order, "createdLots", lots, "lotCount", lots.size());
+        return Map.of(
+                "order", order,
+                "createdLots", lots,
+                "lotCount", lots.size(),
+                "createdSnCount", createdSerialNumbers.size(),
+                "createdSnPreview", createdSerialNumbers.stream().limit(10).map(SerialNumber::getSn).toList()
+        );
+    }
+
+    private List<SerialNumber> createSerialNumbers(ProductionOrder order, Lot lot, String operator) {
+        int qty = Math.max(0, lot.getQty() == null ? 0 : lot.getQty());
+        List<SerialNumber> rows = new ArrayList<>(qty);
+        LocalDateTime now = LocalDateTime.now();
+        for (int sequence = 1; sequence <= qty; sequence++) {
+            SerialNumber serialNumber = new SerialNumber();
+            serialNumber.setSn(lot.getLotNo() + "-SN" + String.format("%03d", sequence));
+            serialNumber.setLotNo(lot.getLotNo());
+            serialNumber.setOrderNo(order.getOrderNo());
+            serialNumber.setProductCode(order.getProductCode());
+            serialNumber.setLineCode(order.getLineCode());
+            serialNumber.setSequenceNo(sequence);
+            serialNumber.setGrade("A");
+            serialNumber.setStatus("IN_PROCESS");
+            serialNumber.setBindTime(now);
+            serialNumber.setCreatedBy(operator);
+            serialNumberMapper.insert(serialNumber);
+            rows.add(serialNumber);
+        }
+        return rows;
     }
 
     public Page<Lot> pageLots(long current, long size, String lotNo, String status) {
@@ -695,10 +731,13 @@ public class PilotMesService {
         List<HoldRecord> holds = holdRecordMapper.selectList(new LambdaQueryWrapper<HoldRecord>()
                 .eq(HoldRecord::getLotNo, lotNo)
                 .orderByAsc(HoldRecord::getHoldTime));
+        List<SerialNumber> serialNumbers = serialNumbers(lotNo);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("lot", lot);
         data.put("order", orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, lot.getOrderNo())));
         data.put("route", routes().get(0));
+        data.put("serialNumbers", serialNumbers);
+        data.put("serialNumberSummary", serialNumberSummary(lotNo, serialNumbers));
         data.put("stepRecords", steps);
         data.put("holdRecords", holds);
         data.put("qualityRecords", qualityInspections(lotNo));
@@ -709,12 +748,14 @@ public class PilotMesService {
     }
 
     public Map<String, Object> traceSn(String sn) {
-        String lotNo = resolveLotNoFromSn(sn);
+        String query = objectText(sn, "").trim();
+        SerialNumber serialNumber = findSerialNumber(query);
+        String lotNo = serialNumber == null ? resolveLotNoFromSn(query) : serialNumber.getLotNo();
         if (lotNo.isBlank()) {
             throw new BusinessException("SN未绑定Lot或格式不支持: " + sn);
         }
         Map<String, Object> trace = traceLot(lotNo);
-        trace.put("sn", Map.of("sn", sn, "lotNo", lotNo, "grade", "A", "status", "IN_PROCESS"));
+        trace.put("sn", serialNumber == null ? fallbackSerialNumberSnapshot(query, lotNo) : serialNumberSnapshot(serialNumber));
         return trace;
     }
 
@@ -1357,13 +1398,15 @@ public class PilotMesService {
     }
 
     private List<TraceCandidate> traceSnCandidates(String keyword) {
-        String lotNo = resolveLotNoFromSn(keyword);
+        SerialNumber serialNumber = findSerialNumber(keyword);
+        String lotNo = serialNumber == null ? resolveLotNoFromSn(keyword) : serialNumber.getLotNo();
         if (lotNo.isBlank()) {
             return List.of();
         }
         try {
             Lot lot = findLot(lotNo);
-            return List.of(new TraceCandidate(lot.getLotNo(), "SN", "sn", keyword));
+            String evidence = serialNumber == null ? keyword : serialNumber.getSn() + " / " + serialNumber.getStatus();
+            return List.of(new TraceCandidate(lot.getLotNo(), "SN", "sn", evidence));
         } catch (BusinessException ignored) {
             return List.of();
         }
@@ -1452,10 +1495,62 @@ public class PilotMesService {
         return new ArrayList<>(rows.values());
     }
 
+    private SerialNumber findSerialNumber(String sn) {
+        String query = objectText(sn, "").trim();
+        if (query.isBlank()) {
+            return null;
+        }
+        return serialNumberMapper.selectOne(new LambdaQueryWrapper<SerialNumber>().eq(SerialNumber::getSn, query));
+    }
+
+    private List<SerialNumber> serialNumbers(String lotNo) {
+        List<SerialNumber> rows = serialNumberMapper.selectList(new LambdaQueryWrapper<SerialNumber>()
+                .eq(SerialNumber::getLotNo, lotNo)
+                .orderByAsc(SerialNumber::getSequenceNo)
+                .last("LIMIT 100"));
+        return rows == null ? List.of() : rows;
+    }
+
+    private Map<String, Object> serialNumberSummary(String lotNo, List<SerialNumber> serialNumbers) {
+        long totalCount = longValue(serialNumberMapper.selectCount(new LambdaQueryWrapper<SerialNumber>()
+                .eq(SerialNumber::getLotNo, lotNo)), serialNumbers.size());
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalCount", totalCount);
+        summary.put("returnedCount", serialNumbers.size());
+        summary.put("firstSn", serialNumbers.isEmpty() ? "" : serialNumbers.get(0).getSn());
+        summary.put("limited", totalCount > serialNumbers.size());
+        return summary;
+    }
+
+    private Map<String, Object> serialNumberSnapshot(SerialNumber serialNumber) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("sn", serialNumber.getSn());
+        snapshot.put("lotNo", serialNumber.getLotNo());
+        snapshot.put("orderNo", serialNumber.getOrderNo());
+        snapshot.put("productCode", serialNumber.getProductCode());
+        snapshot.put("lineCode", serialNumber.getLineCode());
+        snapshot.put("sequenceNo", serialNumber.getSequenceNo());
+        snapshot.put("grade", serialNumber.getGrade());
+        snapshot.put("status", serialNumber.getStatus());
+        snapshot.put("bindTime", serialNumber.getBindTime());
+        return snapshot;
+    }
+
+    private Map<String, Object> fallbackSerialNumberSnapshot(String sn, String lotNo) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("sn", sn);
+        snapshot.put("lotNo", lotNo);
+        snapshot.put("grade", "A");
+        snapshot.put("status", "IN_PROCESS");
+        snapshot.put("source", "FORMAT_COMPATIBLE");
+        return snapshot;
+    }
+
     private Map<String, Object> traceImpactSummary(List<Map<String, Object>> matches, Map<String, Object> trace) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("matchedLotCount", matches.size());
         summary.put("holdLotCount", matches.stream().filter(row -> "HOLD".equals(row.get("status"))).count());
+        summary.put("serialNumberCount", longValue(fieldValue(trace.get("serialNumberSummary"), "totalCount"), listValue(trace.get("serialNumbers")).size()));
         summary.put("ngInspectionCount", listValue(trace.get("qualityRecords")).stream()
                 .filter(row -> !"OK".equals(fieldText(row, "result")))
                 .count());
@@ -1468,6 +1563,7 @@ public class PilotMesService {
     private Map<String, Object> traceRelatedDimensions(List<Map<String, Object>> matches, Map<String, Object> trace) {
         Map<String, Object> dimensions = new LinkedHashMap<>();
         dimensions.put("orderNos", distinctTextValues(matches, "orderNo"));
+        dimensions.put("serialNumbers", distinctTextValues(listValue(trace.get("serialNumbers")), "sn"));
         dimensions.put("equipmentCodes", distinctTextValues(listValue(trace.get("stepRecords")), "equipmentCode"));
         dimensions.put("materialBatches", distinctTextValues(listValue(trace.get("materialConsumptions")), "batchNo"));
         dimensions.put("defectCodes", distinctTextValues(listValue(trace.get("qualityRecords")), "defectCode"));
@@ -1516,7 +1612,24 @@ public class PilotMesService {
                 default -> "";
             };
         }
+        if (row instanceof SerialNumber serialNumber) {
+            return switch (fieldName) {
+                case "sn" -> objectText(serialNumber.getSn(), "");
+                case "lotNo" -> objectText(serialNumber.getLotNo(), "");
+                case "orderNo" -> objectText(serialNumber.getOrderNo(), "");
+                case "productCode" -> objectText(serialNumber.getProductCode(), "");
+                case "status" -> objectText(serialNumber.getStatus(), "");
+                default -> "";
+            };
+        }
         return "";
+    }
+
+    private Object fieldValue(Object row, String fieldName) {
+        if (row instanceof Map<?, ?> map) {
+            return map.get(fieldName);
+        }
+        return null;
     }
 
     private boolean sameText(Object value, String expected) {
@@ -2188,6 +2301,20 @@ public class PilotMesService {
         }
         try {
             return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private long longValue(Object value, long defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
         } catch (NumberFormatException e) {
             return defaultValue;
         }

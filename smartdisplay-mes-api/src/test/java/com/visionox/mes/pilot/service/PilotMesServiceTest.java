@@ -14,11 +14,13 @@ import com.visionox.mes.equipment.service.EquipmentService;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
+import com.visionox.mes.lot.entity.SerialNumber;
 import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.lot.mapper.LotStepRecordMapper;
 import com.visionox.mes.lot.mapper.ProcessStepMapper;
+import com.visionox.mes.lot.mapper.SerialNumberMapper;
 import com.visionox.mes.lot.service.HoldService;
 import com.visionox.mes.lot.service.TrackInService;
 import com.visionox.mes.material.entity.MaterialBatch;
@@ -62,6 +64,9 @@ class PilotMesServiceTest {
 
     @Mock
     private LotMapper lotMapper;
+
+    @Mock
+    private SerialNumberMapper serialNumberMapper;
 
     @Mock
     private ProcessStepMapper processStepMapper;
@@ -272,9 +277,28 @@ class PilotMesServiceTest {
             assertThat(lot.getCreatedTime()).isNotNull();
         });
 
+        ArgumentCaptor<SerialNumber> serialCaptor = ArgumentCaptor.forClass(SerialNumber.class);
+        verify(serialNumberMapper, times(250)).insert(serialCaptor.capture());
+        List<SerialNumber> serialNumbers = serialCaptor.getAllValues();
+        assertThat(serialNumbers).hasSize(250);
+        assertThat(serialNumbers.get(0).getSn()).isEqualTo("LOT20260607001-001-SN001");
+        assertThat(serialNumbers.get(99).getSn()).isEqualTo("LOT20260607001-001-SN100");
+        assertThat(serialNumbers.get(100).getSn()).isEqualTo("LOT20260607001-002-SN001");
+        assertThat(serialNumbers.get(249).getSn()).isEqualTo("LOT20260607001-003-SN050");
+        assertThat(serialNumbers).allSatisfy(serialNumber -> {
+            assertThat(serialNumber.getOrderNo()).isEqualTo("MO20260607001");
+            assertThat(serialNumber.getProductCode()).isEqualTo("OLED_PANEL");
+            assertThat(serialNumber.getLineCode()).isEqualTo("LINE_01");
+            assertThat(serialNumber.getGrade()).isEqualTo("A");
+            assertThat(serialNumber.getStatus()).isEqualTo("IN_PROCESS");
+            assertThat(serialNumber.getBindTime()).isNotNull();
+            assertThat(serialNumber.getCreatedBy()).isEqualTo("system");
+        });
+
         @SuppressWarnings("unchecked")
         List<Lot> returnedLots = (List<Lot>) result.get("createdLots");
         assertThat(returnedLots).hasSize(3);
+        assertThat(result.get("createdSnCount")).isEqualTo(250);
         ArgumentCaptor<String> releaseSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("ORDER_RELEASE"), eq("MO20260607001"), eq("ORDER"), any(),
                 eq("system"), eq("smartdisplay-mes-api"), releaseSnapshotCaptor.capture());
@@ -284,6 +308,7 @@ class PilotMesServiceTest {
                 .contains("\"status\":\"CREATED\"")
                 .contains("\"status\":\"RELEASED\"")
                 .contains("\"createdLotCount\":3")
+                .contains("\"createdSnCount\":250")
                 .contains("\"changedFields\"");
     }
 
@@ -392,6 +417,73 @@ class PilotMesServiceTest {
         assertThat(query.get("selectedLotNo")).isEqualTo("LOT001");
         assertThat(sn).containsEntry("sn", "LOT001-SN001")
                 .containsEntry("lotNo", "LOT001");
+    }
+
+    @Test
+    void traceLotShouldReturnSerialNumbersAndSummary() {
+        Lot lot = lot("LOT001", "READY");
+        SerialNumber first = serialNumber("LOT001-SN001", "LOT001");
+        SerialNumber second = serialNumber("LOT001-SN002", "LOT001");
+        second.setSequenceNo(2);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(stepRecordMapper.selectList(any())).thenReturn(List.of());
+        when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        when(serialNumberMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(serialNumberMapper.selectCount(any())).thenReturn(2L);
+        when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
+        when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
+        when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
+
+        Map<String, Object> trace = pilotMesService.traceLot("LOT001");
+
+        @SuppressWarnings("unchecked")
+        List<SerialNumber> serialNumbers = (List<SerialNumber>) trace.get("serialNumbers");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) trace.get("serialNumberSummary");
+
+        assertThat(serialNumbers).extracting(SerialNumber::getSn)
+                .containsExactly("LOT001-SN001", "LOT001-SN002");
+        assertThat(summary)
+                .containsEntry("totalCount", 2L)
+                .containsEntry("returnedCount", 2)
+                .containsEntry("firstSn", "LOT001-SN001")
+                .containsEntry("limited", false);
+    }
+
+    @Test
+    void traceSearchShouldResolveSnFromBoundSerialNumberTable() {
+        Lot lot = lot("LOT001", "READY");
+        SerialNumber serialNumber = serialNumber("SN-OLED-0001", "LOT001");
+        when(serialNumberMapper.selectOne(any())).thenReturn(serialNumber);
+        when(serialNumberMapper.selectList(any())).thenReturn(List.of(serialNumber));
+        when(serialNumberMapper.selectCount(any())).thenReturn(1L);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(stepRecordMapper.selectList(any())).thenReturn(List.of());
+        when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
+        when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
+        when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
+
+        Map<String, Object> result = pilotMesService.traceSearch("SN", "SN-OLED-0001");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> query = (Map<String, Object>) result.get("query");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> trace = (Map<String, Object>) result.get("trace");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sn = (Map<String, Object>) trace.get("sn");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> impactSummary = (Map<String, Object>) result.get("impactSummary");
+
+        assertThat(query.get("resolvedType")).isEqualTo("SN");
+        assertThat(query.get("selectedLotNo")).isEqualTo("LOT001");
+        assertThat(sn)
+                .containsEntry("sn", "SN-OLED-0001")
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("status", "IN_PROCESS");
+        assertThat(impactSummary.get("serialNumberCount")).isEqualTo(1L);
     }
 
     @Test
@@ -603,6 +695,20 @@ class PilotMesServiceTest {
         lot.setStatus(status);
         lot.setHoldFlag("HOLD".equals(status) ? 1 : 0);
         return lot;
+    }
+
+    private SerialNumber serialNumber(String sn, String lotNo) {
+        SerialNumber serialNumber = new SerialNumber();
+        serialNumber.setSn(sn);
+        serialNumber.setLotNo(lotNo);
+        serialNumber.setOrderNo("MO20260607001");
+        serialNumber.setProductCode("OLED_PANEL");
+        serialNumber.setLineCode("LINE_01");
+        serialNumber.setSequenceNo(1);
+        serialNumber.setGrade("A");
+        serialNumber.setStatus("IN_PROCESS");
+        serialNumber.setBindTime(LocalDateTime.now().minusHours(1));
+        return serialNumber;
     }
 
     private Route route(String routeCode) {

@@ -13,11 +13,13 @@ import com.visionox.mes.lot.entity.Equipment;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
+import com.visionox.mes.lot.entity.SerialNumber;
 import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.lot.mapper.LotStepRecordMapper;
 import com.visionox.mes.lot.mapper.ProcessStepMapper;
+import com.visionox.mes.lot.mapper.SerialNumberMapper;
 import com.visionox.mes.lot.service.HoldService;
 import com.visionox.mes.lot.service.TrackInService;
 import com.visionox.mes.masterdata.entity.WorkShift;
@@ -74,6 +76,8 @@ class PilotMesFlowIntegrationTest {
     private ProductionOrderMapper orderMapper;
     @Mock
     private LotMapper lotMapper;
+    @Mock
+    private SerialNumberMapper serialNumberMapper;
     @Mock
     private ProcessStepMapper processStepMapper;
     @Mock
@@ -136,6 +140,7 @@ class PilotMesFlowIntegrationTest {
     private final List<QualityDefectRecord> defects = new ArrayList<>();
     private final List<ExceptionEvent> exceptions = new ArrayList<>();
     private final List<HoldRecord> holds = new ArrayList<>();
+    private final List<SerialNumber> serialNumbers = new ArrayList<>();
     private final AtomicLong stepRecordId = new AtomicLong(1000);
 
     @BeforeEach
@@ -170,6 +175,7 @@ class PilotMesFlowIntegrationTest {
         pilotMesService = new PilotMesService(
                 orderMapper,
                 lotMapper,
+                serialNumberMapper,
                 processStepMapper,
                 equipmentMapper,
                 recipeMapper,
@@ -282,6 +288,7 @@ class PilotMesFlowIntegrationTest {
         assertThat((List<?>) trace.get("qualityRecords")).hasSize(2);
         assertThat((List<?>) trace.get("exceptionEvents")).hasSize(1);
         assertThat((List<?>) trace.get("materialConsumptions")).hasSize(1);
+        assertThat((List<?>) trace.get("serialNumbers")).hasSize(100);
         verify(materialService, times(2)).validateReadiness(lot, "COATING");
         verify(materialService).lockForTrackIn(eq(lot), eq("COATING"), eq("COATER_01"), eq("op1001"));
         verify(materialService, times(2)).consumeForTrackOut(eq(lot), any());
@@ -295,6 +302,14 @@ class PilotMesFlowIntegrationTest {
             lotRef.set(lot);
             return 1;
         }).when(lotMapper).insert(any(Lot.class));
+
+        doAnswer(invocation -> {
+            SerialNumber serialNumber = invocation.getArgument(0);
+            serialNumbers.add(serialNumber);
+            return 1;
+        }).when(serialNumberMapper).insert(any(SerialNumber.class));
+        when(serialNumberMapper.selectList(any())).thenAnswer(invocation -> new ArrayList<>(serialNumbers));
+        when(serialNumberMapper.selectCount(any())).thenAnswer(invocation -> (long) serialNumbers.size());
 
         doAnswer(invocation -> {
             LotStepRecord record = invocation.getArgument(0);

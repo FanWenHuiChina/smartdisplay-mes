@@ -187,6 +187,8 @@ function applyTraceEnvelope(envelope) {
   const dimensions = envelope.relatedDimensions || {}
   const materials = trace.materialConsumptions || []
   const material = materials[0] || {}
+  const serialNumbers = trace.serialNumbers || []
+  const serialNumberSummary = trace.serialNumberSummary || {}
 
   resolvedType.value = query.resolvedType || traceType.value
   matches.value = envelope.matches || []
@@ -195,6 +197,8 @@ function applyTraceEnvelope(envelope) {
     { label: '查询类型', value: resolvedTypeLabel.value },
     { label: '首选 Lot', value: query.selectedLotNo || lot.lotNo || '-' },
     ...(sn.sn ? [{ label: 'SN', value: sn.sn }] : []),
+    ...(serialNumberSummary.totalCount !== undefined ? [{ label: 'SN 数量', value: String(serialNumberSummary.totalCount) }] : []),
+    ...(serialNumberSummary.firstSn ? [{ label: '首个 SN', value: serialNumberSummary.firstSn }] : []),
     { label: '产品', value: lot.productCode || order.productCode || '未知' },
     { label: '工单', value: lot.orderNo || order.orderNo || '未知' },
     { label: '路线', value: route.routeCode || '未绑定' },
@@ -228,6 +232,7 @@ function applyTraceEnvelope(envelope) {
 
   const qualityRecords = trace.qualityRecords || []
   summaryCards.value = [
+    { title: 'SN 数量', value: String(impact.serialNumberCount ?? serialNumberSummary.totalCount ?? serialNumbers.length), type: 'teal', meta: serialNumberSummary.limited ? `显示前 ${serialNumberSummary.returnedCount || serialNumbers.length} 个，首个 ${serialNumberSummary.firstSn || '-'}` : `首个 ${serialNumberSummary.firstSn || '-'}` },
     { title: '命中 Lot', value: String(impact.matchedLotCount ?? matches.value.length), type: 'blue', meta: `当前查询命中 ${matches.value.length} 个受影响 Lot` },
     { title: 'Hold Lot', value: String(impact.holdLotCount ?? 0), type: (impact.holdLotCount || 0) > 0 ? 'red' : 'green', meta: '用于判断是否需要 MRB 或复判介入' },
     { title: 'NG 检验', value: String(impact.ngInspectionCount ?? 0), type: (impact.ngInspectionCount || 0) > 0 ? 'amber' : 'green', meta: `缺陷代码：${listText(dimensions.defectCodes)}` },
@@ -235,6 +240,7 @@ function applyTraceEnvelope(envelope) {
   ]
 
   evidences.value = [
+    { title: 'SN 绑定', status: String(serialNumberSummary.totalCount ?? serialNumbers.length), type: serialNumbers.length ? 'teal' : 'gray', meta: serialNumbers.slice(0, 5).map(item => item.sn).join(' / ') || '暂无 SN 绑定记录' },
     { title: 'Route 快照', status: route.status || 'ACTIVE', type: 'blue', meta: `${route.routeCode || '未绑定'} / steps=${listText(route.steps, '-')}` },
     { title: '物料批次', status: String(impact.materialBatchCount ?? materials.length), type: materials.length ? 'green' : 'gray', meta: materials.map(item => `${item.materialName || item.materialCode}:${item.batchNo}`).join(' / ') || '暂无消耗记录' },
     { title: '质检记录', status: `${qualityRecords.length} 条`, type: qualityRecords.some(item => item.result !== 'OK') ? 'amber' : 'green', meta: qualityRecords.map(item => `${item.itemCode}:${item.result}`).join(' / ') || '暂无质检记录' },
