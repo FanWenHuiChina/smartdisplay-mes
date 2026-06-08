@@ -270,3 +270,13 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，308 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
+
+# 2026-06-08 权限变更差异对比复验
+
+本轮补齐系统页权限变更单的差异对比和驳回审批入口，审批人可先查看 `beforeSnapshot/afterSnapshot` 差异，再执行通过或驳回。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，310 项检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |

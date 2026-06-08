@@ -58,7 +58,9 @@
               提交权限变更
             </button>
             <button class="mes-btn" :disabled="loadingPermissionChanges" @click="loadPermissionChanges">刷新变更单</button>
-            <button class="mes-btn">权限差异对比</button>
+            <button class="mes-btn" :disabled="!permissionChanges.length" @click="compareLatestPermissionChange">
+              权限差异对比
+            </button>
           </div>
           <div class="permission-change-panel">
             <div class="audit-toolbar permission-toolbar">
@@ -83,7 +85,7 @@
             </div>
             <table class="mes-table permission-table">
               <thead>
-                <tr><th>变更单</th><th>角色</th><th>状态</th><th>申请人</th><th>审批</th></tr>
+                <tr><th>变更单</th><th>角色</th><th>状态</th><th>申请人</th><th>操作</th></tr>
               </thead>
               <tbody>
                 <tr v-for="change in permissionChanges" :key="change.key">
@@ -91,7 +93,10 @@
                   <td>{{ change.targetRole }}</td>
                   <td><span class="status-tag" :class="change.type">{{ change.statusText }}</span></td>
                   <td>{{ change.requester }}</td>
-                  <td>
+                  <td class="permission-actions">
+                    <button class="mes-btn tiny" @click="comparePermissionChange(change)">
+                      对比
+                    </button>
                     <button
                       class="mes-btn tiny"
                       :disabled="change.status !== 'PENDING_REVIEW' || !canMaintainPermissions"
@@ -99,11 +104,36 @@
                     >
                       通过
                     </button>
+                    <button
+                      class="mes-btn tiny warn"
+                      :disabled="change.status !== 'PENDING_REVIEW' || !canMaintainPermissions"
+                      @click="rejectPermissionChange(change)"
+                    >
+                      驳回
+                    </button>
                   </td>
                 </tr>
               </tbody>
             </table>
             <div v-if="!permissionChanges.length" class="audit-empty">暂无权限变更单</div>
+            <div v-if="selectedPermissionChange" class="permission-diff">
+              <div class="permission-diff__head">
+                <strong>{{ selectedPermissionChange.changeNo }} 权限差异</strong>
+                <span class="status-tag" :class="selectedPermissionChange.type">{{ selectedPermissionChange.statusText }}</span>
+              </div>
+              <table class="mes-table permission-diff__table">
+                <thead>
+                  <tr><th>字段</th><th>变更前</th><th>变更后</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in permissionDiffRows" :key="row.field" :class="{ changed: row.changed }">
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.before }}</td>
+                    <td>{{ row.after }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -238,6 +268,7 @@ const lastRefreshText = ref(__DEV_MOCK_FALLBACK__ ? '开发样例' : '待接口'
 const permissionChanges = ref([])
 const loadingPermissionChanges = ref(false)
 const loadingPermissionReload = ref(false)
+const selectedPermissionChange = ref(null)
 const systemUsers = ref([])
 
 const permissionForm = reactive({
@@ -247,6 +278,20 @@ const permissionForm = reactive({
 })
 
 const canMaintainPermissions = computed(() => hasButton('system:permission-change'))
+
+const permissionDiffRows = computed(() => {
+  const change = selectedPermissionChange.value
+  if (!change) return []
+  const before = change.beforeSnapshot || {}
+  const after = change.afterSnapshot || {}
+  return [
+    diffRow('角色', 'role', before, after),
+    diffRow('菜单权限', 'menus', before, after),
+    diffRow('按钮权限', 'buttons', before, after),
+    diffRow('数据范围', 'dataScope', before, after),
+    diffRow('领域权限', 'domains', before, after)
+  ]
+})
 
 const filteredAuditLogs = computed(() => {
   if (!filters.action) return auditLogs.value
@@ -389,8 +434,45 @@ function mapPermissionChange(change, index = 0) {
     status: change.status || 'PENDING_REVIEW',
     statusText: permissionStatusText(change.status),
     type: permissionStatusType(change.status),
-    requester: change.requester || 'system'
+    requester: change.requester || 'system',
+    reviewer: change.reviewer || '-',
+    reason: change.reason || '-',
+    beforeSnapshot: parseSnapshot(change.beforeSnapshot),
+    afterSnapshot: parseSnapshot(change.afterSnapshot)
   }
+}
+
+function parseSnapshot(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    console.warn('权限快照解析失败', error)
+    return {}
+  }
+}
+
+function diffRow(label, key, before, after) {
+  const beforeValue = formatSnapshotValue(before[key])
+  const afterValue = formatSnapshotValue(after[key])
+  return {
+    label,
+    field: key,
+    before: beforeValue,
+    after: afterValue,
+    changed: beforeValue !== afterValue
+  }
+}
+
+function formatSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    return value.length ? value.join(', ') : '-'
+  }
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  return String(value)
 }
 
 function splitPermissionCodes(value = '') {
@@ -403,15 +485,22 @@ function splitPermissionCodes(value = '') {
 async function loadPermissionChanges() {
   if (!canMaintainPermissions.value) {
     permissionChanges.value = []
+    selectedPermissionChange.value = null
     return
   }
   loadingPermissionChanges.value = true
   try {
     const data = await getPermissionChangeRequests()
     permissionChanges.value = Array.isArray(data) ? data.map(mapPermissionChange) : []
+    if (selectedPermissionChange.value) {
+      selectedPermissionChange.value = permissionChanges.value.find(
+        change => change.changeNo === selectedPermissionChange.value.changeNo
+      ) || null
+    }
   } catch (error) {
     console.warn('权限变更单接口不可用', error)
     permissionChanges.value = []
+    selectedPermissionChange.value = null
   } finally {
     loadingPermissionChanges.value = false
   }
@@ -472,6 +561,36 @@ async function approvePermissionChange(change) {
   }
 }
 
+async function rejectPermissionChange(change) {
+  if (!canMaintainPermissions.value) {
+    ElMessage.warning('当前角色无权限审批权限变更')
+    return
+  }
+  loadingPermissionChanges.value = true
+  try {
+    await reviewPermissionChangeRequest(change.changeNo, {
+      decision: 'REJECT',
+      reviewOpinion: '权限变更依据不足，驳回'
+    })
+    ElMessage.success('权限变更已驳回')
+    await loadPermissionChanges()
+    await loadAuditLogs()
+  } finally {
+    loadingPermissionChanges.value = false
+  }
+}
+
+function comparePermissionChange(change) {
+  selectedPermissionChange.value = change
+}
+
+function compareLatestPermissionChange() {
+  const target = permissionChanges.value.find(change => change.status === 'PENDING_REVIEW') || permissionChanges.value[0]
+  if (target) {
+    comparePermissionChange(target)
+  }
+}
+
 async function reloadRuntimePermissions() {
   if (!canMaintainPermissions.value) {
     ElMessage.warning('当前角色无权限重载权限快照')
@@ -525,6 +644,32 @@ onMounted(() => {
 
 .permission-table {
   margin-top: 4px;
+}
+
+.permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-diff {
+  margin-top: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  background: #fff;
+  padding: 10px;
+}
+
+.permission-diff__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.permission-diff__table tr.changed td {
+  background: rgba(14, 165, 233, 0.06);
 }
 
 .mes-btn.tiny {

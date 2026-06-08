@@ -141,3 +141,11 @@
 | 权限重载入口 | 系统管理页提供真实“重载权限”按钮，调用 `POST /api/v1/system/permissions/reload`，不再使用占位提示 | 已落地 |
 | 权限控制 | 重载按钮受 `system:permission-change` 控制，无权限时不可执行 | 已落地 |
 | 前端契约 | `reloadPermissions` API 封装和系统页接线由 `verify:frontend-contract` 自动检查 | 已通过 |
+
+# 2026-06-08 补充验收：权限变更差异对比
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 权限差异对比 | 系统页可展示权限变更单 `beforeSnapshot/afterSnapshot` 的菜单、按钮、数据范围和领域权限差异 | 已落地 |
+| 审批决策完整性 | 权限变更单支持对比、通过和驳回，驳回走既有 review 接口并刷新审计日志 | 已落地 |
+| 前端契约 | 差异对比和驳回审批由 `verify:frontend-contract` 自动检查 | 已通过 |

@@ -634,3 +634,9 @@
 - 系统管理页顶部原“新建角色”占位入口已替换为真实的“重载权限”操作，调用 `POST /api/v1/system/permissions/reload`，并按 `system:permission-change` 按钮权限控制。
 - 重载成功后会提示已应用角色数量，并刷新权限变更单与审计日志，形成“申请 -> 审批 -> 运行期权限快照重载 -> 审计回看”的前端闭环。
 - 前端契约脚本新增 `reloadPermissions` API 与系统页接线检查；已运行 `npm.cmd run verify:frontend-contract` 通过 308 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。
+
+# 2026-06-08 增量：权限变更差异对比与驳回
+
+- 系统管理页的“权限差异对比”从静态按钮升级为真实对比面板，可解析权限变更单 `beforeSnapshot/afterSnapshot`，展示角色、菜单权限、按钮权限、数据范围和领域权限的变更前后差异。
+- 权限变更单操作从仅支持“通过”扩展为“对比 / 通过 / 驳回”，驳回调用既有 `POST /api/v1/system/permission-change-requests/{changeNo}/review`，提交 `decision=REJECT` 并刷新变更单和审计日志。
+- 前端契约脚本新增系统页差异对比和驳回审批检查；已运行 `npm.cmd run verify:frontend-contract` 通过 310 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。

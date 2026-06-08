@@ -278,6 +278,10 @@ const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
 
+const systemView = read('src/views/system/index.vue')
+check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
+check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
+
 const lotView = read('src/views/lot/index.vue')
 const executionView = read('src/views/execution/index.vue')
 check('page:views/lot/index.vue:track-in-rework-status', lotView.includes("['READY', 'REWORK'].includes(row.status)"), 'Lot page Track In action must allow rework lots')
