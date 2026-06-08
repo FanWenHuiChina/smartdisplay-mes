@@ -317,6 +317,42 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapQmsInspectionAdapterFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/adapters/qms/inspections");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("QMS_INSPECTION_REPORT");
+        assertThat(target.get().bizNo()).isNull();
+        assertThat(target.get().bizType()).isEqualTo("QMS_ADAPTER");
+    }
+
+    @Test
+    void resolveShouldMapWmsReadinessAdapterFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/adapters/wms/material-readiness");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("WMS_MATERIAL_READINESS");
+        assertThat(target.get().bizNo()).isNull();
+        assertThat(target.get().bizType()).isEqualTo("WMS_ADAPTER");
+    }
+
+    @Test
+    void resolveShouldMapWmsInventoryTransactionAdapterFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/adapters/wms/inventory-transactions");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("WMS_INVENTORY_TRANSACTION");
+        assertThat(target.get().bizNo()).isNull();
+        assertThat(target.get().bizType()).isEqualTo("WMS_ADAPTER");
+    }
+
+    @Test
     void resolveShouldMapAiKnowledgeIndexFailure() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/ai/kb/index-jobs");
 

@@ -654,3 +654,14 @@
 - 顶部“消息”入口同步使用总览异常数量，并将“消息 / 审计 / 新建异常”改为可点击导航入口，减少静态占位按钮。
 - 已删除未被路由使用的旧 `views/dashboard/index.vue` 静态看板页，避免保留另一套 Lot 统计、设备状态和良率曲线样例数据。
 - 前端契约脚本新增布局总览徽标接口驱动、禁止静态看板徽标和旧 Dashboard 页删除检查；已运行 `npm.cmd run verify:frontend-contract` 通过 315 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 12 个 JS 产物扫描。
+## 2026-06-08 增量：QMS/WMS 模拟适配器入口收口
+
+- 新增 `POST /api/v1/adapters/qms/inspections`，作为 QMS 检验结果模拟上报入口；服务端会补齐 `sourceSystem=qms-adapter`、`adapterCode=simulated-qms-adapter`，并复用质量模块生成检验记录。
+- QMS 上报支持 `items`/`inspectionItems` 多检验项；`FAIL/FAILED/REJECT/HOLD` 等结果会归一为 `NG`，自动创建缺陷、异常事件并 Hold Lot，成功路径写 `QMS_INSPECTION_REPORT` 审计。
+- 新增 `POST /api/v1/adapters/wms/material-readiness`，作为 WMS 齐套查询模拟入口；返回当前物料齐套摘要、批次清单、检查项，并写 `WMS_MATERIAL_READINESS` 审计。
+- 新增 `POST /api/v1/adapters/wms/inventory-transactions`，作为 WMS 库存事务模拟入口；支持 `RECEIVE/INBOUND/PUTAWAY`、`FREEZE/LOCK/HOLD`、`UNFREEZE/UNLOCK/RELEASE`、`RETURN/RETURN_MATERIAL`、`COUNT/INVENTORY_COUNT/STOCK_COUNT` 归一后复用物料服务，并写 `WMS_INVENTORY_TRANSACTION` 审计。
+- `RolePermissionService` 已将 QMS adapter 绑定质量处置权限，将 WMS adapter 绑定 `material:wms`；非授权角色不能调用外部适配器写入口。
+- `AuditFailureResolver` 已覆盖 QMS/WMS 三个 adapter 写入口失败审计映射，业务异常、参数异常和系统异常都会归类到可查询的 adapter 失败动作。
+- 前端 `src/api/pilot.js` 新增 `ingestQmsInspection`、`checkWmsMaterialReadiness`、`ingestWmsInventoryTransaction`，并纳入 `verify:frontend-contract` 静态契约检查。
+- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` 通过，`Tests run: 77, Failures: 0, Errors: 0, Skipped: 0`。
+- 已验证 `npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 318 checks`；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。

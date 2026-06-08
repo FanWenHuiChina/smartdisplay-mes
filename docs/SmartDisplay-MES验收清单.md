@@ -165,3 +165,12 @@
 | 导航总览徽标 | 左侧生产总览的良率/WIP/异常/瓶颈徽标由 `/api/v1/dashboard/overview` 派生，生产环境不硬编码样例数字 | 已落地 |
 | 旧静态看板清理 | 未被路由使用的旧 `views/dashboard/index.vue` 静态页面不再保留，避免双看板数据源 | 已落地 |
 | 前端契约 | 布局徽标接口驱动、禁止静态徽标和旧看板清理由 `verify:frontend-contract` 自动检查 | 已通过 |
+## 2026-06-08 QMS/WMS Adapter 验收补充
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| QMS 模拟检验上报 | `/api/v1/adapters/qms/inspections` 支持外部检验项上报，NG 自动生成检验、缺陷、异常和 Lot Hold，并写成功/失败审计 | 已落地，单元测试通过 |
+| WMS 齐套查询入口 | `/api/v1/adapters/wms/material-readiness` 返回物料齐套摘要并写 adapter 审计 | 已落地，单元测试通过 |
+| WMS 库存事务入口 | `/api/v1/adapters/wms/inventory-transactions` 支持入库、冻结、解冻、退料、盘点别名归一，复用物料服务并写 adapter 审计 | 已落地，单元测试通过 |
+| Adapter 权限控制 | QMS adapter 绑定质量处置权限，WMS adapter 绑定 `material:wms`，跨角色写操作被拒绝 | 已落地，RBAC 回归通过 |
+| Adapter 前端契约 | 前端 API 层封装 QMS/WMS adapter 调用，并纳入静态契约检查 | 已落地，`verify:frontend-contract` 通过 |

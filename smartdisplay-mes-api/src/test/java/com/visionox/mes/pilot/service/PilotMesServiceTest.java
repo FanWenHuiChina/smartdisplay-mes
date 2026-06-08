@@ -20,6 +20,7 @@ import com.visionox.mes.lot.mapper.LotStepRecordMapper;
 import com.visionox.mes.lot.mapper.ProcessStepMapper;
 import com.visionox.mes.lot.service.HoldService;
 import com.visionox.mes.lot.service.TrackInService;
+import com.visionox.mes.material.entity.MaterialBatch;
 import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.order.entity.ProductionOrder;
 import com.visionox.mes.order.mapper.ProductionOrderMapper;
@@ -171,6 +172,69 @@ class PilotMesServiceTest {
 
         assertThat(result).isEqualTo(response);
         verify(erpOrderAdapterService).importOrders(request, "system");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void ingestQmsInspectionShouldAttachAdapterIdentityAndDelegateToQualityService() {
+        Map<String, Object> response = Map.of("messageType", "INSPECTION_RESULT", "lotNo", "LOT001");
+        when(qualityService.reportQmsInspection(any())).thenReturn(response);
+
+        Map<String, Object> result = pilotMesService.ingestQmsInspection(Map.of("lotNo", "LOT001", "result", "NG"));
+
+        assertThat(result).isEqualTo(response);
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).reportQmsInspection(payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue())
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("result", "NG")
+                .containsEntry("sourceSystem", "qms-adapter")
+                .containsEntry("adapterCode", "simulated-qms-adapter");
+    }
+
+    @Test
+    void checkWmsMaterialReadinessShouldReturnReadinessAndWriteAdapterAudit() {
+        when(materialService.materialReadiness()).thenReturn(Map.of("readiness", "READY", "batches", List.of()));
+
+        Map<String, Object> result = pilotMesService.checkWmsMaterialReadiness(Map.of(
+                "lotNo", "LOT001",
+                "operator", "wms1001"
+        ));
+
+        assertThat(result)
+                .containsEntry("readiness", "READY")
+                .containsEntry("messageType", "MATERIAL_READINESS")
+                .containsEntry("sourceSystem", "wms-adapter")
+                .containsEntry("adapterCode", "simulated-wms-adapter")
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("lineCode", "LINE_01");
+        verify(materialService).materialReadiness();
+        verify(auditLogService).record(eq("WMS_MATERIAL_READINESS"), eq("LOT001"), eq("WMS_ADAPTER"),
+                any(), eq("wms1001"), eq("smartdisplay-mes-api"), any());
+    }
+
+    @Test
+    void ingestWmsInventoryTransactionShouldNormalizeTypeRouteToMaterialServiceAndAudit() {
+        MaterialBatch batch = new MaterialBatch();
+        batch.setBatchNo("PI_INK_B001");
+        when(materialService.freezeMaterial(eq("PI_INK_B001"), any())).thenReturn(batch);
+
+        Map<String, Object> result = pilotMesService.ingestWmsInventoryTransaction(Map.of(
+                "transactionType", "lock",
+                "batchNo", "PI_INK_B001",
+                "qty", "10",
+                "operator", "wms1001"
+        ));
+
+        assertThat(result)
+                .containsEntry("messageType", "INVENTORY_TRANSACTION")
+                .containsEntry("transactionType", "FREEZE")
+                .containsEntry("batchNo", "PI_INK_B001")
+                .containsEntry("result", "ACCEPTED");
+        assertThat(result.get("batch")).isSameAs(batch);
+        verify(materialService).freezeMaterial(eq("PI_INK_B001"), any());
+        verify(auditLogService).record(eq("WMS_INVENTORY_TRANSACTION"), eq("PI_INK_B001"), eq("WMS_ADAPTER"),
+                any(), eq("wms1001"), eq("smartdisplay-mes-api"), any());
     }
 
     @Test

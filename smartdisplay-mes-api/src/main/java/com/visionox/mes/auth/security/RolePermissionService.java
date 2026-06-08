@@ -147,6 +147,14 @@ public class RolePermissionService {
         if (path.startsWith("/v1/adapters/eap") || path.startsWith("/adapters/eap")) {
             return buttons.contains("equipment:eap-ingest");
         }
+        if (path.startsWith("/v1/adapters/qms") || path.startsWith("/adapters/qms")) {
+            return buttons.contains("quality:mrb-review")
+                    || buttons.contains("quality:mrb-approve")
+                    || buttons.contains("quality:exception-close");
+        }
+        if (path.startsWith("/v1/adapters/wms") || path.startsWith("/adapters/wms")) {
+            return buttons.contains("material:wms");
+        }
         if (path.startsWith("/v1/equipment/gateways") || path.startsWith("/equipment/gateways")) {
             return buttons.contains("equipment:eap-gateway");
         }

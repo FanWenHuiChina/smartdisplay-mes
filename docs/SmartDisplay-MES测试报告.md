@@ -300,3 +300,10 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，315 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，12 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
+## 2026-06-08 QMS/WMS 模拟适配器增量验证
+
+| 验证项 | 命令 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| QMS/WMS adapter 后端回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 77, Failures: 0, Errors: 0, Skipped: 0`；覆盖 QMS NG 自动缺陷/异常/Hold、QMS/WMS adapter 服务委托、RBAC 写权限和失败审计映射 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 318 checks`；新增 QMS/WMS adapter API 封装检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅有既有 `@vueuse/core` pure annotation 和 chunk size 警告，不影响构建产物 |

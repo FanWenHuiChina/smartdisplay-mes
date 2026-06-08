@@ -58,6 +58,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -559,6 +560,50 @@ public class PilotMesService {
 
     public Map<String, Object> importErpOrders(Map<String, Object> request) {
         return erpOrderAdapterService.importOrders(safeRequest(request), currentUser());
+    }
+
+    public Map<String, Object> ingestQmsInspection(Map<String, Object> request) {
+        return qualityService.reportQmsInspection(adapterPayload(request, "qms-adapter", "simulated-qms-adapter"));
+    }
+
+    public Map<String, Object> checkWmsMaterialReadiness(Map<String, Object> request) {
+        Map<String, Object> payload = adapterPayload(request, "wms-adapter", "simulated-wms-adapter");
+        Map<String, Object> data = new LinkedHashMap<>(materialService.materialReadiness());
+        data.put("adapterCode", payload.get("adapterCode"));
+        data.put("sourceSystem", payload.get("sourceSystem"));
+        data.put("messageType", "MATERIAL_READINESS");
+        data.put("lotNo", text(payload, "lotNo", ""));
+        data.put("lineCode", text(payload, "lineCode", "LINE_01"));
+        audit("WMS_MATERIAL_READINESS", text(payload, "lotNo", "MATERIAL"),
+                "WMS齐套查询 readiness=" + data.get("readiness"), text(payload, "operator", currentUser()),
+                JSONUtil.toJsonStr(payload));
+        return data;
+    }
+
+    public Map<String, Object> ingestWmsInventoryTransaction(Map<String, Object> request) {
+        Map<String, Object> payload = adapterPayload(request, "wms-adapter", "simulated-wms-adapter");
+        String txnType = normalizeWmsTransactionType(text(payload, "transactionType", text(payload, "action", "RECEIVE")));
+        Object batch = switch (txnType) {
+            case "RECEIVE" -> materialService.receiveMaterial(payload);
+            case "FREEZE" -> materialService.freezeMaterial(requireText(payload, "batchNo", "WMS冻结缺少批次号"), payload);
+            case "UNFREEZE" -> materialService.unfreezeMaterial(requireText(payload, "batchNo", "WMS解冻缺少批次号"), payload);
+            case "RETURN" -> materialService.returnMaterial(requireText(payload, "batchNo", "WMS退料缺少批次号"), payload);
+            case "COUNT" -> materialService.inventoryCount(requireText(payload, "batchNo", "WMS盘点缺少批次号"), payload);
+            default -> throw new BusinessException("不支持的WMS库存事务类型: " + txnType);
+        };
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("adapterCode", payload.get("adapterCode"));
+        data.put("sourceSystem", payload.get("sourceSystem"));
+        data.put("messageType", "INVENTORY_TRANSACTION");
+        data.put("transactionType", txnType);
+        data.put("batchNo", text(payload, "batchNo", ""));
+        data.put("result", "ACCEPTED");
+        data.put("batch", batch);
+        audit("WMS_INVENTORY_TRANSACTION", text(payload, "batchNo", txnType),
+                "WMS库存事务 type=" + txnType, text(payload, "operator", currentUser()),
+                JSONUtil.toJsonStr(payload));
+        return data;
     }
 
     private List<Map<String, Object>> fallbackEquipmentEvents() {
@@ -1720,6 +1765,12 @@ public class PilotMesService {
         if (action.startsWith("AI_")) {
             return "AI_REPORT";
         }
+        if (action.startsWith("WMS_")) {
+            return "WMS_ADAPTER";
+        }
+        if (action.startsWith("QMS_")) {
+            return "QMS_ADAPTER";
+        }
         return "SYSTEM";
     }
 
@@ -1773,6 +1824,25 @@ public class PilotMesService {
 
     private Map<String, Object> safeRequest(Map<String, Object> request) {
         return request == null ? Map.of() : request;
+    }
+
+    private Map<String, Object> adapterPayload(Map<String, Object> request, String sourceSystem, String adapterCode) {
+        Map<String, Object> payload = new LinkedHashMap<>(request == null ? Map.of() : request);
+        payload.putIfAbsent("sourceSystem", sourceSystem);
+        payload.putIfAbsent("adapterCode", adapterCode);
+        return payload;
+    }
+
+    private String normalizeWmsTransactionType(String type) {
+        String normalized = valueOr(type, "RECEIVE").trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "RECEIVE", "INBOUND", "PUTAWAY" -> "RECEIVE";
+            case "FREEZE", "LOCK", "HOLD" -> "FREEZE";
+            case "UNFREEZE", "UNLOCK", "RELEASE" -> "UNFREEZE";
+            case "RETURN", "RETURN_MATERIAL" -> "RETURN";
+            case "COUNT", "INVENTORY_COUNT", "STOCK_COUNT" -> "COUNT";
+            default -> normalized;
+        };
     }
 
     private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {

@@ -454,6 +454,21 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.importErpOrders(request));
     }
 
+    @PostMapping("/adapters/qms/inspections")
+    public Result<Map<String, Object>> ingestQmsInspection(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.ingestQmsInspection(request));
+    }
+
+    @PostMapping("/adapters/wms/material-readiness")
+    public Result<Map<String, Object>> checkWmsMaterialReadiness(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.checkWmsMaterialReadiness(request));
+    }
+
+    @PostMapping("/adapters/wms/inventory-transactions")
+    public Result<Map<String, Object>> ingestWmsInventoryTransaction(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.ingestWmsInventoryTransaction(request));
+    }
+
     @GetMapping("/material/batches")
     public Result<Map<String, Object>> materialBatches() {
         return Result.success(pilotMesService.materialReadiness());

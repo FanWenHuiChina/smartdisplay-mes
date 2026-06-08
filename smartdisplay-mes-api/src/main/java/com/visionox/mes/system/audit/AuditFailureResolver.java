@@ -275,6 +275,15 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "adapters", "eap", "messages")) {
             return target("EAP_ADAPTER_MESSAGE", null, "EQUIPMENT");
         }
+        if (matches(parts, offset, "adapters", "qms", "inspections")) {
+            return target("QMS_INSPECTION_REPORT", null, "QMS_ADAPTER");
+        }
+        if (matches(parts, offset, "adapters", "wms", "material-readiness")) {
+            return target("WMS_MATERIAL_READINESS", null, "WMS_ADAPTER");
+        }
+        if (matches(parts, offset, "adapters", "wms", "inventory-transactions")) {
+            return target("WMS_INVENTORY_TRANSACTION", null, "WMS_ADAPTER");
+        }
         return Optional.empty();
     }
 

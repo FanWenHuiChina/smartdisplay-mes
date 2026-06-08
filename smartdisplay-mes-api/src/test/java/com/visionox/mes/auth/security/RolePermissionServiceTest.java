@@ -79,6 +79,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("EE", request("POST", "/api/v1/equipment/gateways/GW001/heartbeat"))).isTrue();
         assertThat(service.canAccess("EE", request("POST", "/api/v1/equipment/gateways/GW001/health-check"))).isTrue();
         assertThat(service.canAccess("EE", request("POST", "/api/v1/adapters/eap/messages"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/adapters/qms/inspections"))).isTrue();
         assertThat(service.canAccess("EE", request("POST", "/api/v1/quality/mrb-approvals/MRBT001/reject"))).isTrue();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/quality/mrb-records/MRB001/minutes"))).isFalse();
         assertThat(service.canAccess("PE", request("POST", "/api/v1/equipment/events"))).isFalse();
@@ -88,6 +89,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("PE", request("POST", "/api/v1/equipment/gateways"))).isFalse();
         assertThat(service.canAccess("PE", request("POST", "/api/v1/equipment/gateways/GW001/health-check"))).isFalse();
         assertThat(service.canAccess("PE", request("POST", "/api/v1/adapters/eap/messages"))).isFalse();
+        assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/adapters/qms/inspections"))).isFalse();
         assertThat(service.canAccess("EE", request("POST", "/api/v1/recipes/1/publish"))).isFalse();
         assertThat(service.canAccess("PE", request("POST", "/api/v1/quality/exceptions/EX001/mrb-review"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/boms/change-requests"))).isFalse();
@@ -113,6 +115,8 @@ class RolePermissionServiceTest {
         ));
 
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/freeze"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/adapters/wms/inventory-transactions"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/adapters/wms/material-readiness"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/inventory-count"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/corrective-actions"))).isFalse();
     }

@@ -140,6 +140,55 @@ class QualityServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void reportQmsInspectionShouldCreateDefectExceptionAndHoldWhenNg() {
+        Lot lot = lot("LOT001");
+        lot.setCurrentStepCode("COATING");
+        lot.setCurrentEquipmentCode("COATER_01");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = qualityService.reportQmsInspection(Map.of(
+                "lotNo", "LOT001",
+                "sourceSystem", "qms-adapter",
+                "operator", "qe1001",
+                "items", List.of(
+                        Map.of("itemCode", "APPEARANCE", "itemName", "外观", "result", "OK"),
+                        Map.of("itemCode", "MURA", "itemName", "Mura", "result", "FAIL", "defectCode", "D-MURA")
+                )
+        ));
+
+        assertThat(result.get("result")).isEqualTo("NG");
+        assertThat(result.get("inspectionCount")).isEqualTo(2);
+        assertThat(result.get("defectCount")).isEqualTo(1);
+        assertThat(result.get("holdApplied")).isEqualTo(true);
+        assertThat((List<Map<String, Object>>) result.get("inspections")).hasSize(2);
+        assertThat(result.get("exceptionEvent")).isNotNull();
+
+        ArgumentCaptor<QualityInspection> inspectionCaptor = ArgumentCaptor.forClass(QualityInspection.class);
+        verify(inspectionMapper, org.mockito.Mockito.times(2)).insert(inspectionCaptor.capture());
+        assertThat(inspectionCaptor.getAllValues()).extracting(QualityInspection::getResult)
+                .containsExactly("OK", "NG");
+
+        ArgumentCaptor<QualityDefectRecord> defectCaptor = ArgumentCaptor.forClass(QualityDefectRecord.class);
+        verify(defectRecordMapper).insert(defectCaptor.capture());
+        assertThat(defectCaptor.getValue().getDefectCode()).isEqualTo("D-MURA");
+
+        ArgumentCaptor<ExceptionEvent> eventCaptor = ArgumentCaptor.forClass(ExceptionEvent.class);
+        verify(exceptionEventMapper).insert(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getLotNo()).isEqualTo("LOT001");
+        assertThat(eventCaptor.getValue().getOwnerRole()).isEqualTo("QE");
+
+        assertThat(lot.getStatus()).isEqualTo("HOLD");
+        assertThat(lot.getHoldFlag()).isEqualTo(1);
+        verify(lotMapper).updateById(lot);
+        verify(holdRecordMapper).insert(any(HoldRecord.class));
+        verify(auditLogService).record(eq("QMS_INSPECTION_REPORT"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("quality-service"), any());
+        verify(auditLogService).record(eq("EXCEPTION_CREATE"), any(), eq("EXCEPTION"), any(), eq("system"), eq("quality-service"), isNull());
+        verify(auditLogService).record(eq("LOT_HOLD"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("quality-service"), isNull());
+    }
+
+    @Test
     void reviewExceptionShouldRecordMrbDecisionAndUpdateDefectDisposition() {
         ExceptionEvent event = exceptionEvent("EX001", "OPEN");
         QualityDefectRecord defect = new QualityDefectRecord();

@@ -154,6 +154,62 @@ public class QualityService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> reportQmsInspection(Map<String, Object> request) {
+        Map<String, Object> source = new LinkedHashMap<>(request == null ? Map.of() : request);
+        String lotNo = requiredQmsText(source, "lotNo", "QMS检验上报缺少Lot号");
+        Lot lot = lotMapper.selectOne(new LambdaQueryWrapper<Lot>().eq(Lot::getLotNo, lotNo).last("LIMIT 1"));
+        if (lot == null) {
+            throw new BusinessException("QMS检验上报Lot不存在: " + lotNo);
+        }
+
+        String inspector = text(source, "inspector", text(source, "operator", AuthContext.username()));
+        LotStepRecord stepRecord = externalStepRecord(lot, source);
+        List<QualityInspection> inspections = new ArrayList<>();
+        int defectCount = 0;
+
+        for (Map<String, Object> item : qmsInspectionItems(source)) {
+            String itemResult = normalizeQmsResult(text(item, "result", text(source, "result", "OK")));
+            QualityInspection inspection = buildExternalInspection(lot, stepRecord, source, item, inspector, itemResult);
+            inspectionMapper.insert(inspection);
+            inspections.add(inspection);
+            if ("NG".equals(itemResult)) {
+                defectCount++;
+                createDefect(inspection,
+                        text(item, "defectCode", text(source, "defectCode", "D-QMS-NG")),
+                        text(item, "defectName", text(item, "defectDescription",
+                                inspection.getItemName() + "不合格")),
+                        text(item, "defectLevel", text(source, "defectLevel", "MAJOR")));
+            }
+        }
+
+        boolean hasNg = inspections.stream().anyMatch(inspection -> "NG".equals(inspection.getResult()));
+        audit("QMS_INSPECTION_REPORT", lotNo, "LOT",
+                "QMS检验上报 result=" + (hasNg ? "NG" : "OK") + ", items=" + inspections.size(), inspector,
+                JSONUtil.toJsonStr(source));
+
+        ExceptionEvent event = null;
+        if (hasNg) {
+            event = createException(lot, stepRecord, inspections);
+            autoHold(lotNo, "QUALITY", "QMS检验不合格，异常单 " + event.getEventNo() + " 自动 Hold", inspector);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("adapterCode", "simulated-qms-adapter");
+        data.put("sourceSystem", text(source, "sourceSystem", "qms-adapter"));
+        data.put("messageType", "INSPECTION_RESULT");
+        data.put("lotNo", lotNo);
+        data.put("result", hasNg ? "NG" : "OK");
+        data.put("inspectionCount", inspections.size());
+        data.put("defectCount", defectCount);
+        data.put("holdApplied", hasNg);
+        data.put("inspections", inspections.stream().map(this::inspectionRow).collect(Collectors.toList()));
+        if (event != null) {
+            data.put("exceptionEvent", exceptionRow(event));
+        }
+        return data;
+    }
+
     public List<Map<String, Object>> mrbRecords(String eventNo) {
         findException(eventNo);
         return mrbRecordMapper.selectList(new LambdaQueryWrapper<QualityMrbRecord>()
@@ -491,6 +547,34 @@ public class QualityService {
         return inspection;
     }
 
+    private QualityInspection buildExternalInspection(Lot lot, LotStepRecord stepRecord, Map<String, Object> source,
+                                                       Map<String, Object> item, String inspector, String result) {
+        QualityInspection inspection = new QualityInspection();
+        inspection.setInspectionNo(nextNo("QI"));
+        inspection.setLotNo(lot.getLotNo());
+        inspection.setOrderNo(lot.getOrderNo());
+        inspection.setProductCode(lot.getProductCode());
+        inspection.setStepCode(stepRecord.getStepCode());
+        inspection.setEquipmentCode(stepRecord.getEquipmentCode());
+        inspection.setRecipeCode(stepRecord.getRecipeCode());
+        inspection.setItemCode(text(item, "itemCode", text(source, "itemCode", "QMS_RESULT")));
+        inspection.setItemName(text(item, "itemName", text(source, "itemName", inspection.getItemCode())));
+        inspection.setMeasuredValue(decimalValue(valueOf(item, source, "measuredValue", "value")));
+        inspection.setUpperLimit(decimalValue(valueOf(item, source, "upperLimit", "upper")));
+        inspection.setLowerLimit(decimalValue(valueOf(item, source, "lowerLimit", "lower")));
+        inspection.setUnit(text(item, "unit", text(source, "unit", "")));
+        inspection.setResult(result);
+        inspection.setDefectCode("NG".equals(result)
+                ? text(item, "defectCode", text(source, "defectCode", "D-QMS-NG"))
+                : null);
+        inspection.setDefectPosition(text(item, "defectPosition", text(source, "defectPosition", stepRecord.getStepCode())));
+        inspection.setInspector(inspector);
+        inspection.setInspectionTime(LocalDateTime.now());
+        inspection.setSource(text(source, "sourceSystem", "qms-adapter"));
+        inspection.setRemark(text(item, "remark", text(source, "remark", "QMS外部检验上报")));
+        return inspection;
+    }
+
     private void createDefect(QualityInspection inspection, String defectCode, String defectName, String level) {
         QualityDefectRecord defect = new QualityDefectRecord();
         defect.setDefectNo(nextNo("QD"));
@@ -555,6 +639,50 @@ public class QualityService {
         holdRecord.setStatus("HOLD");
         holdRecordMapper.insert(holdRecord);
         audit("LOT_HOLD", lotNo, "LOT", "质量异常自动 Hold: " + reason, operator, null);
+    }
+
+    private LotStepRecord externalStepRecord(Lot lot, Map<String, Object> source) {
+        LotStepRecord record = new LotStepRecord();
+        record.setLotNo(lot.getLotNo());
+        record.setStepCode(text(source, "stepCode", valueOr(lot.getCurrentStepCode(), "QMS")));
+        record.setEquipmentCode(text(source, "equipmentCode", valueOr(lot.getCurrentEquipmentCode(), "")));
+        record.setRecipeCode(text(source, "recipeCode", ""));
+        record.setOperator(text(source, "operator", AuthContext.username()));
+        return record;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> qmsInspectionItems(Map<String, Object> source) {
+        Object value = source.get("items");
+        if (value == null) {
+            value = source.get("inspectionItems");
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Object item : collection) {
+                if (item instanceof Map<?, ?> map) {
+                    rows.add((Map<String, Object>) map);
+                }
+            }
+            if (!rows.isEmpty()) {
+                return rows;
+            }
+        }
+        return List.of(source);
+    }
+
+    private Object valueOf(Map<String, Object> item, Map<String, Object> source, String primary, String alias) {
+        Object value = item.get(primary);
+        if (value == null) {
+            value = item.get(alias);
+        }
+        if (value == null) {
+            value = source.get(primary);
+        }
+        if (value == null) {
+            value = source.get(alias);
+        }
+        return value;
     }
 
     private Map<String, Object> inspectionRow(QualityInspection inspection) {
@@ -1161,6 +1289,15 @@ public class QualityService {
         return "NG".equalsIgnoreCase(valueOr(result, "OK")) ? "NG" : "OK";
     }
 
+    private String normalizeQmsResult(String result) {
+        String normalized = valueOr(result, "OK").trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "OK", "PASS", "PASSED", "ACCEPT", "ACCEPTED" -> "OK";
+            case "NG", "FAIL", "FAILED", "REJECT", "REJECTED", "HOLD" -> "NG";
+            default -> throw new BusinessException("不支持的QMS检验结果: " + result);
+        };
+    }
+
     private String normalizeDispositionAction(String action) {
         String normalized = valueOr(action, "CONTINUE_HOLD").trim().toUpperCase(Locale.ROOT);
         normalized = switch (normalized) {
@@ -1330,6 +1467,14 @@ public class QualityService {
     private String text(Map<String, Object> request, String key, String defaultValue) {
         Object value = request == null ? null : request.get(key);
         return value == null || String.valueOf(value).isBlank() ? valueOr(defaultValue, "") : String.valueOf(value);
+    }
+
+    private String requiredQmsText(Map<String, Object> request, String key, String message) {
+        String value = text(request, key, "");
+        if (value.isBlank()) {
+            throw new BusinessException(message);
+        }
+        return value;
     }
 
     private String valueOr(String value, String fallback) {
