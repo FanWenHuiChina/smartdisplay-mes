@@ -31,6 +31,27 @@ $firstEquipment = ""
 $secondEquipment = ""
 $aiReportNo = ""
 
+function Get-ExpectedFlywayVersion {
+    $migrationDir = Join-Path $ProjectRoot "smartdisplay-mes-api\src\main\resources\db\migration"
+    if (-not (Test-Path -LiteralPath $migrationDir)) {
+        return ""
+    }
+    $versions = Get-ChildItem -LiteralPath $migrationDir -File -Filter "V*__*.sql" |
+        ForEach-Object {
+            if ($_.Name -match '^V([0-9]+(?:\.[0-9]+)*)__') {
+                [pscustomobject]@{
+                    VersionText = $Matches[1]
+                    Version = [version]$Matches[1]
+                }
+            }
+        } |
+        Sort-Object Version
+    if ($versions.Count -eq 0) {
+        return ""
+    }
+    return [string]$versions[-1].VersionText
+}
+
 function Add-Check {
     param([string]$Name, [string]$Result, [string]$Detail)
     [void]$script:checks.Add([ordered]@{
@@ -132,16 +153,30 @@ function Get-LotByNo {
 }
 
 function Get-EquipmentForStep {
-    param([string]$StepCode)
+    param([string]$StepCode, [string]$ProductCode = "AMOLED_65")
     $equipments = @(Invoke-MesJson -Method "GET" -Path "/v1/master/equipments" -Headers $script:authHeaders)
+    $recipePage = Invoke-MesJson -Method "GET" -Path "/v1/recipes?current=1&size=200" -Headers $script:authHeaders
+    $activeRecipeEquipmentCodes = @($recipePage.records |
+        Where-Object {
+            $_.productCode -eq $ProductCode -and
+            $_.stepCode -eq $StepCode -and
+            $_.status -eq "ACTIVE" -and
+            -not [string]::IsNullOrWhiteSpace([string]$_.equipmentCode)
+        } |
+        ForEach-Object { [string]$_.equipmentCode })
     $candidate = $equipments |
         Where-Object {
             ($_.status -eq "IDLE" -or $_.status -eq "RUNNING") -and
-            ([string]$_.capabilitySteps).Contains($StepCode)
+            ([string]$_.capabilitySteps).Contains($StepCode) -and
+            ($activeRecipeEquipmentCodes -contains [string]$_.equipmentCode)
         } |
         Select-Object -First 1
     if ($null -ne $candidate) {
         return [string]$candidate.equipmentCode
+    }
+    $recipeEquipment = $activeRecipeEquipmentCodes | Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace([string]$recipeEquipment)) {
+        return [string]$recipeEquipment
     }
     switch ($StepCode) {
         "CLEAN" { return "CLEANER_01" }
@@ -258,7 +293,18 @@ try {
         $ready = Invoke-Docker -Arguments @("exec", $DbContainer, "pg_isready", "-U", $DbUser, "-d", $DbName) -AllowFailure
         Assert-Check -Condition ($ready.code -eq 0) -Name "postgres container ready" -Detail ($ready.output -replace "`r", " " -replace "`n", " ")
         $latestMigration = Invoke-PsqlScalar -Sql "select version from flyway_schema_history where success = true order by installed_rank desc limit 1;"
-        Assert-Check -Condition ($latestMigration -eq "1.38") -Name "database migrated" -Detail "latest=V$latestMigration"
+        $expectedMigration = Get-ExpectedFlywayVersion
+        $migrationMatched = if ([string]::IsNullOrWhiteSpace($expectedMigration)) {
+            -not [string]::IsNullOrWhiteSpace($latestMigration)
+        } else {
+            $latestMigration -eq $expectedMigration
+        }
+        $migrationDetail = if ([string]::IsNullOrWhiteSpace($expectedMigration)) {
+            "latest=V$latestMigration"
+        } else {
+            "latest=V$latestMigration, expected=V$expectedMigration"
+        }
+        Assert-Check -Condition $migrationMatched -Name "database migrated" -Detail $migrationDetail
     }
 
     $order = Invoke-MesJson -Method "POST" -Path "/v1/orders" -Headers $script:authHeaders -Body @{
@@ -290,7 +336,7 @@ try {
     }
 
     $firstStep = [string]$lot.currentStepCode
-    $firstEquipment = Get-EquipmentForStep -StepCode $firstStep
+    $firstEquipment = Get-EquipmentForStep -StepCode $firstStep -ProductCode ([string]$lot.productCode)
     Invoke-MesJson -Method "POST" -Path "/v1/lots/$lotNo/track-in" -Headers $script:authHeaders -Body @{
         stepCode = $firstStep
         equipmentCode = $firstEquipment
@@ -317,7 +363,7 @@ try {
         Assert-Check -Condition ($okStepResult -eq "OK") -Name "first track out persisted" -Detail "stepResult=$okStepResult"
     }
 
-    $secondEquipment = Get-EquipmentForStep -StepCode $secondStep
+    $secondEquipment = Get-EquipmentForStep -StepCode $secondStep -ProductCode ([string]$lot.productCode)
     Invoke-MesJson -Method "POST" -Path "/v1/lots/$lotNo/track-in" -Headers $script:authHeaders -Body @{
         stepCode = $secondStep
         equipmentCode = $secondEquipment

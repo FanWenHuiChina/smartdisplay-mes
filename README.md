@@ -70,7 +70,16 @@ powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1
 powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 ```
 
-脚本会校验工单、Lot 过站、质量 Hold、Release、追溯、看板、AI 报告和审计真实落库。最新通过报告见 `docs/SmartDisplay-MES-real-db-api-flow-20260608-060901.md`。
+可运行试点演示脚本用于复演 5 分钟/15 分钟演示闭环：
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\run-pilot-demo-script.ps1 -Mode Short
+powershell -ExecutionPolicy Bypass -File tools\run-pilot-demo-script.ps1 -Mode Full
+```
+
+`Short` 覆盖登录、看板、工单释放、Lot Track In/Out、追溯和 AI 良率日报；`Full` 继续覆盖自动 Hold、Release、Rework、Scrap、WMS、载具、EAP、Hybrid RAG、AI 设备分析和审计。复验证据见 `docs/SmartDisplay-MES可运行演示脚本复验.md`。
+
+脚本会校验工单、Lot 过站、质量 Hold、Release、追溯、看板、AI 报告和审计真实落库。最新通过报告见 `docs/SmartDisplay-MES-real-db-api-flow-20260608-221738.md`。
 
 性能验收脚本需要后端和 PostgreSQL 已启动：
 
