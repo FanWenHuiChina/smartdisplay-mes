@@ -8,7 +8,13 @@
       <div class="page-actions">
         <button class="mes-btn" @click="exportAuditLogs">导出审计</button>
         <button class="mes-btn" @click="loadAuditLogs">刷新日志</button>
-        <button class="mes-btn primary" @click="showRoleTodo">新建角色</button>
+        <button
+          class="mes-btn primary"
+          :disabled="!canMaintainPermissions || loadingPermissionReload"
+          @click="reloadRuntimePermissions"
+        >
+          {{ loadingPermissionReload ? '重载中' : '重载权限' }}
+        </button>
       </div>
     </div>
 
@@ -208,6 +214,7 @@ import {
   getAuditLogs,
   getPermissionChangeRequests,
   getSystemUsers,
+  reloadPermissions,
   reviewPermissionChangeRequest
 } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
@@ -230,6 +237,7 @@ const loadingAudit = ref(false)
 const lastRefreshText = ref(__DEV_MOCK_FALLBACK__ ? '开发样例' : '待接口')
 const permissionChanges = ref([])
 const loadingPermissionChanges = ref(false)
+const loadingPermissionReload = ref(false)
 const systemUsers = ref([])
 
 const permissionForm = reactive({
@@ -464,8 +472,20 @@ async function approvePermissionChange(change) {
   }
 }
 
-function showRoleTodo() {
-  ElMessage.info('角色维护入口已预留，后续接入 RBAC 管理接口')
+async function reloadRuntimePermissions() {
+  if (!canMaintainPermissions.value) {
+    ElMessage.warning('当前角色无权限重载权限快照')
+    return
+  }
+  loadingPermissionReload.value = true
+  try {
+    const result = await reloadPermissions()
+    ElMessage.success(`权限快照已重载，应用角色 ${result?.appliedRoles ?? 0} 个`)
+    await loadPermissionChanges()
+    await loadAuditLogs()
+  } finally {
+    loadingPermissionReload.value = false
+  }
 }
 
 onMounted(() => {

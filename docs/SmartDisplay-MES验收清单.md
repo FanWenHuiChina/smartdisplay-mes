@@ -133,3 +133,11 @@
 | 索引任务成功审计 | 知识库索引任务成功时写入 `AI_KB_INDEX / SOP_KB` 审计，保留检索策略、模型、切片数量和边界说明 | 已落地 |
 | 索引任务失败审计 | `POST /api/v1/ai/kb/index-jobs` 失败时也写入 `AI_KB_INDEX / SOP_KB` 失败审计，便于追溯 AI 知识库维护动作 | 已落地 |
 | 回归测试 | Resolver 和 FailureService 覆盖 AI 索引任务失败映射与落库调用 | 已通过 |
+
+# 2026-06-08 补充验收：系统页权限快照重载
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 权限重载入口 | 系统管理页提供真实“重载权限”按钮，调用 `POST /api/v1/system/permissions/reload`，不再使用占位提示 | 已落地 |
+| 权限控制 | 重载按钮受 `system:permission-change` 控制，无权限时不可执行 | 已落地 |
+| 前端契约 | `reloadPermissions` API 封装和系统页接线由 `verify:frontend-contract` 自动检查 | 已通过 |

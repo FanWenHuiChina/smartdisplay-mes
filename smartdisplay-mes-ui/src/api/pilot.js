@@ -116,3 +116,4 @@ export const getAuditLogs = (params = {}) => request.get('/v1/system/audit-logs'
 export const getPermissionChangeRequests = (params = {}) => request.get('/v1/system/permission-change-requests', { params })
 export const createPermissionChangeRequest = (data = {}) => request.post('/v1/system/permission-change-requests', data)
 export const reviewPermissionChangeRequest = (changeNo, data = {}) => request.post(`/v1/system/permission-change-requests/${changeNo}/review`, data)
+export const reloadPermissions = () => request.post('/v1/system/permissions/reload')

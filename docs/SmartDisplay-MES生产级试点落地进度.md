@@ -628,3 +628,9 @@
 - 补齐 `POST /api/v1/ai/kb/index-jobs` 的失败审计映射，创建知识库索引任务失败时会按 `AI_KB_INDEX / SOP_KB` 写入失败审计，覆盖无可索引切片、文档不存在、检索策略非法等业务异常路径。
 - 成功索引任务原本已由 `AiKbIndexService` 写入 `AI_KB_INDEX` 审计，本轮补齐失败路径后，AI 知识库索引动作具备成功/失败双向留痕。
 - 已补 `AuditFailureResolverTest` 和 `AuditFailureServiceTest`，并运行审计定向测试通过 36 项；随后运行 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 后端全量测试通过 194 项。
+
+# 2026-06-08 增量：系统页权限快照重载入口
+
+- 系统管理页顶部原“新建角色”占位入口已替换为真实的“重载权限”操作，调用 `POST /api/v1/system/permissions/reload`，并按 `system:permission-change` 按钮权限控制。
+- 重载成功后会提示已应用角色数量，并刷新权限变更单与审计日志，形成“申请 -> 审批 -> 运行期权限快照重载 -> 审计回看”的前端闭环。
+- 前端契约脚本新增 `reloadPermissions` API 与系统页接线检查；已运行 `npm.cmd run verify:frontend-contract` 通过 308 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。

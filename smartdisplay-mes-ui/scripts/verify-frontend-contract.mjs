@@ -190,7 +190,8 @@ const requiredApiExports = [
   ['getAuditLogs', '/v1/system/audit-logs'],
   ['getPermissionChangeRequests', '/v1/system/permission-change-requests'],
   ['createPermissionChangeRequest', '/v1/system/permission-change-requests'],
-  ['reviewPermissionChangeRequest', '/v1/system/permission-change-requests/${changeNo}/review']
+  ['reviewPermissionChangeRequest', '/v1/system/permission-change-requests/${changeNo}/review'],
+  ['reloadPermissions', '/v1/system/permissions/reload']
 ]
 
 for (const [name, endpoint] of requiredApiExports) {
@@ -250,7 +251,7 @@ const pageContracts = [
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['getTraceLot'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
-  ['views/system/index.vue', ['getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest'], ['system:permission-change']]
+  ['views/system/index.vue', ['getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
 ]
 
 for (const [relativePath, apiNames, buttonKeys] of pageContracts) {

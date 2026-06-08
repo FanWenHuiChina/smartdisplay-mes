@@ -260,3 +260,13 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过，194 项测试 |
 | AI 索引失败解析 | `AuditFailureResolverTest.resolveShouldMapAiKnowledgeIndexFailure` | `POST /api/v1/ai/kb/index-jobs` 解析为 `AI_KB_INDEX / SOP_KB` |
 | AI 索引失败写入 | `AuditFailureServiceTest.recordShouldWriteFailureAuditForAiKnowledgeIndexJob` | 失败消息会进入 `recordFailure` 快照，便于审计追溯 |
+
+# 2026-06-08 系统页权限快照重载复验
+
+本轮将系统管理页顶部占位“新建角色”入口替换为真实“重载权限”操作，接入 `POST /api/v1/system/permissions/reload`，并纳入按钮权限与契约检查。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，308 项检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
