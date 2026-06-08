@@ -37,6 +37,8 @@ docker compose up -d --build
 
 ## 本地验证
 
+GitHub Actions CI 已纳入后端测试/打包、前端契约/构建/生产包扫描、Flyway 静态校验、PowerShell 交付脚本语法检查和 Docker Compose 配置解析。门禁说明见 `docs/SmartDisplay-MES-CI门禁说明.md`。
+
 后端：
 
 ```bash

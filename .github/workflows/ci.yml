@@ -1,0 +1,106 @@
+name: SmartDisplay MES CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: smartdisplay-mes-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests and package
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: smartdisplay-mes-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Run backend tests
+        run: mvn -B test
+
+      - name: Package backend
+        run: mvn -B -DskipTests "-Dspring-boot.repackage.skip=true" package
+
+  frontend:
+    name: Frontend contract and build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: smartdisplay-mes-ui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: smartdisplay-mes-ui/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify frontend contract
+        run: npm run verify:frontend-contract
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Verify production bundle
+        run: npm run verify:production-bundle
+
+  delivery-gates:
+    name: Delivery scripts and migration gates
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify PowerShell scripts parse
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scripts = @(
+            'tools\run-pilot-demo-script.ps1',
+            'tools\run-real-db-api-flow.ps1',
+            'tools\run-pilot-performance-smoke.ps1',
+            'tools\run-pilot-performance-baseline.ps1',
+            'tools\run-flyway-rehearsal.ps1',
+            'tools\verify-flyway-migrations.ps1'
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $messages = $errors | ForEach-Object { $_.ToString() }
+              throw "$script has parse errors:`n$($messages -join "`n")"
+            }
+            Write-Host "$script syntax OK"
+          }
+
+      - name: Verify Flyway migration files
+        run: powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1
+
+      - name: Verify Docker Compose config
+        run: docker compose -f smartdisplay-mes-api\docker-compose.yml config
