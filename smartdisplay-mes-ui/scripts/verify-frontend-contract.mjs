@@ -273,6 +273,10 @@ const masterView = read('src/views/master/index.vue')
 check('page:views/master/index.vue:bom-change-validation-file', masterView.includes('validationFileName') && masterView.includes('validationFileHash'), 'BOM change submit must carry substitute validation attachment metadata')
 check('page:views/master/index.vue:bom-change-attachment-count', masterView.includes('attachmentCount'), 'BOM change list must show validation attachment count')
 
+const qualityView = read('src/views/quality/index.vue')
+check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
+check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
+
 check('package:verify-script', packageJson.scripts?.['verify:frontend-contract'] === 'node scripts/verify-frontend-contract.mjs')
 
 if (failures.length) {

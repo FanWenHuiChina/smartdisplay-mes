@@ -216,3 +216,13 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，302 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
+
+# 2026-06-08 质量页 MRB 报废入口复验
+
+本轮补齐质量管理页 MRB 待处置卡片的 `SCRAP` 复判入口，并将复判与关闭按钮拆分为 `quality:mrb-review`、`quality:exception-close` 两类权限。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，304 项检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |

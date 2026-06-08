@@ -100,3 +100,11 @@
 | Lot 页 Scrap 操作 | `HOLD` Lot 可在前端填写原因、责任模块、审批人、操作人，并输入 `SCRAP:{lotNo}` 二次确认后调用 `POST /api/v1/lots/{lotNo}/scrap` | 已落地，受 `lot:scrap` 按钮权限控制 |
 | Lot 页 API 口径 | Lot 列表、Track In/Out、Hold/Release、Rework/Scrap 使用 `/api/v1/lots` 试点接口 | 已统一 |
 | 前端验证 | 契约检查、生产构建、生产包样例标识扫描通过 | 已通过：302 项契约检查，14 个 JS 产物扫描 |
+
+# 2026-06-08 补充验收：质量页 MRB 报废处置入口
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| MRB 报废建议 | 质量页 MRB 待处置卡片提供 `SCRAP` 复判入口，提交后形成报废处置意见、MRB 履历和会签待办 | 已落地 |
+| MRB 前端权限 | 放行/返工/报废复判只受 `quality:mrb-review` 控制，关闭异常只受 `quality:exception-close` 控制 | 已落地 |
+| 前端契约 | 自动检查质量页必须包含 `SCRAP` 复判入口和复判/关闭权限拆分 | 已落地 |

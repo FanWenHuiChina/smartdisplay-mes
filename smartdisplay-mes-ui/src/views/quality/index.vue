@@ -65,10 +65,11 @@
               <span>附件 {{ item.attachmentCount }}</span>
             </div>
             <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
-            <div v-if="item.status !== 'CLOSED' && canMrbAction" class="mini-actions">
-              <button class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
-              <button class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
-              <button class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
+            <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
+              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
+              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
+              <button v-if="canReviewAction" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
+              <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
             </div>
           </div>
         </div>
@@ -301,7 +302,9 @@ const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
   minutesCount: item.mrbMinutesCount || 0
 })))
 
-const canMrbAction = computed(() => hasButton('quality:mrb-review') || hasButton('quality:exception-close'))
+const canReviewAction = computed(() => hasButton('quality:mrb-review'))
+const canCloseAction = computed(() => hasButton('quality:exception-close'))
+const canMrbAction = computed(() => canReviewAction.value || canCloseAction.value)
 const canApproveAction = computed(() => hasButton('quality:mrb-approve'))
 const canEscalateAction = computed(() => hasButton('quality:mrb-escalate'))
 
@@ -422,6 +425,14 @@ function escalationText(item) {
   return item.escalationRole || '-'
 }
 
+function actionLabel(action) {
+  return {
+    RELEASE: '放行',
+    REWORK: '返工',
+    SCRAP: '报废'
+  }[action] || '继续 Hold'
+}
+
 function actionText(action) {
   return {
     RELEASE: '复判通过，允许解除 Hold 并继续流转',
@@ -528,7 +539,7 @@ async function handleApproval(task, decision) {
 }
 
 async function handleReview(item, action) {
-  if (!canMrbAction.value) {
+  if (!canReviewAction.value) {
     ElMessage.warning('当前角色无权执行 MRB 复判')
     return
   }
@@ -539,7 +550,7 @@ async function handleReview(item, action) {
       ...mrbPayload(action, opinion),
       reviewer: localStorage.getItem('username') || 'qe'
     })
-    ElMessage.success(`MRB复判已提交：${action === 'RELEASE' ? '放行' : '返工'}`)
+    ElMessage.success(`MRB复判已提交：${actionLabel(action)}`)
     selectedEventNo.value = item.eventNo
     await loadQualityData()
     await loadMrbRecords(item.eventNo)
@@ -550,7 +561,7 @@ async function handleReview(item, action) {
 }
 
 async function handleClose(item) {
-  if (!canMrbAction.value) {
+  if (!canCloseAction.value) {
     ElMessage.warning('当前角色无权关闭异常')
     return
   }

@@ -603,3 +603,9 @@
 - 旧 Lot 页 API 封装统一切换到 `/api/v1/lots` 试点接口，Track In 弹窗的工序与设备选项也统一读取 `/api/v1/master/**`。
 - 前端 `.gitignore` 增加 `.vite`，避免本地构建缓存进入仓库。
 - 已复验：`npm.cmd run verify:frontend-contract` 通过 302 项检查；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 与 chunk size warning；`npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物。
+
+# 2026-06-08 增量：质量页 MRB 报废处置入口
+
+- 质量管理页 MRB 待处置卡片新增“报废”复判按钮，可提交 `dispositionAction=SCRAP` 到 `POST /api/v1/quality/exceptions/{eventNo}/mrb-review`，形成 MRB 报废建议、会签待办和处置履历。
+- 复判动作与异常关闭动作拆分前端权限：放行/返工/报废仅受 `quality:mrb-review` 控制，关闭异常仅受 `quality:exception-close` 控制。
+- 前端契约脚本新增质量页 SCRAP 入口和 MRB 复判/关闭权限拆分检查，防止后续页面改版漏掉报废处置闭环。
