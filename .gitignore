@@ -1,0 +1,45 @@
+.classpath
+.project
+.settings/
+.DS_Store
+.pmd
+.idea/
+*.iml
+
+# Java / Maven
+target/
+.m2/
+*.log
+mes.log*
+release.properties
+pom.xml.releaseBackup
+
+# Node / Vue
+node_modules/
+dist/
+*.local
+*.out.log
+*.err.log
+.vite-*.log
+
+# Local runtime and generated reports
+.claude/
+.serena/
+.tmp-chrome-shot/
+smartdisplay-mes-ui/visual-check/
+smartdisplay-mes-ui/*.png
+docs/*browser-e2e-*.json
+docs/*browser-e2e-*.md
+docs/*flyway-rehearsal-*.json
+docs/*flyway-rehearsal-*.md
+docs/*performance-*.json
+docs/*performance-*.md
+docs/performance-baseline-rounds/
+docs/*real-db-api-flow-*.json
+docs/*real-db-api-flow-*.md
+smartdisplay-mes-api/.mvn-test-settings.xml
+smartdisplay-mes-api/track-in-test.json
+
+# Misc local outputs
+bin/
+txt/

@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartdisplay-mes-postgres
+    environment:
+      POSTGRES_DB: smartdisplay_mes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mes123456
+      TZ: Asia/Shanghai
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mes-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./smartdisplay-mes-api
+      dockerfile: Dockerfile
+    container_name: smartdisplay-mes-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdisplay_mes
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: mes123456
+      SERVER_PORT: 8080
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    networks:
+      - mes-network
+
+  frontend:
+    build:
+      context: ./smartdisplay-mes-ui
+      dockerfile: Dockerfile
+    container_name: smartdisplay-mes-ui
+    depends_on:
+      - backend
+    ports:
+      - "8888:80"
+    networks:
+      - mes-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  mes-network:
+    driver: bridge

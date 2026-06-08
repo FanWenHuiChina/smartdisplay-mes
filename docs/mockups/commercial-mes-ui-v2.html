@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SmartDisplay MES 商用界面概念稿 V2</title>
+  <style>
+    :root {
+      --page: #f4f6f8;
+      --paper: #ffffff;
+      --soft: #f8fafc;
+      --soft-2: #eef3f8;
+      --line: #d7dee8;
+      --line-soft: #e9eef4;
+      --text: #182230;
+      --sub: #586678;
+      --weak: #8b98aa;
+      --blue: #3f73bd;
+      --blue-dark: #2f63ad;
+      --blue-soft: #f0f6ff;
+      --teal: #0b8f82;
+      --teal-soft: #def8f3;
+      --green: #168a55;
+      --green-soft: #e4f7ed;
+      --amber: #a86f13;
+      --amber-soft: #fff2d6;
+      --red: #c93434;
+      --red-soft: #ffe2e2;
+      --purple: #7055d8;
+      --purple-soft: #eeeafd;
+      --orange: #c65f18;
+      --orange-soft: #ffe7d3;
+      --shadow: 0 8px 20px rgba(24, 34, 48, .055);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+
+    button, input, select { font: inherit; }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 44px minmax(0, 1fr);
+    }
+
+    .top {
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 280px;
+    }
+
+    .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      border: 1px solid #b9d9ff;
+      background: linear-gradient(135deg, #eaf4ff, #eefdf8);
+      display: grid;
+      place-items: center;
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .brand-title {
+      display: grid;
+      gap: 2px;
+    }
+
+    .brand-title strong {
+      font-size: 15px;
+      line-height: 1.15;
+      font-weight: 650;
+    }
+
+    .brand-title span {
+      color: var(--sub);
+      font-size: 12px;
+    }
+
+    .plant-context {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: var(--sub);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .userbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn {
+      height: 30px;
+      border-radius: 5px;
+      border: 1px solid #cfd8e5;
+      background: #ffffff;
+      color: #344054;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: none;
+      transition: border-color .12s ease, background .12s ease, color .12s ease;
+    }
+
+    .btn:hover {
+      border-color: #b5c7dd;
+      background: #f9fbfd;
+    }
+
+    .btn.primary {
+      color: var(--blue-dark);
+      border-color: #adc6ea;
+      background: #eef5ff;
+      box-shadow: none;
+    }
+
+    .btn.primary:hover {
+      border-color: #92b3df;
+      background: #e7f1ff;
+    }
+
+    .btn.warn {
+      color: #b23a3a;
+      border-color: #efc4c4;
+      background: #fff8f8;
+    }
+
+    .btn.warn:hover {
+      border-color: #e5a8a8;
+      background: #fff2f2;
+    }
+
+    .tabs {
+      height: 44px;
+      background: #fbfcfe;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 18px;
+      overflow-x: auto;
+    }
+
+    .tab {
+      height: 30px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #344054;
+      padding: 0 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .tab.active {
+      background: #eaf2ff;
+      color: var(--blue);
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+    }
+
+    .side {
+      background: #ffffff;
+      border-right: 1px solid var(--line);
+      padding: 14px 12px;
+      overflow: auto;
+    }
+
+    .side-section {
+      margin-bottom: 16px;
+    }
+
+    .side-title {
+      color: var(--weak);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 0 8px 7px;
+    }
+
+    .side a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 34px;
+      padding: 7px 8px;
+      border-radius: 5px;
+      color: #344054;
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .side a:hover {
+      background: var(--soft);
+    }
+
+    .side a.active {
+      background: #eef5ff;
+      color: var(--blue);
+      font-weight: 600;
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .badge {
+      min-width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 7px;
+      background: var(--soft-2);
+      color: var(--sub);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge.red { background: var(--red-soft); color: var(--red); }
+    .badge.amber { background: var(--amber-soft); color: var(--amber); }
+    .badge.green { background: var(--green-soft); color: var(--green); }
+
+    .content {
+      min-width: 0;
+      height: calc(100vh - 100px);
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .page-head h1 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.3;
+      font-weight: 600;
+    }
+
+    .page-head p {
+      margin: 4px 0 0;
+      color: var(--sub);
+      font-size: 13px;
+    }
+
+    .head-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cols-3 { grid-template-columns: 1.1fr 1fr .9fr; }
+    .cols-2 { grid-template-columns: 1.08fr .92fr; }
+    .cols-2-wide { grid-template-columns: 1.36fr .64fr; }
+    .trace-grid { grid-template-columns: 300px minmax(0, 1fr) 356px; }
+    .master-grid { grid-template-columns: 300px minmax(0, 1fr); }
+
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .panel-head {
+      min-height: 44px;
+      border-bottom: 1px solid var(--line-soft);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .panel-title {
+      min-width: 0;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-title small {
+      color: var(--weak);
+      font-weight: 600;
+    }
+
+    .panel-body {
+      padding: 12px;
+    }
+
+    .kpi {
+      min-height: 116px;
+      padding: 13px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .kpi-label {
+      color: var(--sub);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .kpi-value {
+      font-size: 27px;
+      font-weight: 760;
+      line-height: 1;
+    }
+
+    .kpi-meta {
+      color: var(--sub);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .tag {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      width: fit-content;
+      line-height: 18px;
+    }
+
+    .tag.blue { background: var(--blue-soft); color: var(--blue); }
+    .tag.teal { background: var(--teal-soft); color: var(--teal); }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.amber { background: var(--amber-soft); color: var(--amber); }
+    .tag.red { background: var(--red-soft); color: var(--red); }
+    .tag.purple { background: var(--purple-soft); color: var(--purple); }
+    .tag.orange { background: var(--orange-soft); color: var(--orange); }
+    .tag.gray { background: var(--soft-2); color: var(--sub); }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      background: currentColor;
+    }
+
+    .subtle {
+      color: var(--sub);
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr 1fr auto;
+      gap: 9px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .field label {
+      color: var(--sub);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .input, .select {
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #fff;
+      padding: 0 10px;
+      color: var(--text);
+      min-width: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line-soft);
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--sub);
+      background: #fbfcfe;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    tr.hot td { background: #fff9f2; }
+    tr.danger td { background: #fff7f7; }
+
+    .route-line {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 7px;
+      padding: 9px;
+      min-height: 86px;
+      display: grid;
+      gap: 6px;
+      position: relative;
+    }
+
+    .step:after {
+      content: "";
+      position: absolute;
+      right: -8px;
+      top: 40px;
+      width: 8px;
+      border-top: 2px solid #c9d3e0;
+    }
+
+    .step:last-child:after { display: none; }
+
+    .step strong {
+      font-size: 13px;
+    }
+
+    .step span {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .step.current {
+      border-color: #7eb3ff;
+      background: #f4f8ff;
+      box-shadow: inset 0 0 0 1px #b8d6ff;
+    }
+
+    .step.warn {
+      border-color: #f0c36c;
+      background: #fffaf0;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .cell {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 7px;
+      min-height: 58px;
+      padding: 8px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .cell strong { font-size: 13px; }
+    .cell span { color: var(--sub); font-size: 12px; }
+    .cell.green { background: #f4fcf8; border-color: #9eddbf; }
+    .cell.amber { background: #fffaf0; border-color: #e6bf71; }
+    .cell.red { background: #fff6f6; border-color: #eea1a1; }
+    .cell.blue { background: #f4f8ff; border-color: #9dc5ff; }
+
+    .timeline {
+      position: relative;
+      padding-left: 14px;
+      display: grid;
+      gap: 0;
+    }
+
+    .timeline:before {
+      content: "";
+      position: absolute;
+      left: 25px;
+      top: 12px;
+      bottom: 10px;
+      width: 2px;
+      background: #dbe3ed;
+    }
+
+    .event {
+      position: relative;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 9px;
+      padding: 7px 0;
+    }
+
+    .event-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      border: 4px solid var(--blue);
+      z-index: 1;
+      margin-top: 2px;
+    }
+
+    .event-dot.green { border-color: var(--green); }
+    .event-dot.amber { border-color: var(--amber); }
+    .event-dot.red { border-color: var(--red); }
+    .event-dot.purple { border-color: var(--purple); }
+
+    .event-card {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      padding: 9px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .event-main {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 600;
+    }
+
+    .event-meta {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .chart {
+      height: 214px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      position: relative;
+      background:
+        linear-gradient(to top, rgba(215,222,232,.85) 0 1px, transparent 1px 25%),
+        linear-gradient(to right, rgba(215,222,232,.7) 0 1px, transparent 1px 16.6%),
+        #fff;
+      overflow: hidden;
+    }
+
+    .bar-chart {
+      height: 214px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 12px;
+      align-items: end;
+      padding: 26px 22px 28px;
+      background: #fff;
+      position: relative;
+    }
+
+    .bar-col {
+      background: var(--blue);
+      border-radius: 5px 5px 0 0;
+      min-height: 16px;
+      position: relative;
+    }
+
+    .bar-col.green { background: var(--green); }
+    .bar-col.amber { background: var(--amber); }
+    .bar-col.red { background: var(--red); }
+    .bar-col:after {
+      content: attr(data-label);
+      position: absolute;
+      left: 50%;
+      bottom: -21px;
+      transform: translateX(-50%);
+      color: var(--weak);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .trend {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      top: 32px;
+      bottom: 36px;
+    }
+
+    .point {
+      position: absolute;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 4px rgba(29,95,214,.12);
+    }
+
+    .line {
+      position: absolute;
+      height: 3px;
+      background: var(--blue);
+      border-radius: 99px;
+      transform-origin: left center;
+    }
+
+    .axis {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      color: var(--weak);
+      font-size: 11px;
+    }
+
+    .cards {
+      display: grid;
+      gap: 9px;
+    }
+
+    .mini-card {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 7px;
+      padding: 9px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .mini-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .mini-meta {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .detail {
+      display: grid;
+      gap: 8px;
+    }
+
+    .detail-row {
+      display: grid;
+      grid-template-columns: 94px minmax(0, 1fr);
+      gap: 8px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .detail-row b {
+      color: var(--sub);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .ai-box {
+      border-left: 4px solid var(--purple);
+      background: #fbfaff;
+      border-radius: 7px;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .ai-box h3 {
+      margin: 0;
+      font-size: 13px;
+    }
+
+    .ai-box p {
+      margin: 0;
+      color: var(--sub);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-top: 10px;
+      border-top: 1px solid var(--line-soft);
+      margin-top: 10px;
+    }
+
+    .section-gap { margin-top: 12px; }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side { display: none; }
+      .content { height: calc(100vh - 100px); }
+      .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cols-3, .cols-2, .cols-2-wide, .trace-grid, .master-grid { grid-template-columns: 1fr; }
+      .route-line { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .matrix { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 760px) {
+      .top { flex-direction: column; align-items: stretch; height: auto; padding: 10px; }
+      .brand { min-width: 0; }
+      .tabs { padding: 0 8px; }
+      .content { height: auto; padding: 10px; }
+      .cols-4, .route-line, .matrix, .filters, .split { grid-template-columns: 1fr; }
+      th:nth-child(n+5), td:nth-child(n+5) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div class="brand">
+        <div class="logo">MES</div>
+        <div class="brand-title">
+          <strong>SmartDisplay MES</strong>
+          <span>AMOLED 面板 / 模组制造执行系统概念稿</span>
+        </div>
+      </div>
+      <div class="plant-context">
+        <span class="chip">基地：广州模组线</span>
+        <span class="chip">产线：G6-FLEX-LINE-01</span>
+        <span class="chip">班次：白班 08:00-20:00</span>
+        <span class="chip">刷新：14:32:18</span>
+      </div>
+      <div class="userbar">
+        <button class="btn">消息 12</button>
+        <button class="btn">审计</button>
+        <button class="btn primary">新建异常</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="一级模块">
+      <button class="tab active" data-page="overview">生产总览</button>
+      <button class="tab" data-page="order">计划与工单</button>
+      <button class="tab" data-page="master">工艺主数据</button>
+      <button class="tab" data-page="execution">生产执行</button>
+      <button class="tab" data-page="equipment">设备与自动化</button>
+      <button class="tab" data-page="quality">质量管理</button>
+      <button class="tab" data-page="material">物料与载具</button>
+      <button class="tab" data-page="trace">追溯分析</button>
+      <button class="tab" data-page="ai">报表与AI</button>
+      <button class="tab" data-page="system">系统管理</button>
+    </nav>
+
+    <div class="workspace">
+      <aside class="side">
+        <div class="side-section">
+          <div class="side-title">生产总览</div>
+          <a class="side-link active" data-page="overview">产线总控 <span class="badge green">96</span></a>
+          <a class="side-link" data-page="overview">WIP 分布 <span class="badge">128</span></a>
+          <a class="side-link" data-page="overview">异常队列 <span class="badge red">7</span></a>
+          <a class="side-link" data-page="overview">瓶颈分析 <span class="badge amber">2</span></a>
+        </div>
+        <div class="side-section">
+          <div class="side-title">计划与工单</div>
+          <a class="side-link" data-page="order">工单池</a>
+          <a class="side-link" data-page="order">释放与拆 Lot</a>
+          <a class="side-link" data-page="order">Hot Lot 管控</a>
+          <a class="side-link" data-page="order">派工队列</a>
+        </div>
+        <div class="side-section">
+          <div class="side-title">工艺主数据</div>
+          <a class="side-link" data-page="master">产品与BOM</a>
+          <a class="side-link" data-page="master">Route 工艺路线</a>
+          <a class="side-link" data-page="master">Recipe 与规格</a>
+          <a class="side-link" data-page="master">设备能力矩阵</a>
+        </div>
+        <div class="side-section">
+          <div class="side-title">生产执行</div>
+          <a class="side-link" data-page="execution">电子流程卡</a>
+          <a class="side-link" data-page="execution">Track In / Out</a>
+          <a class="side-link" data-page="execution">Hold / Release</a>
+          <a class="side-link" data-page="execution">Rework / Scrap</a>
+        </div>
+        <div class="side-section">
+          <div class="side-title">质量与设备</div>
+          <a class="side-link" data-page="equipment">EAP / Recipe下载</a>
+          <a class="side-link" data-page="quality">SPC 与缺陷</a>
+          <a class="side-link" data-page="quality">MRB 处置</a>
+          <a class="side-link" data-page="material">物料批次与载具</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="page active" id="overview">
+          <div class="page-head">
+            <div>
+              <h1>生产总览 / 产线总控</h1>
+              <p>按产线、工段、工序实时查看 WIP、良率、设备稼动、Hold 与瓶颈状态。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">切换产线</button>
+              <button class="btn">导出班报</button>
+              <button class="btn primary">查看异常</button>
+            </div>
+          </div>
+
+          <div class="grid cols-4">
+            <div class="panel kpi">
+              <div class="kpi-label"><span>今日投入 Lot</span><span class="tag blue">WIP</span></div>
+              <div class="kpi-value">128</div>
+              <div class="kpi-meta"><span>等待 18</span><span>Hot Lot 6</span></div>
+            </div>
+            <div class="panel kpi">
+              <div class="kpi-label"><span>综合良率</span><span class="tag green">接近目标</span></div>
+              <div class="kpi-value">96.82%</div>
+              <div class="kpi-meta"><span>目标 97.00%</span><span>-0.18%</span></div>
+            </div>
+            <div class="panel kpi">
+              <div class="kpi-label"><span>Hold 待处置</span><span class="tag red">质量介入</span></div>
+              <div class="kpi-value">7</div>
+              <div class="kpi-meta"><span>超 SLA 2</span><span>新增 3</span></div>
+            </div>
+            <div class="panel kpi">
+              <div class="kpi-label"><span>设备稼动率</span><span class="tag amber">需关注</span></div>
+              <div class="kpi-value">91.4%</div>
+              <div class="kpi-meta"><span>Alarm 3</span><span>PM 1</span></div>
+            </div>
+          </div>
+
+          <div class="panel section-gap">
+            <div class="panel-head">
+              <div class="panel-title">AMOLED 工艺段 WIP 状态 <small>Array / Cell / Module</small></div>
+              <span class="tag teal">实时刷新</span>
+            </div>
+            <div class="panel-body">
+              <div class="route-line">
+                <div class="step"><strong>CLEAN 清洗</strong><span>WIP 14 / 等待 3</span><span class="tag green">正常</span></div>
+                <div class="step current"><strong>COATING 涂胶</strong><span>WIP 26 / 排队 11</span><span class="tag amber">瓶颈</span></div>
+                <div class="step"><strong>EXPOSURE 曝光</strong><span>WIP 17 / 设备 3</span><span class="tag green">正常</span></div>
+                <div class="step"><strong>ETCH 蚀刻</strong><span>WIP 12 / NG 1</span><span class="tag green">正常</span></div>
+                <div class="step warn"><strong>EVAP 蒸镀</strong><span>WIP 9 / 异常 2</span><span class="tag red">Alarm</span></div>
+                <div class="step"><strong>ENCAP 封装</strong><span>WIP 18 / 等待 5</span><span class="tag green">正常</span></div>
+                <div class="step"><strong>AOI 检测</strong><span>WIP 19 / FPY 97.1%</span><span class="tag teal">检测中</span></div>
+                <div class="step"><strong>BOND 绑定</strong><span>WIP 22 / 等待 6</span><span class="tag green">正常</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid cols-3 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">实时异常队列</div><span class="tag red">7 待处理</span></div>
+              <div class="panel-body cards">
+                <div class="mini-card"><div class="mini-top"><span>LOT260606-017 涂胶膜厚超限</span><span class="tag red">P1</span></div><div class="mini-meta">COATER_02 / RCP_COAT_65_V12 / Hold 38 分钟 / 质量工程师待复判</div></div>
+                <div class="mini-card"><div class="mini-top"><span>EVAP_01 真空波动</span><span class="tag amber">P2</span></div><div class="mini-meta">影响 3 批 Lot / 最近 2 小时出现 4 次 / 设备工程师处理中</div></div>
+                <div class="mini-card"><div class="mini-top"><span>BOND_03 绑定偏移预警</span><span class="tag amber">P2</span></div><div class="mini-meta">MODULE_BOND_03 缺陷上升 / 已触发 SPC 规则 2</div></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">近 7 日良率趋势</div><span class="tag green">目标 97%</span></div>
+              <div class="panel-body">
+                <div class="chart">
+                  <div class="trend">
+                    <span class="point" style="left:0%; bottom:58%"></span><span class="point" style="left:16%; bottom:64%"></span><span class="point" style="left:32%; bottom:47%"></span><span class="point" style="left:48%; bottom:72%"></span><span class="point" style="left:64%; bottom:62%"></span><span class="point" style="left:80%; bottom:78%"></span><span class="point" style="left:96%; bottom:69%"></span>
+                    <span class="line" style="left:0%; bottom:61%; width:17%; transform: rotate(-8deg)"></span><span class="line" style="left:16%; bottom:66%; width:17%; transform: rotate(15deg)"></span><span class="line" style="left:32%; bottom:50%; width:18%; transform: rotate(-22deg)"></span><span class="line" style="left:48%; bottom:75%; width:17%; transform: rotate(10deg)"></span><span class="line" style="left:64%; bottom:65%; width:17%; transform: rotate(-13deg)"></span><span class="line" style="left:80%; bottom:80%; width:17%; transform: rotate(9deg)"></span>
+                  </div>
+                  <div class="axis"><span>05/31</span><span>06/01</span><span>06/02</span><span>06/03</span><span>06/04</span><span>06/05</span><span>06/06</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">瓶颈建议</div><span class="tag purple">AI 摘要</span></div>
+              <div class="panel-body cards">
+                <div class="ai-box"><h3>主要瓶颈：涂胶 / 蒸镀</h3><p>涂胶等待队列高于过去 7 日均值 28%，蒸镀设备异常与 Mura 不良上升存在时间相关性。</p></div>
+                <div class="ai-box"><h3>建议动作</h3><p>优先释放 COATER_01 高优先级 Lot；EVAP_01 下一批进站前执行真空稳定性点检。</p></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="order">
+          <div class="page-head">
+            <div>
+              <h1>计划与工单 / 工单释放与 Lot 生成</h1>
+              <p>将 ERP/APS 下发的生产任务转换为 MES 可执行 Lot，并绑定产品、路线版本、优先级和计划窗口。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">导入工单</button>
+              <button class="btn">排产校验</button>
+              <button class="btn primary">释放工单</button>
+            </div>
+          </div>
+          <div class="grid cols-2-wide">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">工单池</div><span class="tag blue">待释放 18</span></div>
+              <div class="panel-body">
+                <div class="filters">
+                  <div class="field"><label>工单 / 产品</label><input class="input" value="MO20260606" /></div>
+                  <div class="field"><label>状态</label><select class="select"><option>待释放 / 已释放 / Hold</option></select></div>
+                  <div class="field"><label>路线版本</label><select class="select"><option>全部</option></select></div>
+                  <div class="field"><label>优先级</label><select class="select"><option>全部</option><option>Hot Lot</option></select></div>
+                  <button class="btn primary">查询</button>
+                </div>
+                <table>
+                  <thead><tr><th>工单</th><th>产品</th><th>计划数</th><th>Route</th><th>优先级</th><th>状态</th><th>计划窗口</th></tr></thead>
+                  <tbody>
+                    <tr class="hot"><td>MO20260606012</td><td>AMOLED_65</td><td>1,000</td><td>RTE_G6_V08</td><td><span class="tag orange">Hot</span></td><td><span class="tag blue">待释放</span></td><td>06/06 14:00-20:00</td></tr>
+                    <tr><td>MO20260606013</td><td>AMOLED_67</td><td>800</td><td>RTE_G6_V05</td><td>普通</td><td><span class="tag green">已释放</span></td><td>06/06 18:00-06/07 02:00</td></tr>
+                    <tr><td>MO20260606014</td><td>FOLD_78</td><td>600</td><td>RTE_MOD_V04</td><td>普通</td><td><span class="tag amber">待齐套</span></td><td>06/07 08:00-16:00</td></tr>
+                    <tr><td>MO20260606015</td><td>AMOLED_65</td><td>1,200</td><td>RTE_G6_V08</td><td>普通</td><td><span class="tag gray">计划</span></td><td>06/07 16:00-06/08 04:00</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">释放校验</div><span class="tag green">7/8 通过</span></div>
+              <div class="panel-body">
+                <div class="matrix" style="grid-template-columns: repeat(2, minmax(0,1fr));">
+                  <div class="cell green"><strong>产品状态</strong><span>AMOLED_65 已启用</span></div>
+                  <div class="cell green"><strong>Route 版本</strong><span>RTE_G6_V08 已生效</span></div>
+                  <div class="cell green"><strong>BOM</strong><span>BOM_65_V06 已生效</span></div>
+                  <div class="cell amber"><strong>物料齐套</strong><span>PI 胶余量 18%</span></div>
+                  <div class="cell green"><strong>Recipe 覆盖</strong><span>关键工序 100%</span></div>
+                  <div class="cell green"><strong>设备能力</strong><span>目标线可执行</span></div>
+                  <div class="cell green"><strong>工单数量</strong><span>拆 10 个 Lot</span></div>
+                  <div class="cell green"><strong>权限审计</strong><span>计划员可释放</span></div>
+                </div>
+                <div class="toolbar">
+                  <button class="btn primary">生成 10 个 Lot</button>
+                  <button class="btn">查看齐套明细</button>
+                  <button class="btn">模拟释放</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel section-gap">
+            <div class="panel-head"><div class="panel-title">待生成 Lot 预览</div><span class="tag teal">按 100 Panel / Lot</span></div>
+            <div class="panel-body">
+              <table>
+                <thead><tr><th>Lot</th><th>产品</th><th>数量</th><th>起始工序</th><th>路线</th><th>优先级</th><th>计划进站</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>LOT260606-021</td><td>AMOLED_65</td><td>100</td><td>CLEAN</td><td>RTE_G6_V08</td><td>Hot</td><td>14:30</td><td><span class="tag blue">预生成</span></td></tr>
+                  <tr><td>LOT260606-022</td><td>AMOLED_65</td><td>100</td><td>CLEAN</td><td>RTE_G6_V08</td><td>Hot</td><td>14:40</td><td><span class="tag blue">预生成</span></td></tr>
+                  <tr><td>LOT260606-023</td><td>AMOLED_65</td><td>100</td><td>CLEAN</td><td>RTE_G6_V08</td><td>普通</td><td>15:00</td><td><span class="tag blue">预生成</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="master">
+          <div class="page-head">
+            <div>
+              <h1>工艺主数据 / Route、BOM、Recipe 与规格</h1>
+              <p>主数据决定执行规则，版本、生效状态、审批与追溯快照是商用 MES 的关键。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">版本对比</button>
+              <button class="btn">ECO 审批</button>
+              <button class="btn primary">发布版本</button>
+            </div>
+          </div>
+          <div class="grid master-grid">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">主数据对象</div><span class="tag blue">AMOLED_65</span></div>
+              <div class="panel-body detail">
+                <div class="field"><label>产品型号</label><input class="input" value="AMOLED_65 柔性屏" /></div>
+                <div class="detail-row"><b>BOM</b><span>BOM_65_V06 / 生效 / ECO-240602</span></div>
+                <div class="detail-row"><b>Route</b><span>RTE_G6_V08 / 生效 / 12 工序</span></div>
+                <div class="detail-row"><b>Recipe</b><span>覆盖关键工序 11/11</span></div>
+                <div class="detail-row"><b>规格策略</b><span>关键参数超限自动 Hold</span></div>
+                <div class="detail-row"><b>采样策略</b><span>AOI 全检，老化抽检 10%</span></div>
+                <div class="detail-row"><b>变更状态</b><span class="tag amber">待发布 V09</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">Route 工艺路线版本</div><span class="tag green">当前生效 V08</span></div>
+              <div class="panel-body">
+                <div class="route-line">
+                  <div class="step"><strong>010 CLEAN</strong><span>需 Recipe / 无 QC</span><span class="tag green">2 设备</span></div>
+                  <div class="step current"><strong>020 COATING</strong><span>Recipe 必需 / 参数采集</span><span class="tag blue">4 Recipe</span></div>
+                  <div class="step"><strong>030 EXPOSURE</strong><span>Route 防跳站</span><span class="tag green">3 设备</span></div>
+                  <div class="step"><strong>040 ETCH</strong><span>关键工序</span><span class="tag amber">需复核</span></div>
+                  <div class="step"><strong>050 EVAP</strong><span>真空参数采集</span><span class="tag green">2 设备</span></div>
+                  <div class="step"><strong>060 ENCAP</strong><span>封装检测</span><span class="tag green">2 设备</span></div>
+                  <div class="step"><strong>070 AOI</strong><span>缺陷代码</span><span class="tag teal">全检</span></div>
+                  <div class="step"><strong>080 BOND</strong><span>模组绑定</span><span class="tag green">3 设备</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="grid cols-2 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">Recipe 参数规格</div><span class="tag blue">RCP_COAT_65_V12</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>参数</th><th>目标</th><th>下限</th><th>上限</th><th>单位</th><th>控制</th></tr></thead>
+                  <tbody>
+                    <tr><td>涂胶温度</td><td>150.0</td><td>145.0</td><td>155.0</td><td>℃</td><td><span class="tag red">关键</span></td></tr>
+                    <tr><td>涂胶速度</td><td>300</td><td>280</td><td>320</td><td>mm/s</td><td><span class="tag red">关键</span></td></tr>
+                    <tr><td>膜厚</td><td>2.00</td><td>1.80</td><td>2.20</td><td>μm</td><td><span class="tag red">关键</span></td></tr>
+                    <tr><td>腔体压力</td><td>0.80</td><td>0.60</td><td>0.90</td><td>kPa</td><td><span class="tag amber">预警</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">BOM / 物料版本</div><span class="tag green">齐套检查</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>物料</th><th>名称</th><th>单位耗量</th><th>损耗</th><th>批次控制</th></tr></thead>
+                  <tbody>
+                    <tr><td>MAT-PI-001</td><td>PI 胶</td><td>0.42</td><td>3%</td><td><span class="tag red">强制批次</span></td></tr>
+                    <tr><td>MAT-OLED-R</td><td>红光材料</td><td>0.08</td><td>5%</td><td><span class="tag red">强制批次</span></td></tr>
+                    <tr><td>MAT-FPC-65</td><td>FPC</td><td>1</td><td>1%</td><td><span class="tag green">序列追溯</span></td></tr>
+                    <tr><td>MAT-OCA</td><td>OCA 胶</td><td>1</td><td>2%</td><td><span class="tag amber">先进先出</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="execution">
+          <div class="page-head">
+            <div>
+              <h1>生产执行 / 电子流程卡与 Track In/Out</h1>
+              <p>每一次进站、出站、Move、Hold、Release、Rework、Scrap 都写入审计和追溯链路。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">批量 Hold</button>
+              <button class="btn">打印流程卡</button>
+              <button class="btn primary">Track In</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Lot 执行队列</div><span class="tag blue">当前工序 COATING</span></div>
+            <div class="panel-body">
+              <div class="filters">
+                <div class="field"><label>Lot / SN</label><input class="input" value="LOT260606" /></div>
+                <div class="field"><label>工序</label><select class="select"><option>全部工序</option></select></div>
+                <div class="field"><label>状态</label><select class="select"><option>READY / PROCESSING / HOLD</option></select></div>
+                <div class="field"><label>设备</label><select class="select"><option>全部设备</option></select></div>
+                <button class="btn primary">查询</button>
+              </div>
+              <table>
+                <thead><tr><th>Lot</th><th>产品</th><th>Route</th><th>当前工序</th><th>设备</th><th>状态</th><th>等待</th><th>动作</th></tr></thead>
+                <tbody>
+                  <tr class="danger"><td>LOT260606-017</td><td>AMOLED_65</td><td>RTE_G6_V08</td><td>COATING</td><td>COATER_02</td><td><span class="tag red">HOLD</span></td><td>38 min</td><td><span class="tag red">Release 需质量工程师</span></td></tr>
+                  <tr><td>LOT260606-018</td><td>AMOLED_65</td><td>RTE_G6_V08</td><td>COATING</td><td>待分配</td><td><span class="tag blue">READY</span></td><td>11 min</td><td><span class="tag green">可 Track In</span></td></tr>
+                  <tr><td>LOT260606-019</td><td>AMOLED_67</td><td>RTE_G6_V05</td><td>EVAP</td><td>EVAP_01</td><td><span class="tag green">PROCESSING</span></td><td>加工中</td><td><span class="tag teal">可 Track Out</span></td></tr>
+                  <tr><td>LOT260606-020</td><td>AMOLED_65</td><td>RTE_G6_V08</td><td>AOI</td><td>INSPECT_03</td><td><span class="tag green">PROCESSING</span></td><td>检测中</td><td><span class="tag purple">录入缺陷</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="grid cols-2 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">Track In 校验链</div><span class="tag green">8 项校验</span></div>
+              <div class="panel-body">
+                <div class="matrix">
+                  <div class="cell green"><strong>Lot 状态</strong><span>READY</span></div>
+                  <div class="cell green"><strong>Route 下一站</strong><span>COATING 合法</span></div>
+                  <div class="cell green"><strong>设备状态</strong><span>IDLE</span></div>
+                  <div class="cell green"><strong>设备能力</strong><span>支持涂胶</span></div>
+                  <div class="cell green"><strong>Recipe</strong><span>RCP_COAT_V12</span></div>
+                  <div class="cell green"><strong>Hold</strong><span>未 Hold</span></div>
+                  <div class="cell amber"><strong>物料齐套</strong><span>PI 胶 18%</span></div>
+                  <div class="cell green"><strong>权限</strong><span>操作员可执行</span></div>
+                  <div class="cell green"><strong>班次</strong><span>白班</span></div>
+                  <div class="cell blue"><strong>审计</strong><span>将写入日志</span></div>
+                </div>
+                <div class="toolbar">
+                  <button class="btn primary">确认 Track In</button>
+                  <button class="btn">切换设备</button>
+                  <button class="btn warn">Hold 当前 Lot</button>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">电子流程卡</div><span class="tag blue">LOT260606-018</span></div>
+              <div class="panel-body timeline">
+                <div class="event"><div class="event-dot green"></div><div class="event-card"><div class="event-main"><span>工单释放</span><span>14:05</span></div><div class="event-meta">MO20260606012 / 拆分 Lot / route=RTE_G6_V08</div></div></div>
+                <div class="event"><div class="event-dot green"></div><div class="event-card"><div class="event-main"><span>CLEAN 完成</span><span>14:28</span></div><div class="event-meta">EQ=CLEAN_01 / result=OK / operator=op1007</div></div></div>
+                <div class="event"><div class="event-dot amber"></div><div class="event-card"><div class="event-main"><span>等待 COATING</span><span>当前</span></div><div class="event-meta">目标设备 COATER_01 / Recipe 已匹配 / 等待 11 分钟</div></div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="equipment">
+          <div class="page-head">
+            <div>
+              <h1>设备与自动化 / EAP、Recipe 下载与参数采集</h1>
+              <p>设备不是静态字典，商用 MES 要控制设备状态、能力、Recipe 下载、报警、PM 和过程参数。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">同步 EAP</button>
+              <button class="btn">PM 计划</button>
+              <button class="btn primary">下发 Recipe</button>
+            </div>
+          </div>
+          <div class="grid cols-4">
+            <div class="panel kpi"><div class="kpi-label"><span>在线设备</span><span class="tag green">Online</span></div><div class="kpi-value">42</div><div class="kpi-meta"><span>总数 48</span><span>离线 6</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>Alarm</span><span class="tag red">需处理</span></div><div class="kpi-value">3</div><div class="kpi-meta"><span>P1 1</span><span>P2 2</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>Recipe 下载</span><span class="tag blue">今日</span></div><div class="kpi-value">86</div><div class="kpi-meta"><span>失败 1</span><span>校验 100%</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>PM 到期</span><span class="tag amber">本班</span></div><div class="kpi-value">4</div><div class="kpi-meta"><span>已完成 2</span><span>待执行 2</span></div></div>
+          </div>
+          <div class="grid cols-2 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">设备状态矩阵</div><span class="tag teal">按工序分组</span></div>
+              <div class="panel-body">
+                <div class="matrix">
+                  <div class="cell green"><strong>COATER_01</strong><span>IDLE / 支持 COATING</span></div>
+                  <div class="cell amber"><strong>COATER_02</strong><span>RUNNING / 压力波动</span></div>
+                  <div class="cell green"><strong>EXPOSE_01</strong><span>IDLE / 待命</span></div>
+                  <div class="cell red"><strong>EVAP_01</strong><span>ALARM / 真空波动</span></div>
+                  <div class="cell green"><strong>AOI_03</strong><span>RUNNING / 检测中</span></div>
+                  <div class="cell amber"><strong>BOND_03</strong><span>WARN / 偏移趋势</span></div>
+                  <div class="cell green"><strong>LASER_02</strong><span>IDLE / 激光切割</span></div>
+                  <div class="cell green"><strong>BEND_01</strong><span>IDLE / Pad 弯折</span></div>
+                  <div class="cell amber"><strong>AGING_04</strong><span>PM due / 2h</span></div>
+                  <div class="cell green"><strong>LAMI_01</strong><span>RUNNING / 全贴合</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">Recipe 下载与参数回读</div><span class="tag blue">COATER_02</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>时间</th><th>Lot</th><th>Recipe</th><th>动作</th><th>结果</th></tr></thead>
+                  <tbody>
+                    <tr><td>14:20</td><td>LOT260606-018</td><td>RCP_COAT_65_V12</td><td>下载</td><td><span class="tag green">成功</span></td></tr>
+                    <tr><td>14:22</td><td>LOT260606-018</td><td>RCP_COAT_65_V12</td><td>参数回读</td><td><span class="tag green">一致</span></td></tr>
+                    <tr class="danger"><td>13:48</td><td>LOT260606-017</td><td>RCP_COAT_65_V12</td><td>参数采集</td><td><span class="tag red">膜厚超限</span></td></tr>
+                    <tr><td>13:12</td><td>LOT260606-012</td><td>RCP_COAT_65_V11</td><td>版本校验</td><td><span class="tag amber">旧版本</span></td></tr>
+                  </tbody>
+                </table>
+                <div class="toolbar">
+                  <button class="btn primary">重新下发</button>
+                  <button class="btn">查看 EAP 日志</button>
+                  <button class="btn warn">锁定设备</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="quality">
+          <div class="page-head">
+            <div>
+              <h1>质量管理 / SPC、缺陷与 MRB 处置</h1>
+              <p>质量模块要从“记录结果”升级为“控制流转”：检测、判级、Hold、复判、返工、报废和偏差放行。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">录入检验</button>
+              <button class="btn">MRB 会议</button>
+              <button class="btn primary">创建复判单</button>
+            </div>
+          </div>
+          <div class="grid cols-2">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">SPC 控制图 / 膜厚</div><span class="tag amber">触发规则 2</span></div>
+              <div class="panel-body">
+                <div class="chart">
+                  <div class="trend">
+                    <span class="point" style="left:0%; bottom:72%"></span><span class="point" style="left:14%; bottom:66%"></span><span class="point" style="left:28%; bottom:61%"></span><span class="point" style="left:42%; bottom:48%"></span><span class="point" style="left:56%; bottom:43%"></span><span class="point" style="left:70%; bottom:54%"></span><span class="point" style="left:84%; bottom:50%"></span><span class="point" style="left:96%; bottom:39%"></span>
+                    <span class="line" style="left:0%; bottom:74%; width:15%; transform: rotate(8deg)"></span><span class="line" style="left:14%; bottom:68%; width:15%; transform: rotate(7deg)"></span><span class="line" style="left:28%; bottom:63%; width:15%; transform: rotate(17deg)"></span><span class="line" style="left:42%; bottom:50%; width:15%; transform: rotate(7deg)"></span><span class="line" style="left:56%; bottom:45%; width:15%; transform: rotate(-14deg)"></span><span class="line" style="left:70%; bottom:56%; width:15%; transform: rotate(6deg)"></span><span class="line" style="left:84%; bottom:52%; width:13%; transform: rotate(18deg)"></span>
+                  </div>
+                  <div class="axis"><span>13:00</span><span>13:20</span><span>13:40</span><span>14:00</span><span>14:20</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">MRB 待处置</div><span class="tag red">5 单</span></div>
+              <div class="panel-body cards">
+                <div class="mini-card"><div class="mini-top"><span>LOT260606-017 膜厚超下限</span><span class="tag red">Hold</span></div><div class="mini-meta">建议：追加 AOI 复检，检查 COATER_02 压力波动与 PI 胶批次。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>LOT260606-025 BOND 偏移</span><span class="tag amber">复判</span></div><div class="mini-meta">缺陷 MODULE_BOND_03，影响 6 Panel，等待工程处置。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>LOT260606-031 Mura 上升</span><span class="tag amber">分析</span></div><div class="mini-meta">同 Recipe V12 下 3 批次出现趋势，需确认参数窗口。</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid cols-2 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">缺陷 TopN</div><span class="tag red">按数量</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>缺陷代码</th><th>名称</th><th>工段</th><th>数量</th><th>处置</th></tr></thead>
+                  <tbody>
+                    <tr><td>CELL_MURA_02</td><td>Mura 云纹</td><td>Cell</td><td>32</td><td><span class="tag amber">分析</span></td></tr>
+                    <tr><td>ARRAY_OPEN_01</td><td>线路断路</td><td>Array</td><td>18</td><td><span class="tag red">Hold</span></td></tr>
+                    <tr><td>MODULE_BOND_03</td><td>绑定偏移</td><td>Module</td><td>14</td><td><span class="tag amber">复判</span></td></tr>
+                    <tr><td>CELL_DARK_01</td><td>暗点</td><td>Cell</td><td>11</td><td><span class="tag gray">记录</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">质量动作权限</div><span class="tag blue">角色控制</span></div>
+              <div class="panel-body">
+                <div class="matrix" style="grid-template-columns: repeat(2, minmax(0,1fr));">
+                  <div class="cell green"><strong>操作员</strong><span>录入检测、发起 Hold</span></div>
+                  <div class="cell blue"><strong>质量工程师</strong><span>复判、Release、Scrap 建议</span></div>
+                  <div class="cell amber"><strong>工艺工程师</strong><span>偏差放行、Recipe 窗口确认</span></div>
+                  <div class="cell red"><strong>主管审批</strong><span>报废、批量返工、偏差放行</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="material">
+          <div class="page-head">
+            <div>
+              <h1>物料与载具 / 批次消耗、FIFO 与 Carrier 管控</h1>
+              <p>物料、载具、Panel/SN 的关联是追溯根因分析的重要证据。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">投料</button>
+              <button class="btn">载具绑定</button>
+              <button class="btn primary">齐套检查</button>
+            </div>
+          </div>
+          <div class="grid cols-3">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">物料批次库存</div><span class="tag amber">FIFO</span></div>
+              <div class="panel-body cards">
+                <div class="mini-card"><div class="mini-top"><span>PI-ADH-240606-A</span><span class="tag amber">18%</span></div><div class="mini-meta">PI 胶 / COATING / 同批影响 6 Lot，其中 2 Lot 膜厚偏低。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>OLED-R-240605-B</span><span class="tag green">充足</span></div><div class="mini-meta">红光材料 / EVAP / 冷藏有效期剩余 18 天。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>FPC-65-240606-C</span><span class="tag green">序列追溯</span></div><div class="mini-meta">FPC / BOND / 每片 Panel 绑定 SN。</div></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">Carrier / Cassette</div><span class="tag teal">在用 31</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>载具</th><th>Lot</th><th>工序</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr><td>CST-0018</td><td>LOT260606-018</td><td>COATING</td><td><span class="tag green">绑定</span></td></tr>
+                    <tr><td>CST-0021</td><td>LOT260606-019</td><td>EVAP</td><td><span class="tag green">绑定</span></td></tr>
+                    <tr><td>CST-0033</td><td>-</td><td>-</td><td><span class="tag amber">待清洁</span></td></tr>
+                    <tr><td>CST-0042</td><td>LOT260606-017</td><td>HOLD</td><td><span class="tag red">锁定</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">投料校验</div><span class="tag green">规则通过</span></div>
+              <div class="panel-body">
+                <div class="matrix" style="grid-template-columns: 1fr;">
+                  <div class="cell green"><strong>批次有效期</strong><span>PI 胶未过期</span></div>
+                  <div class="cell amber"><strong>FIFO</strong><span>存在更早批次待确认</span></div>
+                  <div class="cell green"><strong>供应商质量</strong><span>来料检验 OK</span></div>
+                  <div class="cell green"><strong>Lot 绑定</strong><span>消耗将写入追溯</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel section-gap">
+            <div class="panel-head"><div class="panel-title">物料消耗履历</div><span class="tag blue">按 Lot 聚合</span></div>
+            <div class="panel-body">
+              <table>
+                <thead><tr><th>Lot</th><th>工序</th><th>物料批次</th><th>消耗</th><th>操作员</th><th>时间</th><th>追溯状态</th></tr></thead>
+                <tbody>
+                  <tr><td>LOT260606-017</td><td>COATING</td><td>PI-ADH-240606-A</td><td>42.8 g</td><td>op1007</td><td>13:42</td><td><span class="tag red">关联异常</span></td></tr>
+                  <tr><td>LOT260606-018</td><td>COATING</td><td>PI-ADH-240606-A</td><td>41.9 g</td><td>op1007</td><td>14:22</td><td><span class="tag green">正常</span></td></tr>
+                  <tr><td>LOT260606-019</td><td>EVAP</td><td>OLED-R-240605-B</td><td>8.2 g</td><td>op1011</td><td>14:08</td><td><span class="tag green">正常</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="trace">
+          <div class="page-head">
+            <div>
+              <h1>追溯分析 / Lot 与 SN 全链路证据</h1>
+              <p>正向追溯看一个 Lot 怎么生产，反向追溯看异常影响了哪些 Lot/SN。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">反向追溯</button>
+              <button class="btn">导出证据链</button>
+              <button class="btn primary">生成报告</button>
+            </div>
+          </div>
+          <div class="grid trace-grid">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">追溯对象</div><span class="tag blue">Lot</span></div>
+              <div class="panel-body detail">
+                <div class="field"><label>Lot / SN / 工单 / 物料批次</label><input class="input" value="LOT260606-017" /></div>
+                <button class="btn primary">查询追溯</button>
+                <div class="detail-row"><b>产品</b><span>AMOLED_65 柔性屏</span></div>
+                <div class="detail-row"><b>工单</b><span>MO20260606012</span></div>
+                <div class="detail-row"><b>路线</b><span>RTE_G6_V08</span></div>
+                <div class="detail-row"><b>物料</b><span>PI-ADH-240606-A</span></div>
+                <div class="detail-row"><b>设备</b><span>COATER_02</span></div>
+                <div class="detail-row"><b>状态</b><span class="tag red">HOLD</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">工艺履历时间线</div><span class="tag teal">正向追溯</span></div>
+              <div class="panel-body timeline">
+                <div class="event"><div class="event-dot green"></div><div class="event-card"><div class="event-main"><span>工单释放并生成 Lot</span><span>08:10</span></div><div class="event-meta">MO20260606012 / route=RTE_G6_V08 / creator=planner01</div></div></div>
+                <div class="event"><div class="event-dot green"></div><div class="event-card"><div class="event-main"><span>CLEAN Track In / Out</span><span>08:35-09:02</span></div><div class="event-meta">EQ=CLEAN_01 / result=OK / operator=op1007</div></div></div>
+                <div class="event"><div class="event-dot amber"></div><div class="event-card"><div class="event-main"><span>COATING Track In</span><span>09:18</span></div><div class="event-meta">EQ=COATER_02 / Recipe=RCP_COAT_65_V12 / 物料 PI-ADH-240606-A</div></div></div>
+                <div class="event"><div class="event-dot red"></div><div class="event-card"><div class="event-main"><span>Track Out NG 并自动 Hold</span><span>10:06</span></div><div class="event-meta">膜厚 1.72 μm，规格 1.8-2.2 μm；缺陷 CELL_MURA_02；质量待复判</div></div></div>
+                <div class="event"><div class="event-dot purple"></div><div class="event-card"><div class="event-main"><span>MRB 处置中</span><span>当前</span></div><div class="event-meta">质量工程师复判 → 工艺工程师确认 → Release / Rework / Scrap</div></div></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">关联证据</div><span class="tag purple">根因排查</span></div>
+              <div class="panel-body cards">
+                <div class="mini-card"><div class="mini-top"><span>Recipe 快照</span><span class="tag blue">已锁定</span></div><div class="mini-meta">RCP_COAT_65_V12 / 温度 150.2℃ / 压力 0.82kPa / 速度 302mm/s</div></div>
+                <div class="mini-card"><div class="mini-top"><span>设备事件</span><span class="tag amber">相关</span></div><div class="mini-meta">COATER_02 在 09:40 出现压力波动告警，持续 4 分 12 秒。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>物料批次</span><span class="tag amber">待排除</span></div><div class="mini-meta">PI-ADH-240606-A 同批影响 6 Lot，其中 2 Lot 出现膜厚偏低。</div></div>
+                <div class="mini-card"><div class="mini-top"><span>影响范围</span><span class="tag red">8 SN</span></div><div class="mini-meta">反向追溯发现 8 个 Panel 需要隔离复检。</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="ai">
+          <div class="page-head">
+            <div>
+              <h1>报表与 AI / 良率日报、异常分析与 RAG SOP</h1>
+              <p>AI 定位为业务辅助：基于 MES 数据和 SOP 检索生成结构化分析，不自动执行生产动作。</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">选择日期</button>
+              <button class="btn">知识库</button>
+              <button class="btn primary">生成 AI 报告</button>
+            </div>
+          </div>
+          <div class="grid cols-2">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">良率与缺陷分析</div><span class="tag green">FPY 96.82%</span></div>
+              <div class="panel-body split">
+                <div class="bar-chart">
+                  <div class="bar-col green" data-label="CLEAN" style="height:72%"></div>
+                  <div class="bar-col amber" data-label="COAT" style="height:58%"></div>
+                  <div class="bar-col green" data-label="EXPOS" style="height:68%"></div>
+                  <div class="bar-col green" data-label="ETCH" style="height:64%"></div>
+                  <div class="bar-col red" data-label="EVAP" style="height:42%"></div>
+                  <div class="bar-col green" data-label="AOI" style="height:75%"></div>
+                  <div class="bar-col amber" data-label="BOND" style="height:54%"></div>
+                  <div class="bar-col green" data-label="AGING" style="height:70%"></div>
+                </div>
+                <div class="cards">
+                  <div class="mini-card"><div class="mini-top"><span>最大不良来源</span><span class="tag red">Mura 32</span></div><div class="mini-meta">集中在 Cell 段 AOI 后检出。</div></div>
+                  <div class="mini-card"><div class="mini-top"><span>疑似工序</span><span class="tag amber">COATING</span></div><div class="mini-meta">膜厚偏低与压力波动存在时间相关性。</div></div>
+                  <div class="mini-card"><div class="mini-top"><span>影响设备</span><span class="tag amber">COATER_02</span></div><div class="mini-meta">最近 24 小时压力波动 6 次。</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">AI 良率日报</div><span class="tag purple">结构化输出</span></div>
+              <div class="panel-body cards">
+                <div class="ai-box"><h3>摘要</h3><p>今日 G6-FLEX-LINE-01 良率低于目标 0.18 个百分点，主要波动集中在 COATING 后 AOI 检测阶段。</p></div>
+                <div class="ai-box"><h3>疑似根因</h3><p>COATER_02 压力波动与膜厚偏低事件时间重叠；PI-ADH-240606-A 同批次也出现 2 个 Lot 偏低。</p></div>
+                <div class="ai-box"><h3>建议</h3><p>暂停 COATER_02 高优先级 Lot 进站，执行压力传感器点检；对 PI 胶批次追加抽检。</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid cols-2 section-gap">
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">RAG SOP 问答</div><span class="tag purple">返回引用</span></div>
+              <div class="panel-body">
+                <div class="field"><label>问题</label><input class="input" value="COATER_02 压力波动导致膜厚偏低时应该怎么排查？" /></div>
+                <div class="cards" style="margin-top:10px;">
+                  <div class="ai-box"><h3>回答</h3><p>优先检查压力传感器零点、供胶阀门响应、腔体密封与近期 PM 记录；若连续 2 批 Lot 膜厚偏低，应暂停进站并触发工程复核。</p></div>
+                  <div class="mini-card"><div class="mini-top"><span>引用来源</span><span class="tag blue">SOP-COAT-017</span></div><div class="mini-meta">章节：涂胶压力波动排查 / 片段 3、片段 5。</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><div class="panel-title">AI 报告留痕</div><span class="tag blue">审计</span></div>
+              <div class="panel-body">
+                <table>
+                  <thead><tr><th>报告</th><th>范围</th><th>生成者</th><th>状态</th><th>时间</th></tr></thead>
+                  <tbody>
+                    <tr><td>YIELD-20260606-D</td><td>G6-FLEX-LINE-01</td><td>qa_lead</td><td><span class="tag green">已确认</span></td><td>14:30</td></tr>
+                    <tr><td>EQ-COATER02-ANL</td><td>COATER_02</td><td>eq_eng</td><td><span class="tag amber">待确认</span></td><td>14:12</td></tr>
+                    <tr><td>RAG-SOP-ASK-889</td><td>SOP问答</td><td>op1007</td><td><span class="tag blue">已引用</span></td><td>13:58</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="system">
+          <div class="page-head">
+            <div>
+              <h1>系统管理 / 权限、审计、菜单与告警规则</h1>
+              <p>此页用于说明商用系统边界，正式开发时可接入成熟认证、权限、审计与数据权限基座。</p>
+            </div>
+          </div>
+          <div class="grid cols-4">
+            <div class="panel kpi"><div class="kpi-label"><span>角色</span><span class="tag blue">RBAC</span></div><div class="kpi-value">6</div><div class="kpi-meta"><span>操作员/工程师/主管</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>权限点</span><span class="tag green">已配置</span></div><div class="kpi-value">86</div><div class="kpi-meta"><span>按钮/接口/菜单</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>审计日志</span><span class="tag amber">今日</span></div><div class="kpi-value">1,284</div><div class="kpi-meta"><span>关键动作 48</span></div></div>
+            <div class="panel kpi"><div class="kpi-label"><span>告警规则</span><span class="tag red">启用</span></div><div class="kpi-value">32</div><div class="kpi-meta"><span>P1 6 / P2 18</span></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const labels = {
+      overview: '生产总览',
+      order: '计划与工单',
+      master: '工艺主数据',
+      execution: '生产执行',
+      equipment: '设备与自动化',
+      quality: '质量管理',
+      material: '物料与载具',
+      trace: '追溯分析',
+      ai: '报表与AI',
+      system: '系统管理'
+    };
+
+    function showPage(page) {
+      if (!labels[page]) page = 'overview';
+      document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === page));
+      document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+      document.querySelectorAll('.side-link').forEach(el => el.classList.toggle('active', el.dataset.page === page && el.textContent.includes(labels[page].split('与')[0])));
+      location.hash = page;
+    }
+
+    document.querySelectorAll('[data-page]').forEach(el => {
+      el.addEventListener('click', () => showPage(el.dataset.page));
+    });
+
+    const initial = location.hash.replace('#', '');
+    showPage(initial || 'overview');
+  </script>
+</body>
+</html>
