@@ -10,6 +10,8 @@ import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.lot.mapper.LotStepRecordMapper;
+import com.visionox.mes.masterdata.entity.WorkShift;
+import com.visionox.mes.masterdata.mapper.WorkShiftMapper;
 import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.quality.service.QualityService;
 import com.visionox.mes.recipe.entity.Recipe;
@@ -23,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +62,9 @@ class TrackInServiceTest {
 
     @Mock
     private MaterialService materialService;
+
+    @Mock
+    private WorkShiftMapper workShiftMapper;
 
     @InjectMocks
     private TrackInService trackInService;
@@ -118,6 +124,7 @@ class TrackInServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
         when(equipmentMapper.selectOne(any())).thenReturn(equipment("COATER_01", "IDLE", "[\"COATING\"]"));
         when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe("RCP_COAT_01"));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
 
         trackInService.trackIn(trackInRequest());
 
@@ -139,6 +146,24 @@ class TrackInServiceTest {
         assertThat(record.getOperator()).isEqualTo("op1001");
         assertThat(record.getTrackInTime()).isNotNull();
         verify(materialService).lockForTrackIn(eq(lot), eq("COATING"), eq("COATER_01"), eq("op1001"));
+    }
+
+    @Test
+    void trackInShouldRejectWhenNoActiveShiftWindowMatches() {
+        Lot lot = lot("LOT001", "READY", 0);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(equipmentMapper.selectOne(any())).thenReturn(equipment("COATER_01", "IDLE", "[\"COATING\"]"));
+        when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe("RCP_COAT_01"));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(shift("SHIFT_SHORT", "LINE_01",
+                LocalTime.now().minusHours(2), LocalTime.now().minusHours(1), 0)));
+
+        assertThatThrownBy(() -> trackInService.trackIn(trackInRequest()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("班次校验失败");
+
+        verify(materialService, never()).validateReadiness(any(), any());
+        verify(lotMapper, never()).updateById(any());
+        verify(stepRecordMapper, never()).insert(any());
     }
 
     @Test
@@ -250,6 +275,7 @@ class TrackInServiceTest {
         lot.setLotNo(lotNo);
         lot.setOrderNo("MO001");
         lot.setProductCode("OLED_PANEL");
+        lot.setLineCode("LINE_01");
         lot.setCurrentStepCode("COATING");
         lot.setStatus(status);
         lot.setHoldFlag(holdFlag);
@@ -268,5 +294,20 @@ class TrackInServiceTest {
         Recipe recipe = new Recipe();
         recipe.setRecipeCode(recipeCode);
         return recipe;
+    }
+
+    private WorkShift activeShift() {
+        return shift("SHIFT_ALL_DAY", "LINE_01", LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, 0);
+    }
+
+    private WorkShift shift(String shiftCode, String lineCode, LocalTime startTime, LocalTime endTime, int crossDay) {
+        WorkShift shift = new WorkShift();
+        shift.setShiftCode(shiftCode);
+        shift.setLineCode(lineCode);
+        shift.setStartTime(startTime);
+        shift.setEndTime(endTime);
+        shift.setCrossDay(crossDay);
+        shift.setStatus("ACTIVE");
+        return shift;
     }
 }

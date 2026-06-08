@@ -20,6 +20,8 @@ import com.visionox.mes.lot.mapper.LotStepRecordMapper;
 import com.visionox.mes.lot.mapper.ProcessStepMapper;
 import com.visionox.mes.lot.service.HoldService;
 import com.visionox.mes.lot.service.TrackInService;
+import com.visionox.mes.masterdata.entity.WorkShift;
+import com.visionox.mes.masterdata.mapper.WorkShiftMapper;
 import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.order.entity.ProductionOrder;
 import com.visionox.mes.order.mapper.ProductionOrderMapper;
@@ -50,6 +52,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +126,8 @@ class PilotMesFlowIntegrationTest {
     private EquipmentService equipmentService;
     @Mock
     private EapGatewayService eapGatewayService;
+    @Mock
+    private WorkShiftMapper workShiftMapper;
 
     private PilotMesService pilotMesService;
     private final AtomicReference<Lot> lotRef = new AtomicReference<>();
@@ -158,7 +163,8 @@ class PilotMesFlowIntegrationTest {
                 recipeService,
                 routeService,
                 qualityService,
-                materialService
+                materialService,
+                workShiftMapper
         );
         HoldService holdService = new HoldService(lotMapper, holdRecordMapper);
         pilotMesService = new PilotMesService(
@@ -349,6 +355,7 @@ class PilotMesFlowIntegrationTest {
         when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe);
         when(recipeMapper.selectOne(any())).thenReturn(recipe);
         when(recipeParamMapper.selectList(any())).thenReturn(List.of(thicknessParam));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
         when(routeService.activeRouteSummaries()).thenReturn(List.of(Map.of(
                 "routeCode", "RTE-OLED-PILOT",
                 "productCode", "OLED_PANEL",
@@ -399,5 +406,16 @@ class PilotMesFlowIntegrationTest {
         param.setIsKeyParam(1);
         param.setDisplayOrder(1);
         return param;
+    }
+
+    private WorkShift activeShift() {
+        WorkShift shift = new WorkShift();
+        shift.setShiftCode("SHIFT_ALL_DAY");
+        shift.setLineCode("LINE_01");
+        shift.setStartTime(LocalTime.MIDNIGHT);
+        shift.setEndTime(LocalTime.MIDNIGHT);
+        shift.setCrossDay(0);
+        shift.setStatus("ACTIVE");
+        return shift;
     }
 }

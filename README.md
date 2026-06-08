@@ -4,7 +4,7 @@ SmartDisplay MES 是面向显示行业通用制造执行场景的生产级试点
 
 ## 试点闭环
 
-工单创建 -> 工单释放并生成 Lot -> Track In 校验 Route/设备/Recipe/Hold/物料 -> Track Out 记录参数 -> 质量判定 -> NG/参数超限自动 Hold -> Release/Rework/Scrap -> Lot/SN 追溯 -> 良率/异常看板 -> AI 辅助报告。
+工单创建 -> 工单释放并生成 Lot -> Track In 校验 Route/设备/Recipe/Hold/班次/物料 -> Track Out 记录参数 -> 质量判定 -> NG/参数超限自动 Hold -> Release/Rework/Scrap -> Lot/SN 追溯 -> 良率/异常看板 -> AI 辅助报告。
 
 物料域已扩展到 WMS 库位任务、来料 IQC/COA、供应商绩效评分、供应商月度评分趋势、供应商准入评估、供应商准入周期复审任务和 8D 整改闭环；IQC NG/HOLD 会自动生成供应商 8D 并触发准入风险降级。
 

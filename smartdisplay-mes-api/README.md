@@ -198,7 +198,7 @@ smartdisplay-mes-api/
 
 ### 生产级试点主干 ✅
 - [x] Lot实体设计
-- [x] Track In校验逻辑（Lot状态、设备状态、设备能力、Recipe、Hold）
+- [x] Track In校验逻辑（Lot状态、Route防跳站、设备状态、设备能力、Recipe、Hold、班次、物料齐套）
 - [x] Track Out记录与NG自动Hold
 - [x] Hold/Release机制
 - [x] `/api/v1` 工单、Lot、执行、追溯、看板、AI试点接口

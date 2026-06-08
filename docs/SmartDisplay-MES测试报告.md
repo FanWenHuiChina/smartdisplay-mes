@@ -18,7 +18,7 @@
 
 | 验证项 | 命令 | 结果 | 说明 |
 | --- | --- | --- | --- |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 190, Failures: 0, Errors: 0, Skipped: 0` |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 191, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.31 AI定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKnowledgeServiceTest,AiModelConfigServiceTest,AiRecordServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 20, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.32 AI留痕查询回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiRecordServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.33 知识库索引任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKbIndexServiceTest,AiKnowledgeServiceTest,RolePermissionServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 31, Failures: 0, Errors: 0, Skipped: 0` |
@@ -58,7 +58,7 @@
 - 核心执行审计差异快照：工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 写入 `before/after/changedFields/request` 结构化快照。
 - Route 生效工序、防跳站和 Route 驱动 Lot 推进。
 - Recipe 唯一性、创建、发布、停用和生效 Recipe 查询。
-- Track In 状态、Route、设备、Recipe、Hold、物料齐套校验。
+- Track In 状态、Route、设备、Recipe、Hold、班次和物料齐套校验。
 - Track Out 过站记录、质量判定、物料消耗。
 - WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务和物料写接口权限。
 - 来料 IQC 判定、COA/检验附件元数据留痕、批次质量状态联动、IQC 写接口权限和失败审计映射。
@@ -202,7 +202,7 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 验收项 | 命令 | 结果 |
 | --- | --- | --- |
 | 后端定向测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 38 通过，0 失败 |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 190 通过，0 失败 |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 191 通过，0 失败 |
 | 前端契约 | `npm.cmd run verify:frontend-contract` | 302 项检查通过 |
 | 前端构建 | `npm.cmd run build` | 通过，仅第三方 pure annotation 和 chunk size warning |
 | 生产包扫描 | `npm.cmd run verify:production-bundle` | 14 个 JS 产物通过 |

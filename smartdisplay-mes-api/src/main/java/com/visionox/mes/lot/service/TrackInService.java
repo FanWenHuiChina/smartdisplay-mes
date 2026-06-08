@@ -8,6 +8,8 @@ import com.visionox.mes.common.BusinessException;
 import com.visionox.mes.lot.dto.*;
 import com.visionox.mes.lot.entity.*;
 import com.visionox.mes.lot.mapper.*;
+import com.visionox.mes.masterdata.entity.WorkShift;
+import com.visionox.mes.masterdata.mapper.WorkShiftMapper;
 import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.quality.service.QualityService;
@@ -19,19 +21,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
  * Track In/Out服务
  *
  * 核心业务逻辑：
- * Track In 6层校验（参考显示行业通用 MES 执行控制模型）：
+ * Track In 8层校验（参考显示行业通用 MES 执行控制模型）：
  * 1. Lot状态校验 - 必须是READY状态
  * 2. Route防跳站校验 - 请求工序必须等于Lot当前待执行工序，且在产品生效Route中
  * 3. 设备状态校验 - 必须是IDLE或RUNNING
  * 4. 设备能力校验 - 设备必须支持该工序
  * 5. Recipe校验 - 必须存在有效的Recipe
  * 6. Hold状态校验 - Hold的Lot不能进站
+ * 7. 班次校验 - 当前时间必须落入Lot产线的ACTIVE班次
+ * 8. 物料齐套校验 - 关键物料必须齐套后才能进站
  */
 @Slf4j
 @Service
@@ -46,6 +51,7 @@ public class TrackInService {
     private final RouteService routeService;
     private final QualityService qualityService;
     private final MaterialService materialService;
+    private final WorkShiftMapper workShiftMapper;
 
     /**
      * Lot分页查询
@@ -142,7 +148,10 @@ public class TrackInService {
             }
         }
 
-        // ====== 第7层：关键物料齐套校验 ======
+        // ====== 第7层：班次校验 ======
+        validateActiveShift(lot);
+
+        // ====== 第8层：关键物料齐套校验 ======
         materialService.validateReadiness(lot, request.getStepCode());
 
         // ====== 校验通过，执行Track In ======
@@ -241,5 +250,39 @@ public class TrackInService {
                     equipment.getEquipmentCode(), capabilitySteps, e);
             return false;
         }
+    }
+
+    private void validateActiveShift(Lot lot) {
+        String lineCode = lot.getLineCode();
+        if (lineCode == null || lineCode.isBlank()) {
+            throw new BusinessException("Track In班次校验失败: Lot未绑定产线 " + lot.getLotNo());
+        }
+        List<WorkShift> shifts = workShiftMapper.selectList(new LambdaQueryWrapper<WorkShift>()
+                .eq(WorkShift::getLineCode, lineCode)
+                .eq(WorkShift::getStatus, "ACTIVE"));
+        if (shifts == null || shifts.isEmpty()) {
+            throw new BusinessException("Track In班次校验失败: 产线无ACTIVE班次 " + lineCode);
+        }
+        LocalTime now = LocalTime.now();
+        boolean matched = shifts.stream().anyMatch(shift -> isWithinShift(now, shift));
+        if (!matched) {
+            throw new BusinessException("Track In班次校验失败: 当前时间不在产线ACTIVE班次窗口 " + lineCode);
+        }
+    }
+
+    private boolean isWithinShift(LocalTime now, WorkShift shift) {
+        LocalTime start = shift.getStartTime();
+        LocalTime end = shift.getEndTime();
+        if (start == null || end == null) {
+            return false;
+        }
+        if (start.equals(end)) {
+            return true;
+        }
+        boolean crossDay = Integer.valueOf(1).equals(shift.getCrossDay()) || start.isAfter(end);
+        if (crossDay) {
+            return !now.isBefore(start) || now.isBefore(end);
+        }
+        return !now.isBefore(start) && now.isBefore(end);
     }
 }
