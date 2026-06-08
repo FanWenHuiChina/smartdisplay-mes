@@ -647,3 +647,10 @@
 - 系统页 KPI 中的启用用户、权限点、敏感权限数量和待审权限变更不再使用固定样例数字，改为基于系统摘要、用户接口和权限变更单实时派生；开发 fallback 仅在 `__DEV_MOCK_FALLBACK__` 下保留。
 - 告警与审批规则列表改为优先读取系统摘要中的 `rules`，规则复核数量由接口数据计算。
 - 前端契约脚本新增系统页 `getSystemSummary` 和摘要驱动角色矩阵检查；已运行 `npm.cmd run verify:frontend-contract` 通过 312 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。
+
+# 2026-06-08 增量：总览导航徽标接口驱动
+
+- `MainLayout` 左侧生产总览导航的产线总控、WIP 分布、异常队列和瓶颈分析徽标改为读取 `GET /api/v1/dashboard/overview`，由 `metrics`、`alerts` 和 `routeSteps` 实时派生，不再在生产环境硬编码样例数字。
+- 顶部“消息”入口同步使用总览异常数量，并将“消息 / 审计 / 新建异常”改为可点击导航入口，减少静态占位按钮。
+- 已删除未被路由使用的旧 `views/dashboard/index.vue` 静态看板页，避免保留另一套 Lot 统计、设备状态和良率曲线样例数据。
+- 前端契约脚本新增布局总览徽标接口驱动、禁止静态看板徽标和旧 Dashboard 页删除检查；已运行 `npm.cmd run verify:frontend-contract` 通过 315 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 12 个 JS 产物扫描。

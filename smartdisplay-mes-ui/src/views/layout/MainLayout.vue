@@ -13,13 +13,13 @@
         <span class="context-chip">基地：广州模组线</span>
         <span class="context-chip">产线：G6-FLEX-LINE-01</span>
         <span class="context-chip">班次：白班 08:00-20:00</span>
-        <span class="context-chip">刷新：14:32:18</span>
+        <span class="context-chip">刷新：{{ refreshText }}</span>
       </div>
 
       <div class="mes-userbar">
-        <button class="mes-btn">消息 12</button>
-        <button v-if="canMenu('system')" class="mes-btn">审计</button>
-        <button v-if="canButton('quality:mrb-review')" class="mes-btn primary">新建异常</button>
+        <button class="mes-btn" @click="goTo('/overview')">{{ alertButtonText }}</button>
+        <button v-if="canMenu('system')" class="mes-btn" @click="goTo('/system')">审计</button>
+        <button v-if="canButton('quality:mrb-review')" class="mes-btn primary" @click="goTo('/quality')">新建异常</button>
         <button class="mes-btn" @click="handleLogout">退出</button>
       </div>
     </header>
@@ -61,10 +61,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getOverview } from '@/api/pilot'
 import { hasButton, hasMenu } from '@/utils/permissions'
+import { warnDevFallback } from '@/utils/devFallback'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,10 +88,10 @@ const sideGroups = [
   {
     title: '生产总览',
     items: [
-      { title: '产线总控', path: '/overview', menu: 'dashboard', badge: '96', badgeType: 'green' },
-      { title: 'WIP 分布', path: '/overview', menu: 'dashboard', badge: '128' },
-      { title: '异常队列', path: '/overview', menu: 'dashboard', badge: '7', badgeType: 'red' },
-      { title: '瓶颈分析', path: '/overview', menu: 'dashboard', badge: '2', badgeType: 'amber' }
+      { title: '产线总控', path: '/overview', menu: 'dashboard', badgeKey: 'lineControl', badgeType: 'green' },
+      { title: 'WIP 分布', path: '/overview', menu: 'dashboard', badgeKey: 'wip' },
+      { title: '异常队列', path: '/overview', menu: 'dashboard', badgeKey: 'alerts', badgeType: 'red' },
+      { title: '瓶颈分析', path: '/overview', menu: 'dashboard', badgeKey: 'bottleneck', badgeType: 'amber' }
     ]
   },
   {
@@ -130,11 +132,47 @@ const sideGroups = [
   }
 ]
 
+const dashboardSummary = ref(null)
+const lastRefreshAt = ref(new Date())
+const fallbackDashboardBadges = {
+  lineControl: '96.82%',
+  wip: '128',
+  alerts: '7',
+  bottleneck: '2'
+}
+
+const dashboardBadges = computed(() => {
+  const summary = dashboardSummary.value
+  if (!summary) {
+    return __DEV_MOCK_FALLBACK__ ? fallbackDashboardBadges : {}
+  }
+
+  const metrics = Array.isArray(summary.metrics) ? summary.metrics : []
+  const alerts = Array.isArray(summary.alerts) ? summary.alerts : []
+  const routeSteps = Array.isArray(summary.routeSteps) ? summary.routeSteps : []
+  const bottleneckCount = routeSteps.filter(step => ['BOTTLENECK', 'ALARM'].includes(String(step.status || '').toUpperCase())).length
+
+  return {
+    lineControl: metricValue(metrics, '综合良率') || metricValue(metrics, '设备 OEE'),
+    wip: metricValue(metrics, '今日投入 Lot'),
+    alerts: alerts.length ? String(alerts.length) : metricValue(metrics, 'Hold 待处置'),
+    bottleneck: bottleneckCount ? String(bottleneckCount) : ''
+  }
+})
+
+const refreshText = computed(() => lastRefreshAt.value.toLocaleTimeString('zh-CN', { hour12: false }))
+const alertButtonText = computed(() => {
+  const count = dashboardBadges.value.alerts
+  return count ? `消息 ${count}` : '消息'
+})
+
 const visibleTopModules = computed(() => topModules.filter(item => hasMenu(item.menu)))
 const visibleSideGroups = computed(() => sideGroups
   .map(group => ({
     ...group,
-    items: group.items.filter(item => hasMenu(item.menu))
+    items: group.items
+      .filter(item => hasMenu(item.menu))
+      .map(applyNavigationBadge)
   }))
   .filter(group => group.items.length > 0))
 
@@ -144,6 +182,35 @@ const isTopActive = (item) => item.match.some((path) => route.path.startsWith(pa
 const isSideActive = (group, item) => {
   const firstMatchedItem = group.items.find(candidate => candidate.path === route.path)
   return firstMatchedItem?.title === item.title
+}
+
+function applyNavigationBadge(item) {
+  if (!item.badgeKey) return item
+  const badge = dashboardBadges.value[item.badgeKey]
+  return {
+    ...item,
+    badge,
+    badgeType: item.badgeType
+  }
+}
+
+function metricValue(metrics, label) {
+  const metric = metrics.find(item => item.label === label)
+  return metric?.value ? String(metric.value) : ''
+}
+
+async function loadNavigationSummary() {
+  try {
+    dashboardSummary.value = await getOverview()
+    lastRefreshAt.value = new Date()
+  } catch (error) {
+    warnDevFallback('导航总览接口不可用', error)
+    dashboardSummary.value = null
+  }
+}
+
+const goTo = (path) => {
+  router.push(path)
 }
 
 const handleLogout = () => {
@@ -161,6 +228,10 @@ const handleLogout = () => {
     router.push('/login')
   }).catch(() => {})
 }
+
+onMounted(() => {
+  loadNavigationSummary()
+})
 </script>
 
 <style scoped>

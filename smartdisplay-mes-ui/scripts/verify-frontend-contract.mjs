@@ -278,6 +278,11 @@ const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
 
+const layoutView = read('src/views/layout/MainLayout.vue')
+check('layout:dashboard-badges-api-driven', hasAll(layoutView, ['getOverview', 'dashboardBadges', 'badgeKey', 'loadNavigationSummary']), 'Layout dashboard badges must be driven by /dashboard/overview')
+check('layout:no-static-dashboard-badges', !["badge: '96'", "badge: '128'", "badge: '7'", "badge: '2'"].some(token => layoutView.includes(token)), 'Layout must not hard-code dashboard KPI badges')
+check('layout:legacy-dashboard-page-removed', !existsSync(join(projectRoot, 'src/views/dashboard/index.vue')), 'Unused legacy dashboard page must not keep static Lot/OEE mock data')
+
 const systemView = read('src/views/system/index.vue')
 check('page:views/system/index.vue:summary-driven-roles', hasAll(systemView, ['getSystemSummary', 'systemSummary', 'permissionSnapshots', 'mapRolePermission']), 'System role matrix must be driven by /system/summary permissions')
 check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
