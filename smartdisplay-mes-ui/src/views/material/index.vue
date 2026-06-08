@@ -33,6 +33,26 @@
               <span>版本 {{ item.version }}</span>
             </div>
           </div>
+          <div class="adapter-strip">
+            <div class="adapter-status">
+              <span class="status-tag" :class="wmsAdapterResultType">{{ wmsAdapterResultText }}</span>
+              <span>通过模拟 WMS Adapter 进入 MES，成功与失败都会写审计。</span>
+            </div>
+            <div class="adapter-actions">
+              <button
+                v-if="canWmsAction"
+                class="mes-btn"
+                :disabled="wmsAdapterSubmitting !== ''"
+                @click="checkWmsReadinessByAdapter"
+              >Adapter 齐套</button>
+              <button
+                v-if="canWmsAction"
+                class="mes-btn"
+                :disabled="wmsAdapterSubmitting !== ''"
+                @click="submitWmsAdapterTransaction"
+              >Adapter 事务</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -725,6 +745,7 @@ import { ElMessage } from 'element-plus'
 import {
   assignMaterialLocationTask,
   cancelMaterialLocationTask,
+  checkWmsMaterialReadiness,
   completeMaterialLocationTask,
   countMaterialInventory,
   createMaterialIncomingInspection,
@@ -747,6 +768,7 @@ import {
   getMaterialSuppliers,
   getSupplierCorrectiveActions,
   getSupplierQualificationReviews,
+  ingestWmsInventoryTransaction,
   receiveMaterial,
   returnMaterial,
   unfreezeMaterial
@@ -910,6 +932,8 @@ const locationTaskRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackLocationTasks.map(m
 const readiness = ref(__DEV_MOCK_FALLBACK__ ? 'PASS_WITH_WARNING' : 'NO_DATA')
 const loading = ref(false)
 const wmsSubmitting = ref(false)
+const wmsAdapterSubmitting = ref('')
+const wmsAdapterResult = ref(null)
 const locationTaskSubmitting = ref(false)
 const iqcSubmitting = ref(false)
 const supplierSubmitting = ref(false)
@@ -978,6 +1002,20 @@ const readinessType = computed(() => {
 })
 const currentActionLabel = computed(() => wmsActions.find(item => item.value === wmsForm.action)?.label || '操作')
 const currentLocationTaskLabel = computed(() => locationTaskTypes.find(item => item.value === locationTaskForm.taskType)?.label || '任务')
+const wmsAdapterResultType = computed(() => {
+  const result = wmsAdapterResult.value
+  if (!result) return 'blue'
+  if (result.result === 'ACCEPTED' || result.readiness === 'PASS') return 'green'
+  if (result.readiness === 'PASS_WITH_WARNING') return 'amber'
+  return 'red'
+})
+const wmsAdapterResultText = computed(() => {
+  const result = wmsAdapterResult.value
+  if (!result) return 'Adapter 待调用'
+  if (result.messageType === 'MATERIAL_READINESS') return `齐套 ${result.readiness || '-'}`
+  if (result.messageType === 'INVENTORY_TRANSACTION') return `${result.transactionType || '-'} ${result.result || '-'}`
+  return result.messageType || 'Adapter 已返回'
+})
 const selectedBatch = computed(() => rawBatches.value.find(item => item.batchNo === wmsForm.batchNo))
 const selectedTaskBatch = computed(() => rawBatches.value.find(item => item.batchNo === locationTaskForm.batchNo))
 const selectedIqcBatch = computed(() => rawBatches.value.find(item => item.batchNo === iqcForm.batchNo))
@@ -1378,6 +1416,82 @@ function commonPayload() {
   }
 }
 
+function wmsAdapterPayload() {
+  const payload = {
+    ...commonPayload(),
+    transactionType: wmsForm.action,
+    action: wmsForm.action,
+    batchNo: wmsForm.batchNo || undefined,
+    sourceSystem: 'wms-adapter',
+    adapterCode: 'simulated-wms-adapter'
+  }
+  if (wmsForm.action === 'RECEIVE') {
+    if (!wmsForm.materialCode) throw new Error('物料编码不能为空')
+    return {
+      ...payload,
+      materialCode: wmsForm.materialCode,
+      materialName: wmsForm.materialName || wmsForm.materialCode,
+      qty: numberValue(wmsForm.qty, '数量'),
+      unit: wmsForm.unit || 'EA',
+      location: wmsForm.location || undefined,
+      qualityStatus: 'PASS'
+    }
+  }
+  if (!wmsForm.batchNo) throw new Error('目标批次不能为空')
+  if (wmsForm.action === 'COUNT') {
+    return {
+      ...payload,
+      countedAvailableQty: numberValue(wmsForm.countedAvailableQty, '盘点可用量', true)
+    }
+  }
+  return {
+    ...payload,
+    qty: numberValue(wmsForm.qty, '数量')
+  }
+}
+
+async function checkWmsReadinessByAdapter() {
+  if (!canWmsAction.value) {
+    ElMessage.warning('当前角色无权调用 WMS Adapter')
+    return
+  }
+  try {
+    wmsAdapterSubmitting.value = 'readiness'
+    const result = await checkWmsMaterialReadiness({
+      lineCode: 'LINE_01',
+      operator: wmsForm.operator || localStorage.getItem('username') || 'admin'
+    })
+    wmsAdapterResult.value = result
+    readiness.value = result?.readiness || readiness.value
+    if (Array.isArray(result?.checks) && result.checks.length) {
+      checks.value = result.checks
+    }
+    ElMessage.success(`WMS Adapter 齐套返回：${result?.readiness || '-'}`)
+  } catch (error) {
+    ElMessage.warning(error?.message || 'WMS Adapter 齐套查询失败')
+  } finally {
+    wmsAdapterSubmitting.value = ''
+  }
+}
+
+async function submitWmsAdapterTransaction() {
+  if (!canWmsAction.value) {
+    ElMessage.warning('当前角色无权调用 WMS Adapter')
+    return
+  }
+  try {
+    wmsAdapterSubmitting.value = 'transaction'
+    const result = await ingestWmsInventoryTransaction(wmsAdapterPayload())
+    wmsAdapterResult.value = result
+    ElMessage.success(`WMS Adapter 事务已接收：${result?.transactionType || wmsForm.action}`)
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || 'WMS Adapter 库存事务失败')
+  } finally {
+    wmsAdapterSubmitting.value = ''
+  }
+}
+
 async function submitWmsAction() {
   if (!canWmsAction.value) {
     ElMessage.warning('当前角色无权执行 WMS 库存事务')
@@ -1772,6 +1886,39 @@ onMounted(loadMaterialData)
   font-size: 12px;
 }
 
+.adapter-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper-muted);
+}
+
+.adapter-status {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--mes-sub);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.adapter-status .status-tag {
+  width: fit-content;
+}
+
+.adapter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .wms-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2098,6 +2245,15 @@ onMounted(loadMaterialData)
   .wms-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .adapter-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .adapter-actions {
+    justify-content: flex-start;
   }
 
   .supplier-action-form {

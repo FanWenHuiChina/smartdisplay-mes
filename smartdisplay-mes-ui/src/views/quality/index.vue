@@ -24,6 +24,86 @@
       </div>
     </div>
 
+    <div class="mes-card section-gap">
+      <div class="mes-card__head">
+        <div class="mes-card__title">QMS 模拟检验上报</div>
+        <span class="status-tag" :class="qmsResultType">{{ qmsResultText }}</span>
+      </div>
+      <div class="mes-card__body">
+        <div class="qms-form">
+          <div class="mes-field">
+            <label>Lot</label>
+            <input v-model="qmsForm.lotNo" class="mes-input" placeholder="请输入 Lot" />
+          </div>
+          <div class="mes-field">
+            <label>检验结果</label>
+            <select v-model="qmsForm.result" class="mes-select">
+              <option value="OK">OK</option>
+              <option value="NG">NG</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>检验项</label>
+            <input v-model="qmsForm.itemCode" class="mes-input" />
+          </div>
+          <div class="mes-field">
+            <label>检验名称</label>
+            <input v-model="qmsForm.itemName" class="mes-input" />
+          </div>
+          <div class="mes-field">
+            <label>测量值</label>
+            <input v-model="qmsForm.measuredValue" class="mes-input" inputmode="decimal" />
+          </div>
+          <div class="mes-field">
+            <label>下限</label>
+            <input v-model="qmsForm.lowerLimit" class="mes-input" inputmode="decimal" />
+          </div>
+          <div class="mes-field">
+            <label>上限</label>
+            <input v-model="qmsForm.upperLimit" class="mes-input" inputmode="decimal" />
+          </div>
+          <div class="mes-field">
+            <label>单位</label>
+            <input v-model="qmsForm.unit" class="mes-input" />
+          </div>
+          <div class="mes-field">
+            <label>工序</label>
+            <input v-model="qmsForm.stepCode" class="mes-input" />
+          </div>
+          <div class="mes-field">
+            <label>设备</label>
+            <input v-model="qmsForm.equipmentCode" class="mes-input" />
+          </div>
+          <div class="mes-field">
+            <label>缺陷代码</label>
+            <input v-model="qmsForm.defectCode" class="mes-input" :disabled="qmsForm.result === 'OK'" />
+          </div>
+          <div class="mes-field">
+            <label>操作人</label>
+            <input v-model="qmsForm.operator" class="mes-input" />
+          </div>
+          <div class="mes-field qms-remark-field">
+            <label>备注</label>
+            <input v-model="qmsForm.remark" class="mes-input" />
+          </div>
+        </div>
+        <div class="qms-footer">
+          <div class="qms-summary">
+            <span class="status-tag" :class="qmsForm.result === 'NG' ? 'red' : 'green'">{{ qmsForm.result }}</span>
+            <span>{{ qmsSubmitHint }}</span>
+          </div>
+          <button
+            v-if="canMrbAction"
+            class="mes-btn primary"
+            :disabled="qmsSubmitting"
+            @click="submitQmsInspection"
+          >
+            {{ qmsSubmitting ? '上报中' : '提交 QMS 上报' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="mes-grid cols-2 section-gap">
       <div class="mes-card">
         <div class="mes-card__head">
@@ -221,6 +301,7 @@ import {
   getQualityMrbApprovals,
   getQualityMrbRecords,
   getYieldDashboard,
+  ingestQmsInspection,
   rejectQualityMrbTask,
   refreshQualityMrbApprovalSla,
   reviewQualityException
@@ -261,6 +342,8 @@ const actionLoading = ref('')
 const selectedEventNo = ref(__DEV_MOCK_FALLBACK__ ? fallbackExceptions[0]?.eventNo || '' : '')
 const mrbRecords = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbRecords : [])
 const mrbApprovals = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbApprovals : [])
+const qmsSubmitting = ref(false)
+const qmsResult = ref(null)
 
 const mrbForm = reactive({
   meetingNo: 'MRB-DEMO-001',
@@ -270,6 +353,22 @@ const mrbForm = reactive({
   fileName: 'MRB复判记录.pdf',
   fileUrl: 'qms://mrb/demo/review.pdf',
   fileHash: 'sha256:mrb-demo'
+})
+
+const qmsForm = reactive({
+  lotNo: __DEV_MOCK_FALLBACK__ ? fallbackInspections[0]?.lotNo || '' : '',
+  result: 'OK',
+  itemCode: 'VISUAL_CHECK',
+  itemName: '外观检查',
+  measuredValue: '',
+  lowerLimit: '',
+  upperLimit: '',
+  unit: '',
+  stepCode: '',
+  equipmentCode: '',
+  defectCode: 'D-QMS-NG',
+  operator: localStorage.getItem('username') || 'qe1001',
+  remark: 'QMS模拟检验上报'
 })
 
 const openExceptionCount = computed(() => exceptions.value.filter(item => item.status !== 'CLOSED').length)
@@ -307,6 +406,20 @@ const canCloseAction = computed(() => hasButton('quality:exception-close'))
 const canMrbAction = computed(() => canReviewAction.value || canCloseAction.value)
 const canApproveAction = computed(() => hasButton('quality:mrb-approve'))
 const canEscalateAction = computed(() => hasButton('quality:mrb-escalate'))
+const qmsResultType = computed(() => {
+  if (!qmsResult.value) return 'blue'
+  if (qmsResult.value.holdApplied || qmsResult.value.result === 'NG') return 'red'
+  return 'green'
+})
+const qmsResultText = computed(() => {
+  if (!qmsResult.value) return '待上报'
+  return `${qmsResult.value.result || '-'} / ${qmsResult.value.inspectionCount || 0}项`
+})
+const qmsSubmitHint = computed(() => {
+  if (!qmsForm.lotNo) return '选择 Lot 后可模拟外部 QMS 推送'
+  if (qmsForm.result === 'NG') return 'NG 将自动生成异常并 Hold Lot'
+  return 'OK 上报只写检验记录和审计'
+})
 
 const defects = computed(() => defectTopN.value.map(item => ({
   code: item.defectCode,
@@ -423,6 +536,15 @@ function slaType(item) {
 function escalationText(item) {
   if (item.escalatedTo) return `${item.escalatedTo} / ${item.escalationRole || '-'}`
   return item.escalationRole || '-'
+}
+
+function optionalDecimal(value) {
+  if (value === null || value === undefined || value === '') return undefined
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    throw new Error('QMS数值字段必须是数字')
+  }
+  return number
 }
 
 function actionLabel(action) {
@@ -585,6 +707,46 @@ async function handleClose(item) {
   }
 }
 
+async function submitQmsInspection() {
+  if (!canMrbAction.value) {
+    ElMessage.warning('当前角色无权执行 QMS 检验上报')
+    return
+  }
+  if (!qmsForm.lotNo) {
+    ElMessage.warning('Lot不能为空')
+    return
+  }
+  try {
+    qmsSubmitting.value = true
+    const item = {
+      itemCode: qmsForm.itemCode || 'QMS_RESULT',
+      itemName: qmsForm.itemName || qmsForm.itemCode || 'QMS检验结果',
+      result: qmsForm.result,
+      measuredValue: optionalDecimal(qmsForm.measuredValue),
+      lowerLimit: optionalDecimal(qmsForm.lowerLimit),
+      upperLimit: optionalDecimal(qmsForm.upperLimit),
+      unit: qmsForm.unit,
+      defectCode: qmsForm.result === 'NG' ? qmsForm.defectCode : undefined,
+      remark: qmsForm.remark
+    }
+    const result = await ingestQmsInspection({
+      lotNo: qmsForm.lotNo,
+      stepCode: qmsForm.stepCode || undefined,
+      equipmentCode: qmsForm.equipmentCode || undefined,
+      operator: qmsForm.operator || localStorage.getItem('username') || 'qe1001',
+      result: qmsForm.result,
+      items: [item]
+    })
+    qmsResult.value = result
+    ElMessage.success(result?.holdApplied ? 'QMS NG 已上报并触发 Hold' : 'QMS 检验已上报')
+    await loadQualityData()
+  } catch (error) {
+    ElMessage.warning(error?.message || 'QMS 检验上报失败')
+  } finally {
+    qmsSubmitting.value = false
+  }
+}
+
 async function loadQualityData() {
   try {
     const [inspectionData, exceptionData, yieldData] = await Promise.all([
@@ -598,6 +760,9 @@ async function loadQualityData() {
       if (!selectedEventNo.value || !exceptionData.some(item => item.eventNo === selectedEventNo.value)) {
         selectedEventNo.value = exceptionData[0].eventNo
       }
+    }
+    if (!qmsForm.lotNo) {
+      qmsForm.lotNo = inspectionData?.[0]?.lotNo || exceptionData?.[0]?.lotNo || ''
     }
     if (Array.isArray(yieldData?.defectTopN) && yieldData.defectTopN.length) defectTopN.value = yieldData.defectTopN
     await loadMrbRecords(selectedEventNo.value)
@@ -707,9 +872,49 @@ onMounted(loadQualityData)
   font-weight: 700;
 }
 
+.qms-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.qms-remark-field {
+  grid-column: span 2;
+}
+
+.qms-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.qms-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--mes-sub);
+  font-size: 12px;
+}
+
 @media (max-width: 960px) {
   .mrb-form {
     grid-template-columns: 1fr;
+  }
+
+  .qms-form {
+    grid-template-columns: 1fr;
+  }
+
+  .qms-remark-field {
+    grid-column: span 1;
+  }
+
+  .qms-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

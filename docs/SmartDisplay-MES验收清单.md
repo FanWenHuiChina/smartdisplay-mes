@@ -174,3 +174,13 @@
 | WMS 库存事务入口 | `/api/v1/adapters/wms/inventory-transactions` 支持入库、冻结、解冻、退料、盘点别名归一，复用物料服务并写 adapter 审计 | 已落地，单元测试通过 |
 | Adapter 权限控制 | QMS adapter 绑定质量处置权限，WMS adapter 绑定 `material:wms`，跨角色写操作被拒绝 | 已落地，RBAC 回归通过 |
 | Adapter 前端契约 | 前端 API 层封装 QMS/WMS adapter 调用，并纳入静态契约检查 | 已落地，`verify:frontend-contract` 通过 |
+
+# 2026-06-08 补充验收：QMS/WMS Adapter 前端可演示入口
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| QMS 页面上报入口 | 质量管理页提供可录入 Lot、结果、检验项、参数、设备、缺陷代码和操作人的 QMS 模拟上报表单，并调用 `/api/v1/adapters/qms/inspections` | 已落地，Docker HTTP 冒烟通过 |
+| QMS NG 风险提示 | 前端在选择 NG 时明确提示会自动生成异常并 Hold Lot，避免演示人员误把 NG 当作无副作用查询 | 已落地 |
+| WMS Adapter 操作条 | 物料与载具页提供 WMS Adapter 齐套查询和库存事务入口，并复用当前 WMS 表单上下文生成事务 payload | 已落地，Docker HTTP 冒烟通过 |
+| 页面风格一致性 | Adapter 新入口采用浅色、低饱和、细边框工作台样式，不回到深色侧栏或重色按钮风格 | 已落地 |
+| 前端契约 | 质量页和物料页的 adapter API 接线由 `verify:frontend-contract` 自动检查 | 已通过，321 项检查 |

@@ -665,3 +665,13 @@
 - 前端 `src/api/pilot.js` 新增 `ingestQmsInspection`、`checkWmsMaterialReadiness`、`ingestWmsInventoryTransaction`，并纳入 `verify:frontend-contract` 静态契约检查。
 - 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` 通过，`Tests run: 77, Failures: 0, Errors: 0, Skipped: 0`。
 - 已验证 `npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 318 checks`；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
+
+## 2026-06-08 增量：QMS/WMS Adapter 前端可演示入口
+
+- 质量管理页新增“QMS 模拟检验上报”工作区，支持录入 Lot、检验结果、检验项、测量值、上下限、工序、设备、缺陷代码、操作人和备注，调用 `POST /api/v1/adapters/qms/inspections`。
+- QMS 前端入口保留 OK/NG 两种演示路径：OK 只写检验记录和审计；NG 会触发后端既有缺陷、异常事件与 Lot Hold 闭环，前端以状态标签提示“NG 将自动生成异常并 Hold Lot”。
+- 物料与载具页在物料批次库存卡片内新增轻量 `Adapter` 操作条，提供“Adapter 齐套”和“Adapter 事务”两个入口，分别调用 `/api/v1/adapters/wms/material-readiness` 与 `/api/v1/adapters/wms/inventory-transactions`。
+- WMS Adapter 操作条沿用当前浅色 Codex app 工作台风格：低饱和按钮、细边框、浅底状态区，并在移动视口下自动纵向排列，避免挤压库存卡片。
+- 前端契约脚本已将质量页 `ingestQmsInspection`、物料页 `checkWmsMaterialReadiness` 和 `ingestWmsInventoryTransaction` 纳入页面级接线检查，防止后续页面退回静态展示。
+- 已验证 `npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 321 checks`；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
+- 已重新构建并强制重建 Docker 容器，`smartdisplay-mes-api`、`smartdisplay-mes-ui` 和 `smartdisplay-mes-postgres` 均启动；经前端 Nginx 反代验证登录、Dashboard、WMS 齐套和 QMS OK 上报均返回业务码 `200`。

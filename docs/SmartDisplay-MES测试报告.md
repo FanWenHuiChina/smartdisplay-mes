@@ -307,3 +307,17 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | QMS/WMS adapter 后端回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 77, Failures: 0, Errors: 0, Skipped: 0`；覆盖 QMS NG 自动缺陷/异常/Hold、QMS/WMS adapter 服务委托、RBAC 写权限和失败审计映射 |
 | 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 318 checks`；新增 QMS/WMS adapter API 封装检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅有既有 `@vueuse/core` pure annotation 和 chunk size 警告，不影响构建产物 |
+
+## 2026-06-08 QMS/WMS Adapter 前端演示入口复验
+
+本轮将 QMS/WMS 模拟适配器从 API 封装推进到前端页面可操作入口：质量页提供 QMS 检验上报表单，物料页提供 WMS Adapter 齐套与库存事务操作条。该入口仍属于模拟外部集成，不表示真实 QMS/WMS 已联调。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 321 checks`；页面级检查已覆盖 `ingestQmsInspection`、`checkWmsMaterialReadiness`、`ingestWmsInventoryTransaction` |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅有既有 `@vueuse/core` pure annotation 和 chunk size 警告，不影响构建产物 |
+| Docker 镜像重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | 前端镜像构建成功；随后使用 `--force-recreate backend frontend` 强制替换运行容器 |
+| Docker 容器状态 | `docker compose -f smartdisplay-mes-api\docker-compose.yml ps` | 通过 | `smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 监听 `8080`，`smartdisplay-mes-ui` 监听 `8888` |
+| 前端反代 HTTP 冒烟 | `POST http://localhost:8888/api/v1/auth/login`、`GET /dashboard/overview`、`POST /adapters/wms/material-readiness`、`POST /adapters/qms/inspections` | 通过 | 登录 `200`、Dashboard `200`、WMS 齐套 `200/PASS_WITH_WARNING`、QMS OK 上报 `200/OK` |
+
+说明：内置浏览器连接在当前 Windows 沙箱中两次启动失败，因此本轮未生成浏览器截图；运行态验证以 Docker 容器状态、前端静态资源 `200` 和经 Nginx 反代的业务接口冒烟为准。
