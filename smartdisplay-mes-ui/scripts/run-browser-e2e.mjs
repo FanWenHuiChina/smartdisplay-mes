@@ -157,6 +157,10 @@ async function main() {
       const json = await response.json()
       return json.data.records[0]?.status === 'PROCESSING'
     })()`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(e2eLotNo)}') && text.includes('PROCESSING')
+    })`, 15000)
     await clickTableRowByText(e2eLotNo)
     await clickButtonByText('Track Out')
     const lotState = await waitForLotState(`status === 'READY' && currentStepCode !== 'CLEAN'`, 15000)
@@ -170,6 +174,33 @@ async function main() {
     assert(await textExists('缺陷 TopN'), '质量页面缺少缺陷 TopN')
     assert(await textExists('会签待办'), '质量页面缺少 MRB 会签待办')
     return 'quality mrb view visible'
+  })
+
+  await runStep('质量页面通过 UI 提交 QMS Adapter OK 上报', async () => {
+    assert(e2eLotNo, '缺少 E2E Lot，无法执行 QMS Adapter 上报')
+    const qmsItemCode = `QMS_E2E_${timestamp.replace(/\D/g, '')}`
+    await setFieldValueByLabel('Lot', e2eLotNo)
+    await setSelectValueByLabel('检验结果', 'OK')
+    await setFieldValueByLabel('检验项', qmsItemCode)
+    await setFieldValueByLabel('检验名称', 'E2E外观检查')
+    await setFieldValueByLabel('测量值', '1')
+    await setFieldValueByLabel('下限', '0')
+    await setFieldValueByLabel('上限', '2')
+    await setFieldValueByLabel('单位', 'EA')
+    await setFieldValueByLabel('操作人', username)
+    await setFieldValueByLabel('备注', 'browser e2e qms adapter ok')
+    await clickButtonByText('提交 QMS 上报')
+    await waitForExpression(`document.body.innerText.includes('OK /')`, 15000)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/quality/inspections?lotNo=' + encodeURIComponent('${escapeJs(e2eLotNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(item => item.itemCode === '${escapeJs(qmsItemCode)}' && item.result === 'OK')
+    })()`, 15000)
+    await assertLayoutClean('quality')
+    return `qms adapter ok item=${qmsItemCode}, lot=${e2eLotNo}`
   })
 
   await runStep('物料页面显示 V1.38 库位任务操作台', async () => {
@@ -198,6 +229,33 @@ async function main() {
     assert(await textExists('创建'), '物料页面缺少库位任务创建入口')
     await waitForExpression(`document.body.innerText.includes('领取') || document.body.innerText.includes('取消')`, 10000)
     return 'material location task workbench visible'
+  })
+
+  await runStep('物料页面通过 UI 调用 WMS Adapter 齐套与入库事务', async () => {
+    const wmsBatchNo = `WMSE2E${timestamp.replace(/\D/g, '')}`
+    await clickButtonByText('Adapter 齐套')
+    await waitForExpression(`document.body.innerText.includes('齐套 PASS') || document.body.innerText.includes('齐套 PASS_WITH_WARNING') || document.body.innerText.includes('齐套 BLOCKED')`, 15000)
+    await clickByText('入库')
+    await waitForExpression(`document.body.innerText.includes('新批次入库后生成库存事务和审计记录')`, 10000)
+    await setFieldValueByLabel('批次号', wmsBatchNo)
+    await setFieldValueByLabel('物料编码', 'E2E_MAT')
+    await setFieldValueByLabel('物料名称', 'E2E测试物料')
+    await setFieldValueByLabel('数量', '1')
+    await setFieldValueByLabel('单位', 'EA')
+    await setFieldValueByLabel('原因', 'browser e2e wms adapter receive')
+    await setFieldValueByLabel('操作员', username)
+    await clickButtonByText('Adapter 事务')
+    await waitForExpression(`document.body.innerText.includes('RECEIVE ACCEPTED')`, 15000)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/material/batches', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.batches.some(batch => batch.batchNo === '${escapeJs(wmsBatchNo)}')
+    })()`, 15000)
+    await assertLayoutClean('material')
+    return `wms adapter readiness and receive batch=${wmsBatchNo}`
   })
 
   let workflowResult
@@ -355,6 +413,52 @@ async function setTraceInput(value) {
     return true
   })()`)
   assert(ok, '未找到追溯查询输入框')
+}
+
+async function setFieldValueByLabel(labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const field = Array.from(document.querySelectorAll('.mes-field')).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const input = el.querySelector('input, textarea')
+      return label === ${JSON.stringify(labelText)} && input && visible(input) && !input.disabled
+    })
+    const input = field?.querySelector('input, textarea')
+    if (!input) return false
+    input.focus()
+    input.value = ${JSON.stringify(value)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未找到可输入字段: ${labelText}`)
+}
+
+async function setSelectValueByLabel(labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const field = Array.from(document.querySelectorAll('.mes-field')).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const select = el.querySelector('select')
+      return label === ${JSON.stringify(labelText)} && select && visible(select) && !select.disabled
+    })
+    const select = field?.querySelector('select')
+    if (!select) return false
+    select.focus()
+    select.value = ${JSON.stringify(value)}
+    select.dispatchEvent(new Event('input', { bubbles: true }))
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未找到可选择字段: ${labelText}`)
 }
 
 async function clickByText(text) {

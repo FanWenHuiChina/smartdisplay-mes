@@ -19,7 +19,7 @@ npm run dev
 - `verify:production-bundle`：扫描生产构建产物，确认典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号不进入默认生产包。
 - `e2e:browser`：使用本机 Chrome/Edge + CDP 运行真实浏览器 E2E，默认访问 `http://127.0.0.1:8888`。运行前需要 Docker Compose 或等价前后端服务已启动。
 
-最新通过报告：`../docs/SmartDisplay-MES-browser-e2e-20260608-045147.md`。
+最新通过报告：`../docs/SmartDisplay-MES-browser-e2e-20260608-161858.md`。
 
 ## Mock Fallback
 

@@ -76,7 +76,7 @@
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
 - 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产 mock fallback 禁用约束，共 302 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，10 步覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-072928.md`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，12 步覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md`。
 - 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 191, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
@@ -527,14 +527,14 @@
 - 已运行 `npm.cmd run verify:frontend-contract` 通过，当前 `Frontend contract passed: 266 checks`。
 - 已运行 `npm.cmd run build` 通过，仍仅有既有第三方 pure annotation 和 chunk size warning。
 - 已运行 `npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
-- 真实浏览器 E2E 已在后续零依赖 CDP 脚本中补齐，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-055759.md`。
+- 真实浏览器 E2E 已在后续零依赖 CDP 脚本中补齐，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md`。
 
 ## 2026-06-08 增量：真实浏览器前端 E2E
 - 新增 `smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 和 `npm.cmd run e2e:browser`，使用本机 Chrome/Edge + CDP + Node 原生 WebSocket 运行，不新增 Playwright/Cypress 依赖。
 - E2E 覆盖登录、顶部导航和权限菜单、工单创建、工单释放并生成 Lot、执行页选中 Lot 后通过 UI 完成 Track In/Out、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台、库位任务 `CREATED -> ASSIGNED -> DONE` 与 `CREATED -> CANCELLED` 状态流、Lot 追溯查询、AI 良率报告生成留痕和系统审计入口。
 - 修正执行页选中 Lot 的 UI 交互：表格行点击会稳定选中目标 Lot，Track In 使用当前 Lot 的 Route 工序与设备能力映射，Track Out 优先处理被选中的 `PROCESSING` Lot。
 - 修正 E2E 操作定位：Track In/Out 改为明确点击按钮，避免误点侧边栏 `Track In / Out` 导航；物料页库位任务操作入口改为等待异步列表渲染后再断言。
-- 已运行 `npm.cmd run e2e:browser` 通过，10 步全部 PASS，Console/Network 错误数为 0；最新报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-055759.md/json`。
+- 已运行 `npm.cmd run e2e:browser` 通过，12 步全部 PASS，Console/Network 错误数为 0；最新报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md/json`。
 
 ## 2026-06-08 增量：Flyway 全新库迁移演练
 - 新增 `tools/run-flyway-rehearsal.ps1`，用于生产变更前的数据库迁移演练：先执行迁移静态验收，再重新打包后端 exec jar，启动临时 PostgreSQL 容器，从全新空库运行 Spring Boot + Flyway 自动迁移。
@@ -573,7 +573,7 @@
 - 已运行后端全量测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 183, Failures: 0, Errors: 0, Skipped: 0`。
 - 已运行 Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.40` 共 40 个迁移文件。
 - 已运行前端验收：`npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 294 checks`；`npm.cmd run build` 通过；`npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物。
-- 已运行浏览器 E2E：`npm.cmd run e2e:browser` 通过，10 步全部 PASS，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-072928.md`。
+- 已运行浏览器 E2E：`npm.cmd run e2e:browser` 通过，12 步全部 PASS，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md`。
 - 已生成物料页视觉验证截图：`docs/material-codex-style-desktop.png` 和 `docs/material-codex-style-suppliers.png`；供应商区无页面级横向溢出、无按钮文字溢出。
 
 ## 2026-06-08 增量：供应商月度评分趋势
@@ -675,3 +675,11 @@
 - 前端契约脚本已将质量页 `ingestQmsInspection`、物料页 `checkWmsMaterialReadiness` 和 `ingestWmsInventoryTransaction` 纳入页面级接线检查，防止后续页面退回静态展示。
 - 已验证 `npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 321 checks`；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
 - 已重新构建并强制重建 Docker 容器，`smartdisplay-mes-api`、`smartdisplay-mes-ui` 和 `smartdisplay-mes-postgres` 均启动；经前端 Nginx 反代验证登录、Dashboard、WMS 齐套和 QMS OK 上报均返回业务码 `200`。
+
+## 2026-06-08 增量：QMS/WMS Adapter 浏览器 E2E 覆盖
+
+- `smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 从 10 步扩展为 12 步，新增质量页 QMS Adapter OK 上报和物料页 WMS Adapter 齐套/入库事务两个真实页面操作步骤。
+- QMS E2E 使用本轮浏览器会话创建并释放出的 Lot，填充 QMS 表单后点击“提交 QMS 上报”，并通过 `/api/v1/quality/inspections?lotNo=...` 校验新增检验项落库。
+- WMS E2E 先点击“Adapter 齐套”验证页面状态返回，再切换到“入库”事务，使用独立批次号 `WMSE2E{timestamp}` 点击“Adapter 事务”，并通过 `/api/v1/material/batches` 校验批次落库。
+- 修正 E2E 中原 Track In/Out 步骤的等待策略：点击 Track In 后不仅等待后端 Lot 变为 `PROCESSING`，还等待页面表格行刷新为 `PROCESSING` 后再触发 Track Out，避免 Vue 异步刷新未完成时误点出站。
+- 已运行 `npm.cmd run e2e:browser` 通过，12 步全部 PASS，Console/Network 错误数为 0；报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md/json`。

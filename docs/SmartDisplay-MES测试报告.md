@@ -33,7 +33,7 @@
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
-| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 10 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-055759.md` |
+| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md` |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.41` 共 41 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
 | 性能冒烟脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-smoke.ps1` | 通过 | 脚本支持阈值参数、Markdown/JSON 报告输出和失败退出码 |
@@ -321,3 +321,14 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端反代 HTTP 冒烟 | `POST http://localhost:8888/api/v1/auth/login`、`GET /dashboard/overview`、`POST /adapters/wms/material-readiness`、`POST /adapters/qms/inspections` | 通过 | 登录 `200`、Dashboard `200`、WMS 齐套 `200/PASS_WITH_WARNING`、QMS OK 上报 `200/OK` |
 
 说明：内置浏览器连接在当前 Windows 沙箱中两次启动失败，因此本轮未生成浏览器截图；运行态验证以 Docker 容器状态、前端静态资源 `200` 和经 Nginx 反代的业务接口冒烟为准。
+
+## 2026-06-08 QMS/WMS Adapter 浏览器 E2E 复验
+
+本轮将 QMS/WMS Adapter 前端入口纳入真实浏览器 E2E。脚本仍使用本机 Chrome/Edge + CDP，不新增前端测试依赖。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步全部 PASS，Console/Network 错误数为 0；报告 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md` |
+| QMS Adapter 页面操作 | 质量页填写当前 E2E Lot 的 QMS OK 上报并点击“提交 QMS 上报” | 通过 | 通过 `/api/v1/quality/inspections?lotNo=...` 校验 `QMS_E2E_*` 检验项已落库 |
+| WMS Adapter 页面操作 | 物料页点击“Adapter 齐套”，再切换“入库”并点击“Adapter 事务” | 通过 | 页面返回 `RECEIVE ACCEPTED`，并通过 `/api/v1/material/batches` 校验 `WMSE2E*` 批次已落库 |
+| Track In/Out E2E 稳定性 | 点击 Track In 后等待后端状态与页面表格行均变为 `PROCESSING` 再点击 Track Out | 通过 | 避免 Vue 异步刷新未完成时出站操作未对准当前 E2E Lot |
