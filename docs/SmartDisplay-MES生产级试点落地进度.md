@@ -77,7 +77,7 @@
 - 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产 mock fallback 禁用约束，共 302 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
 - 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，10 步覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-072928.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 188, Failures: 0, Errors: 0, Skipped: 0`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 190, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
 - Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。
@@ -117,6 +117,8 @@
 - 工单释放快照额外记录生成的 Lot 编号列表和数量；Track Out 快照额外记录最终判定结果和参数快照。
 - 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` 通过，`Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`。
 - 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` 通过，`Tests run: 4, Failures: 0, Errors: 0, Skipped: 0`。
+- 本轮已将 Rework/Scrap 从“可执行动作”补强为生产动作强校验：Rework 必须提交 `reworkRouteCode` 和 `reworkStepCode`，且起始工序必须属于当前产品生效 Route 并允许返工；Scrap 必须提交 `scrapConfirmed=true`、`confirmText=SCRAP:{lotNo}`、原因、责任模块和审批人，否则拒绝落库。
+- 已重新验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` 通过，`Tests run: 16, Failures: 0, Errors: 0, Skipped: 0`；已重新运行后端全量测试，`Tests run: 190, Failures: 0, Errors: 0, Skipped: 0`。
 
 ## 2026-06-08 增量：WMS库位任务分步工作流
 - 新增 `V1.38__Add_Material_Location_Task_Workflow.sql`，为 `material_location_task` 补充领取人、领取时间、复核人、复核时间、取消人、取消时间、取消原因、异常原因、任务来源和完成时间字段。

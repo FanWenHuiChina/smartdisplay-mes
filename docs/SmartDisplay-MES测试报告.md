@@ -18,7 +18,7 @@
 
 | 验证项 | 命令 | 结果 | 说明 |
 | --- | --- | --- | --- |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 188, Failures: 0, Errors: 0, Skipped: 0` |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 190, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.31 AI定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKnowledgeServiceTest,AiModelConfigServiceTest,AiRecordServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 20, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.32 AI留痕查询回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiRecordServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.33 知识库索引任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKbIndexServiceTest,AiKnowledgeServiceTest,RolePermissionServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 31, Failures: 0, Errors: 0, Skipped: 0` |
@@ -26,7 +26,7 @@
 | MRB纪要版本管理回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 45, Failures: 0, Errors: 0, Skipped: 0` |
 | MRB会签SLA升级回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 47, Failures: 0, Errors: 0, Skipped: 0` |
 | 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 38, Failures: 0, Errors: 0, Skipped: 0` |
-| 核心执行审计差异快照回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`；验证审计快照包含 `before/after/changedFields/request` |
+| 核心执行审计差异快照回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0`；验证审计快照包含 `before/after/changedFields/request`，并覆盖 Rework Route/起始工序校验与 Scrap 二次确认 |
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
 | 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产环境 mock fallback 禁用约束，共 302 项检查 |
@@ -202,7 +202,7 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 验收项 | 命令 | 结果 |
 | --- | --- | --- |
 | 后端定向测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 38 通过，0 失败 |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 188 通过，0 失败 |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 190 通过，0 失败 |
 | 前端契约 | `npm.cmd run verify:frontend-contract` | 302 项检查通过 |
 | 前端构建 | `npm.cmd run build` | 通过，仅第三方 pure annotation 和 chunk size warning |
 | 生产包扫描 | `npm.cmd run verify:production-bundle` | 14 个 JS 产物通过 |

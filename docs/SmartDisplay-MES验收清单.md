@@ -47,7 +47,7 @@
 | Track Out | 记录参数快照、人员、设备、结果并推动 Lot 流转 | 已落地 |
 | 质量异常 | NG/关键参数超限生成质检、缺陷、异常并 Hold Lot | 已落地 |
 | Hold/Release | 记录原因、处置结论、责任角色、人员和时间 | 已落地，支持 MRB 结论联动 |
-| Rework/Scrap | 支持返工起始工序和报废审计 | 已落地，支持异常关闭联动 |
+| Rework/Scrap | Rework 必须选择返工 Route 和允许返工的起始工序；Scrap 必须二次确认并记录原因、责任模块、审批人和审计快照 | 已落地，支持异常关闭联动 |
 | 追溯 | Lot 查询返回工单、Route、设备、Recipe、质量、Hold、物料、审计 | 已落地 |
 | 看板 | WIP、良率、异常、缺陷 TopN、设备异常 TopN | 已落地 |
 | AI 良率日报 | 输入快照、Prompt版本、模型、模型配置快照、证据质量和输出JSON落 `ai_report_record` | 已落地 |

@@ -91,7 +91,7 @@ CREATE TABLE prod_lot (
     qty INT NOT NULL COMMENT '数量',
     current_step_code VARCHAR(50) COMMENT '当前工序编码',
     current_equipment_code VARCHAR(50) COMMENT '当前设备编码',
-    status VARCHAR(20) NOT NULL DEFAULT 'CREATED' COMMENT '状态: CREATED-已创建, READY-就绪, PROCESSING-加工中, HOLD-暂停, COMPLETED-完成, SCRAPPED-报废',
+    status VARCHAR(20) NOT NULL DEFAULT 'CREATED' COMMENT '状态: CREATED-已创建, READY-就绪, PROCESSING-加工中, HOLD-暂停, COMPLETED-完成, REWORK-返工, SCRAP-报废',
     hold_flag SMALLINT DEFAULT 0 COMMENT 'Hold标记: 0-正常, 1-已Hold',
     priority INT DEFAULT 0 COMMENT '优先级',
     created_by VARCHAR(50) COMMENT '创建人',

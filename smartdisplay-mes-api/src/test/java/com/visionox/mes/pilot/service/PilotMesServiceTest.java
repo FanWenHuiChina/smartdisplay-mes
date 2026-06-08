@@ -26,6 +26,8 @@ import com.visionox.mes.order.service.ErpOrderAdapterService;
 import com.visionox.mes.quality.service.QualityService;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
+import com.visionox.mes.route.entity.Route;
+import com.visionox.mes.route.entity.RouteStep;
 import com.visionox.mes.route.service.RouteService;
 import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
@@ -343,16 +345,45 @@ class PilotMesServiceTest {
     void reworkShouldMoveLotToReworkStepAndWriteAudit() {
         Lot lot = lot("LOT001", "HOLD");
         when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
 
         pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
                 "reworkStepCode", "ETCH",
                 "operator", "qe1001"
         ));
 
         assertThat(lot.getStatus()).isEqualTo("REWORK");
         assertThat(lot.getCurrentStepCode()).isEqualTo("ETCH");
+        assertThat(lot.getCurrentEquipmentCode()).isNull();
         verify(lotMapper).updateById(lot);
-        verify(auditLogService).record(eq("LOT_REWORK"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> reworkSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_REWORK"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), reworkSnapshotCaptor.capture());
+        assertThat(reworkSnapshotCaptor.getValue())
+                .contains("\"reworkRouteCode\":\"RTE_OLED_V1\"")
+                .contains("\"reworkStepCode\":\"ETCH\"")
+                .contains("\"currentStepCode\":\"ETCH\"");
+    }
+
+    @Test
+    void reworkShouldRejectStepThatDoesNotAllowRework() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 0)));
+
+        assertThatThrownBy(() -> pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not allow rework");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -361,13 +392,43 @@ class PilotMesServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
 
         pilotMesService.scrap("LOT001", Map.of(
+                "scrapConfirmed", true,
+                "confirmText", "SCRAP:LOT001",
                 "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
                 "operator", "qe1001"
         ));
 
         assertThat(lot.getStatus()).isEqualTo("SCRAP");
+        assertThat(lot.getCurrentEquipmentCode()).isNull();
         verify(lotMapper).updateById(lot);
-        verify(auditLogService).record(eq("LOT_SCRAP"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> scrapSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_SCRAP"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), scrapSnapshotCaptor.capture());
+        assertThat(scrapSnapshotCaptor.getValue())
+                .contains("\"scrapConfirmed\":true")
+                .contains("\"confirmText\":\"SCRAP:LOT001\"")
+                .contains("\"responsibilityModule\":\"QUALITY\"")
+                .contains("\"approver\":\"mrb_lead\"");
+    }
+
+    @Test
+    void scrapShouldRequireSecondConfirmation() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+
+        assertThatThrownBy(() -> pilotMesService.scrap("LOT001", Map.of(
+                "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("second confirmation");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     private ProductionOrder order(String orderNo, int plannedQty) {
@@ -388,8 +449,24 @@ class PilotMesServiceTest {
         lot.setOrderNo("MO20260607001");
         lot.setProductCode("OLED_PANEL");
         lot.setCurrentStepCode("COATING");
+        lot.setCurrentEquipmentCode("COATER_01");
         lot.setStatus(status);
         lot.setHoldFlag("HOLD".equals(status) ? 1 : 0);
         return lot;
+    }
+
+    private Route route(String routeCode) {
+        Route route = new Route();
+        route.setRouteCode(routeCode);
+        route.setProductCode("OLED_PANEL");
+        route.setStatus("ACTIVE");
+        return route;
+    }
+
+    private RouteStep routeStep(String stepCode, int allowRework) {
+        RouteStep step = new RouteStep();
+        step.setStepCode(stepCode);
+        step.setAllowRework(allowRework);
+        return step;
     }
 }

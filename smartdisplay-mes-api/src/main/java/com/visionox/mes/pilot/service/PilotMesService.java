@@ -40,6 +40,8 @@ import com.visionox.mes.recipe.entity.RecipeParam;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.quality.service.QualityService;
+import com.visionox.mes.route.entity.Route;
+import com.visionox.mes.route.entity.RouteStep;
 import com.visionox.mes.route.service.RouteService;
 import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
@@ -282,21 +284,44 @@ public class PilotMesService {
     public void rework(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);
+        String reworkRouteCode = requireText(request, "reworkRouteCode", "Rework route is required");
+        String reworkStepCode = requireText(request, "reworkStepCode", "Rework start step is required");
+        Route activeRoute = routeService.findActiveRoute(lot.getProductCode());
+        if (!Objects.equals(activeRoute.getRouteCode(), reworkRouteCode)) {
+            throw new BusinessException("Rework route must match active product route: " + activeRoute.getRouteCode());
+        }
+        RouteStep reworkStep = routeService.activeSteps(lot.getProductCode()).stream()
+                .filter(step -> Objects.equals(step.getStepCode(), reworkStepCode))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("Rework step is not configured in active route: " + reworkStepCode));
+        if (!Integer.valueOf(1).equals(reworkStep.getAllowRework())) {
+            throw new BusinessException("Rework step does not allow rework: " + reworkStepCode);
+        }
         lot.setStatus("REWORK");
-        lot.setCurrentStepCode(text(request, "reworkStepCode", "COATING"));
+        lot.setCurrentStepCode(reworkStepCode);
+        lot.setCurrentEquipmentCode(null);
         lotMapper.updateById(lot);
-        closeExceptionIfProvided(lotNo, request, "REWORK", "MRB 判定返工至 " + lot.getCurrentStepCode());
-        audit("LOT_REWORK", lotNo, "返工至 " + lot.getCurrentStepCode(), text(request, "operator", currentUser()),
+        closeExceptionIfProvided(lotNo, request, "REWORK",
+                "MRB rework route=" + reworkRouteCode + ", step=" + reworkStepCode);
+        audit("LOT_REWORK", lotNo, "Rework route=" + reworkRouteCode + ", step=" + reworkStepCode,
+                text(request, "operator", currentUser()),
                 auditSnapshot(before, lotSnapshot(lot), safeRequest(request)));
     }
 
     public void scrap(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);
+        assertScrapConfirmed(lotNo, request);
+        String reason = requireText(request, "reason", "Scrap reason is required");
+        String responsibilityModule = requireText(request, "responsibilityModule", "Scrap responsibility module is required");
+        String approver = requireText(request, "approver", "Scrap approver is required");
         lot.setStatus("SCRAP");
+        lot.setCurrentEquipmentCode(null);
         lotMapper.updateById(lot);
-        closeExceptionIfProvided(lotNo, request, "SCRAP", text(request, "reason", "试点报废"));
-        audit("LOT_SCRAP", lotNo, text(request, "reason", "试点报废"), text(request, "operator", currentUser()),
+        closeExceptionIfProvided(lotNo, request, "SCRAP", reason);
+        audit("LOT_SCRAP", lotNo,
+                "Scrap reason=" + reason + ", module=" + responsibilityModule + ", approver=" + approver,
+                text(request, "operator", currentUser()),
                 auditSnapshot(before, lotSnapshot(lot), safeRequest(request)));
     }
 
@@ -1697,6 +1722,24 @@ public class PilotMesService {
     private String text(Map<String, Object> request, String key, String defaultValue) {
         Object value = value(request, key);
         return value == null || String.valueOf(value).isBlank() ? defaultValue : String.valueOf(value);
+    }
+
+    private String requireText(Map<String, Object> request, String key, String errorMessage) {
+        String text = text(request, key, "");
+        if (text.isBlank()) {
+            throw new BusinessException(errorMessage);
+        }
+        return text;
+    }
+
+    private void assertScrapConfirmed(String lotNo, Map<String, Object> request) {
+        Object confirmed = value(request, "scrapConfirmed");
+        boolean flag = Boolean.TRUE.equals(confirmed) || "true".equalsIgnoreCase(String.valueOf(confirmed));
+        String confirmText = text(request, "confirmText", "").trim();
+        String expected = "SCRAP:" + lotNo;
+        if (!flag || !expected.equals(confirmText)) {
+            throw new BusinessException("Scrap requires second confirmation: scrapConfirmed=true and confirmText=" + expected);
+        }
     }
 
     private Object value(Map<String, Object> request, String key) {

@@ -59,7 +59,7 @@ public class Lot implements Serializable {
     private String currentEquipmentCode;
 
     /**
-     * 状态: CREATED-已创建, READY-就绪, PROCESSING-加工中, HOLD-暂停, COMPLETED-完成, SCRAPPED-报废
+     * 状态: CREATED-已创建, READY-就绪, PROCESSING-加工中, HOLD-暂停, COMPLETED-完成, REWORK-返工, SCRAP-报废
      */
     private String status;
 
