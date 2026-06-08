@@ -6,9 +6,9 @@
         <p class="page-desc">将 ERP/APS 下发的生产任务转换为 MES 可执行 Lot，并绑定产品、路线版本、优先级和计划窗口。</p>
       </div>
       <div class="page-actions">
-        <button v-if="canCreateOrder" class="mes-btn">导入工单</button>
-        <button class="mes-btn">排产校验</button>
-        <button v-if="canReleaseOrder" class="mes-btn primary" @click="releaseFirstOrder">释放工单</button>
+        <button v-if="canCreateOrder" class="mes-btn" :disabled="importing" @click="submitErpImport">ERP 下发</button>
+        <button class="mes-btn" :disabled="loading" @click="refreshOrderPage">刷新工单池</button>
+        <button v-if="canReleaseOrder" class="mes-btn primary" :disabled="releasing" @click="releaseFirstOrder">释放工单</button>
       </div>
     </div>
 
@@ -50,10 +50,43 @@
               <strong>{{ item.title }}</strong><span>{{ item.text }}</span>
             </div>
           </div>
+          <div class="mes-filters section-gap">
+            <div class="mes-field">
+              <label>ERP 数量</label>
+              <input v-model.number="erpImportForm.count" class="mes-input" type="number" min="1" max="20" />
+            </div>
+            <div class="mes-field">
+              <label>产品</label>
+              <select v-model="erpImportForm.productCode" class="mes-select">
+                <option value="AMOLED_65">AMOLED_65</option>
+                <option value="AMOLED_67">AMOLED_67</option>
+                <option value="FOLD_78">FOLD_78</option>
+              </select>
+            </div>
+            <div class="mes-field">
+              <label>计划数</label>
+              <input v-model.number="erpImportForm.plannedQty" class="mes-input" type="number" min="1" />
+            </div>
+            <div class="mes-field">
+              <label>优先级</label>
+              <select v-model.number="erpImportForm.priority" class="mes-select">
+                <option :value="0">普通</option>
+                <option :value="5">Hot Lot</option>
+              </select>
+            </div>
+            <button v-if="canCreateOrder" class="mes-btn primary" :disabled="importing" @click="submitErpImport">
+              {{ importing ? '下发中' : '下发 ERP 工单' }}
+            </button>
+          </div>
+          <div v-if="erpImportResult" class="check-cell blue section-gap">
+            <strong>最近下发</strong>
+            <span>{{ erpImportSummary }}</span>
+          </div>
           <div class="toolbar">
-            <button v-if="canReleaseOrder" class="mes-btn primary" @click="releaseFirstOrder">生成 {{ previewLotCount }} 个 Lot</button>
-            <button class="mes-btn">查看齐套明细</button>
-            <button v-if="canReleaseOrder" class="mes-btn">模拟释放</button>
+            <button v-if="canReleaseOrder" class="mes-btn primary" :disabled="releasing" @click="releaseFirstOrder">
+              {{ releasing ? '释放中' : `生成 ${previewLotCount} 个 Lot` }}
+            </button>
+            <button class="mes-btn" :disabled="loading" @click="loadLots">刷新 Lot 预览</button>
           </div>
         </div>
       </div>
@@ -82,7 +115,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getOrders, getLots, releaseOrder } from '@/api/pilot'
+import { getOrders, getLots, importErpOrders, releaseOrder } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
@@ -112,11 +145,30 @@ const fallbackLots = [
 
 const orders = ref(__DEV_MOCK_FALLBACK__ ? fallbackOrders : [])
 const lots = ref(__DEV_MOCK_FALLBACK__ ? fallbackLots : [])
+const loading = ref(false)
+const importing = ref(false)
+const releasing = ref(false)
+const erpImportResult = ref(null)
+const erpImportForm = ref({
+  count: 3,
+  productCode: 'AMOLED_65',
+  plannedQty: 100,
+  priority: 0,
+  lineCode: 'LINE_01'
+})
 
-const pendingCount = computed(() => orders.value.filter(order => ['待释放', '计划', 'CREATED'].includes(order.status)).length)
+const pendingCount = computed(() => orders.value.filter(order => ['CREATED', '待释放', '计划'].includes(order.rawStatus || order.status)).length)
 const previewLotCount = computed(() => lots.value.length || 10)
 const canCreateOrder = computed(() => hasButton('order:create'))
 const canReleaseOrder = computed(() => hasButton('order:release'))
+const erpImportSummary = computed(() => {
+  if (!erpImportResult.value) return ''
+  const result = erpImportResult.value
+  const sample = Array.isArray(result.sampleOrderNos) && result.sampleOrderNos.length
+    ? `，样例 ${result.sampleOrderNos.slice(0, 3).join(' / ')}`
+    : ''
+  return `${result.batchNo || 'ERP批次'}：接收 ${result.receivedCount || 0}，创建 ${result.createdCount || 0}，跳过 ${result.skippedCount || 0}${sample}`
+})
 
 const statusMap = {
   CREATED: { label: '待释放', type: 'blue' },
@@ -180,6 +232,50 @@ async function loadLots() {
   }
 }
 
+async function refreshOrderPage() {
+  loading.value = true
+  try {
+    await Promise.all([loadOrders(), loadLots()])
+  } finally {
+    loading.value = false
+  }
+}
+
+function clampImportCount(value) {
+  const count = Number(value || 1)
+  return Math.min(Math.max(Number.isFinite(count) ? count : 1, 1), 20)
+}
+
+async function submitErpImport() {
+  if (!canCreateOrder.value) {
+    ElMessage.warning('当前角色无权下发 ERP 工单')
+    return
+  }
+  importing.value = true
+  try {
+    const count = clampImportCount(erpImportForm.value.count)
+    erpImportForm.value.count = count
+    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
+    const payload = {
+      sourceSystem: 'erp-adapter',
+      batchNo: `ERP-UI-${timestamp}`,
+      orderPrefix: `MOUI${timestamp}`,
+      count,
+      productCode: erpImportForm.value.productCode,
+      plannedQty: Number(erpImportForm.value.plannedQty || 100),
+      priority: Number(erpImportForm.value.priority || 0),
+      lineCode: erpImportForm.value.lineCode || 'LINE_01'
+    }
+    erpImportResult.value = await importErpOrders(payload)
+    ElMessage.success(`ERP 已下发 ${erpImportResult.value.createdCount || 0} 张工单`)
+    await loadOrders()
+  } catch (error) {
+    console.warn('ERP 工单下发失败', error)
+  } finally {
+    importing.value = false
+  }
+}
+
 async function releaseFirstOrder() {
   if (!canReleaseOrder.value) {
     ElMessage.warning('当前角色无权释放工单')
@@ -190,12 +286,15 @@ async function releaseFirstOrder() {
     ElMessage.warning('当前没有可释放工单')
     return
   }
+  releasing.value = true
   try {
     await releaseOrder(target.no, { lotQty: 100 })
     ElMessage.success(`${target.no} 已释放并生成 Lot`)
     await Promise.all([loadOrders(), loadLots()])
   } catch (error) {
     console.warn('工单释放失败', error)
+  } finally {
+    releasing.value = false
   }
 }
 

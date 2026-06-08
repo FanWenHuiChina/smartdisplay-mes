@@ -249,7 +249,7 @@ for (const button of requiredButtons) {
 
 const pageContracts = [
   ['views/overview/index.vue', ['getOverview'], []],
-  ['views/order/index.vue', ['getOrders', 'getLots', 'releaseOrder'], ['order:create', 'order:release']],
+  ['views/order/index.vue', ['getOrders', 'getLots', 'importErpOrders', 'releaseOrder'], ['order:create', 'order:release']],
   ['views/master/index.vue', ['getSites', 'getProductionLines', 'getShifts', 'getBoms', 'getBomChangeRequests', 'getRecipes', 'publishRecipe', 'publishBomChange'], ['recipe:publish', 'bom:change']],
   ['views/execution/index.vue', ['getLots', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
@@ -282,6 +282,10 @@ check('page:views/ai/index.vue:hybrid-local-index', aiView.includes("runKnowledg
 const masterView = read('src/views/master/index.vue')
 check('page:views/master/index.vue:bom-change-validation-file', masterView.includes('validationFileName') && masterView.includes('validationFileHash'), 'BOM change submit must carry substitute validation attachment metadata')
 check('page:views/master/index.vue:bom-change-attachment-count', masterView.includes('attachmentCount'), 'BOM change list must show validation attachment count')
+
+const orderView = read('src/views/order/index.vue')
+check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['importErpOrders', 'submitErpImport', 'erpImportResult']), 'Order page must expose ERP adapter import and show the latest import result')
+check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
 
 const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
