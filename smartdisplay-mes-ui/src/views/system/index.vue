@@ -141,7 +141,7 @@
       <div class="mes-card">
         <div class="mes-card__head">
           <div class="mes-card__title">告警与审批规则</div>
-          <span class="status-tag amber">3 条需复核</span>
+          <span class="status-tag" :class="ruleReviewCount ? 'amber' : 'green'">{{ ruleReviewCount }} 条需复核</span>
         </div>
         <div class="mes-card__body">
           <div class="cards">
@@ -243,6 +243,7 @@ import {
   createPermissionChangeRequest,
   getAuditLogs,
   getPermissionChangeRequests,
+  getSystemSummary,
   getSystemUsers,
   reloadPermissions,
   reviewPermissionChangeRequest
@@ -270,6 +271,21 @@ const loadingPermissionChanges = ref(false)
 const loadingPermissionReload = ref(false)
 const selectedPermissionChange = ref(null)
 const systemUsers = ref([])
+const systemSummary = ref(null)
+
+const fallbackRoles = [
+  { name: '生产班长', post: '线体管理', permissions: '派工、Track、Hold 申请', scope: '本基地 / 本产线', status: '启用', type: 'green' },
+  { name: '质量工程师', post: '质量处置', permissions: 'Hold Release、MRB、SPC', scope: '本基地 / 全工序', status: '启用', type: 'green' },
+  { name: '工艺工程师', post: '工艺维护', permissions: 'Route、Recipe、规格版本', scope: '产品族 / 工艺段', status: '审批中', type: 'amber' },
+  { name: '系统管理员', post: '平台治理', permissions: '用户、角色、审计策略', scope: '租户级', status: '受控', type: 'red' }
+]
+
+const fallbackRules = [
+  { name: '关键 Recipe 发布双人复核', status: '启用', type: 'green', meta: '对象：COATING / EVAP / BOND；触发：版本发布、参数范围变更；审批：工艺经理 + 质量经理' },
+  { name: 'Hold 超 SLA 升级', status: '需复核', type: 'amber', meta: 'P1 超过 30 分钟推送班长、质量工程师；超过 60 分钟升级制造经理' },
+  { name: '跨产线权限访问拦截', status: '启用', type: 'green', meta: '当用户访问非授权基地、产线、工序数据时拦截并写入审计日志' },
+  { name: '敏感操作二次确认', status: '启用', type: 'blue', meta: 'Scrap、MRB 报废、Recipe 回退、权限变更必须记录原因码和电子签名' }
+]
 
 const permissionForm = reactive({
   targetRole: 'QE',
@@ -278,6 +294,44 @@ const permissionForm = reactive({
 })
 
 const canMaintainPermissions = computed(() => hasButton('system:permission-change'))
+
+const permissionSnapshots = computed(() => {
+  const rows = systemSummary.value?.permissions
+  return Array.isArray(rows) ? rows : []
+})
+
+const roles = computed(() => {
+  if (!permissionSnapshots.value.length) {
+    return __DEV_MOCK_FALLBACK__ ? fallbackRoles : []
+  }
+  return permissionSnapshots.value.map(mapRolePermission)
+})
+
+const rules = computed(() => {
+  const rows = systemSummary.value?.rules
+  if (!Array.isArray(rows) || !rows.length) {
+    return __DEV_MOCK_FALLBACK__ ? fallbackRules : []
+  }
+  return rows.map(mapRule)
+})
+
+const ruleReviewCount = computed(() => rules.value.filter(rule => rule.type === 'amber').length)
+
+const permissionPointCount = computed(() => {
+  const points = new Set()
+  permissionSnapshots.value.forEach(snapshot => {
+    arrayValue(snapshot.menus).forEach(item => points.add(`menu:${item}`))
+    arrayValue(snapshot.buttons).forEach(item => points.add(`button:${item}`))
+    arrayValue(snapshot.domains).forEach(item => points.add(`domain:${item}`))
+  })
+  return points.size || (__DEV_MOCK_FALLBACK__ ? 146 : 0)
+})
+
+const sensitivePermissionCount = computed(() => {
+  const sensitiveWords = ['scrap', 'mrb', 'permission', 'recipe', 'supplier', 'eap', 'ai']
+  const buttons = permissionSnapshots.value.flatMap(snapshot => arrayValue(snapshot.buttons))
+  return buttons.filter(button => sensitiveWords.some(word => String(button).toLowerCase().includes(word))).length
+})
 
 const permissionDiffRows = computed(() => {
   const change = selectedPermissionChange.value
@@ -307,27 +361,14 @@ const metrics = computed(() => {
   const successCount = auditLogs.value.filter(log => log.type === 'green').length
   const reviewCount = auditLogs.value.filter(log => log.type === 'amber').length
   const permissionPending = permissionChanges.value.filter(change => change.status === 'PENDING_REVIEW').length
+  const userCount = systemUsers.value.length || (__DEV_MOCK_FALLBACK__ ? 18 : 0)
   return [
-    { label: '启用用户', value: String(systemUsers.value.length || 18), tag: 'RBAC', type: 'blue', left: '生产 8', right: '工程 6' },
-    { label: '权限点', value: '146', tag: '按模块', type: 'green', left: '核心 42', right: '敏感 12' },
+    { label: '启用用户', value: String(userCount), tag: 'RBAC', type: 'blue', left: `角色 ${roles.value.length}`, right: `待审 ${permissionPending}` },
+    { label: '权限点', value: String(permissionPointCount.value), tag: '按模块', type: 'green', left: `角色 ${permissionSnapshots.value.length}`, right: `敏感 ${sensitivePermissionCount.value}` },
     { label: '审计事件', value: String(auditLogs.value.length), tag: '当前', type: 'teal', left: `成功 ${successCount}`, right: `待复核 ${reviewCount}` },
     { label: '权限变更', value: String(permissionChanges.value.length), tag: `待审 ${permissionPending}`, type: permissionPending ? 'amber' : 'green', left: '审批闭环', right: '审计留痕' }
   ]
 })
-
-const roles = [
-  { name: '生产班长', post: '线体管理', permissions: '派工、Track、Hold 申请', scope: '本基地 / 本产线', status: '启用', type: 'green' },
-  { name: '质量工程师', post: '质量处置', permissions: 'Hold Release、MRB、SPC', scope: '本基地 / 全工序', status: '启用', type: 'green' },
-  { name: '工艺工程师', post: '工艺维护', permissions: 'Route、Recipe、规格版本', scope: '产品族 / 工艺段', status: '审批中', type: 'amber' },
-  { name: '系统管理员', post: '平台治理', permissions: '用户、角色、审计策略', scope: '租户级', status: '受控', type: 'red' }
-]
-
-const rules = [
-  { name: '关键 Recipe 发布双人复核', status: '启用', type: 'green', meta: '对象：COATING / EVAP / BOND；触发：版本发布、参数范围变更；审批：工艺经理 + 质量经理' },
-  { name: 'Hold 超 SLA 升级', status: '需复核', type: 'amber', meta: 'P1 超过 30 分钟推送班长、质量工程师；超过 60 分钟升级制造经理' },
-  { name: '跨产线权限访问拦截', status: '启用', type: 'green', meta: '当用户访问非授权基地、产线、工序数据时拦截并写入审计日志' },
-  { name: '敏感操作二次确认', status: '启用', type: 'blue', meta: 'Scrap、MRB 报废、Recipe 回退、权限变更必须记录原因码和电子签名' }
-]
 
 const health = [
   { label: '服务状态', value: 'Web / API / 登录服务运行正常' },
@@ -440,6 +481,87 @@ function mapPermissionChange(change, index = 0) {
     beforeSnapshot: parseSnapshot(change.beforeSnapshot),
     afterSnapshot: parseSnapshot(change.afterSnapshot)
   }
+}
+
+function mapRolePermission(snapshot = {}) {
+  const role = String(snapshot.role || '-').toUpperCase()
+  const pending = permissionChanges.value.some(change => change.targetRole === role && change.status === 'PENDING_REVIEW')
+  return {
+    name: roleDisplayName(role),
+    post: rolePost(role),
+    permissions: summarizeRolePermissions(snapshot),
+    scope: dataScopeText(snapshot.dataScope),
+    status: pending ? '审批中' : '启用',
+    type: pending ? 'amber' : role === 'ADMIN' ? 'red' : 'green'
+  }
+}
+
+function summarizeRolePermissions(snapshot = {}) {
+  const domains = arrayValue(snapshot.domains)
+  const buttons = arrayValue(snapshot.buttons)
+  const domainText = domains.length ? domains.slice(0, 3).join('、') : '基础执行'
+  const extra = buttons.length > 3 ? `等 ${buttons.length} 项按钮` : buttons.join('、')
+  return extra ? `${domainText} / ${extra}` : domainText
+}
+
+function mapRule(rule = {}) {
+  return {
+    name: rule.name || '规则',
+    status: ruleStatusText(rule.status),
+    type: ruleStatusType(rule.status),
+    meta: rule.meta || `状态：${rule.status || '-'}`
+  }
+}
+
+function ruleStatusText(status = '') {
+  const value = String(status).toUpperCase()
+  if (value === 'ENABLED') return '启用'
+  if (value === 'DISABLED') return '停用'
+  if (value === 'REVIEW_REQUIRED') return '需复核'
+  return status || '-'
+}
+
+function ruleStatusType(status = '') {
+  const value = String(status).toUpperCase()
+  if (value === 'ENABLED') return 'green'
+  if (value === 'DISABLED') return 'red'
+  if (value === 'REVIEW_REQUIRED') return 'amber'
+  return 'blue'
+}
+
+function roleDisplayName(role) {
+  return {
+    ADMIN: '系统管理员',
+    PLANNER: '计划员',
+    OPERATOR: '操作员',
+    QE: '质量工程师',
+    PE: '工艺工程师',
+    EE: '设备工程师'
+  }[role] || role
+}
+
+function rolePost(role) {
+  return {
+    ADMIN: '平台治理',
+    PLANNER: '计划排产',
+    OPERATOR: '现场执行',
+    QE: '质量处置',
+    PE: '工艺维护',
+    EE: '设备自动化'
+  }[role] || '岗位'
+}
+
+function dataScopeText(scope = '') {
+  return {
+    ALL: '全局',
+    LINE: '本产线',
+    SELF_SHIFT: '本人 / 当班',
+    SELF: '本人'
+  }[String(scope).toUpperCase()] || scope || '-'
+}
+
+function arrayValue(value) {
+  return Array.isArray(value) ? value : []
 }
 
 function parseSnapshot(value) {
@@ -561,6 +683,22 @@ async function approvePermissionChange(change) {
   }
 }
 
+async function loadSystemSummary() {
+  try {
+    const data = await getSystemSummary()
+    systemSummary.value = data || null
+    if (Array.isArray(data?.users)) {
+      systemUsers.value = data.users
+    }
+    if (Array.isArray(data?.auditLogs) && !auditLogs.value.length) {
+      auditLogs.value = data.auditLogs.map(mapAuditLog)
+    }
+  } catch (error) {
+    warnDevFallback('系统摘要接口不可用', error)
+    systemSummary.value = null
+  }
+}
+
 async function rejectPermissionChange(change) {
   if (!canMaintainPermissions.value) {
     ElMessage.warning('当前角色无权限审批权限变更')
@@ -608,6 +746,7 @@ async function reloadRuntimePermissions() {
 }
 
 onMounted(() => {
+  loadSystemSummary()
   loadAuditLogs()
   loadPermissionChanges()
   loadSystemUsers()

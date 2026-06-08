@@ -640,3 +640,10 @@
 - 系统管理页的“权限差异对比”从静态按钮升级为真实对比面板，可解析权限变更单 `beforeSnapshot/afterSnapshot`，展示角色、菜单权限、按钮权限、数据范围和领域权限的变更前后差异。
 - 权限变更单操作从仅支持“通过”扩展为“对比 / 通过 / 驳回”，驳回调用既有 `POST /api/v1/system/permission-change-requests/{changeNo}/review`，提交 `decision=REJECT` 并刷新变更单和审计日志。
 - 前端契约脚本新增系统页差异对比和驳回审批检查；已运行 `npm.cmd run verify:frontend-contract` 通过 310 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。
+
+# 2026-06-08 增量：系统页角色矩阵接口驱动
+
+- 系统管理页接入 `GET /api/v1/system/summary`，角色权限矩阵改为由后端返回的 `permissions` 快照生成，展示角色、岗位、领域/按钮权限摘要、数据范围和待审状态。
+- 系统页 KPI 中的启用用户、权限点、敏感权限数量和待审权限变更不再使用固定样例数字，改为基于系统摘要、用户接口和权限变更单实时派生；开发 fallback 仅在 `__DEV_MOCK_FALLBACK__` 下保留。
+- 告警与审批规则列表改为优先读取系统摘要中的 `rules`，规则复核数量由接口数据计算。
+- 前端契约脚本新增系统页 `getSystemSummary` 和摘要驱动角色矩阵检查；已运行 `npm.cmd run verify:frontend-contract` 通过 312 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 通过 14 个 JS 产物扫描。

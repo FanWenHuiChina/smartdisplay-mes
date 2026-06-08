@@ -251,7 +251,7 @@ const pageContracts = [
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['getTraceLot'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
-  ['views/system/index.vue', ['getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
+  ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
 ]
 
 for (const [relativePath, apiNames, buttonKeys] of pageContracts) {
@@ -279,6 +279,7 @@ check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("han
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
 
 const systemView = read('src/views/system/index.vue')
+check('page:views/system/index.vue:summary-driven-roles', hasAll(systemView, ['getSystemSummary', 'systemSummary', 'permissionSnapshots', 'mapRolePermission']), 'System role matrix must be driven by /system/summary permissions')
 check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
 check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
 
