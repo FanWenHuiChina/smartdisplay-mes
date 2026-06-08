@@ -595,3 +595,11 @@
 - 已运行后端全量测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 188, Failures: 0, Errors: 0, Skipped: 0`。
 - 已运行前端验收：`npm.cmd run verify:frontend-contract` 通过，`Frontend contract passed: 302 checks`；`npm.cmd run build` 通过；`npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物。
 - 已运行 Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。
+# 2026-06-08 增量：Lot 页 Rework/Scrap 操作入口
+
+- Lot 管理页新增 Rework 与 Scrap 操作按钮，按 `lot:rework`、`lot:scrap` 按钮权限控制，并仅允许在 `HOLD` 且 `holdFlag=1` 的 Lot 上触发。
+- 新增 Rework 弹窗：选择有效返工 Route 和返工起始工序，填写原因与操作人，提交到 `POST /api/v1/lots/{lotNo}/rework`。
+- 新增 Scrap 弹窗：填写报废原因、责任模块、审批人与操作人，并要求输入 `SCRAP:{lotNo}` 完成二次确认，提交到 `POST /api/v1/lots/{lotNo}/scrap`。
+- 旧 Lot 页 API 封装统一切换到 `/api/v1/lots` 试点接口，Track In 弹窗的工序与设备选项也统一读取 `/api/v1/master/**`。
+- 前端 `.gitignore` 增加 `.vite`，避免本地构建缓存进入仓库。
+- 已复验：`npm.cmd run verify:frontend-contract` 通过 302 项检查；`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 与 chunk size warning；`npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物。

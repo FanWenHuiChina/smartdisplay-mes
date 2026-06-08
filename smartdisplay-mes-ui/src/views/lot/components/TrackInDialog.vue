@@ -38,7 +38,7 @@
       </el-form-item>
 
       <el-alert
-        title="Track In 6层校验"
+        title="Track In 8层校验"
         type="info"
         :closable="false"
         style="margin-bottom: 20px"
@@ -46,11 +46,13 @@
         <template #default>
           <div style="font-size: 13px; line-height: 1.8">
             1. Lot状态校验（必须READY）<br />
-            2. 工序合法性校验（待实现Route）<br />
+            2. Route防跳站校验（匹配当前待执行工序）<br />
             3. 设备状态校验（IDLE/RUNNING）<br />
             4. 设备能力校验（设备支持该工序）<br />
             5. Recipe校验（Recipe存在且ACTIVE）<br />
-            6. Hold状态校验（Hold=0）
+            6. Hold状态校验（Hold=0）<br />
+            7. 班次校验（产线处于ACTIVE班次）<br />
+            8. 物料齐套校验（关键物料可用）
           </div>
         </template>
       </el-alert>
@@ -69,7 +71,7 @@
 import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { trackIn } from '@/api/lot'
-import { getProcessSteps, getEquipments } from '@/api/masterdata'
+import { getProcessSteps, getEquipments } from '@/api/pilot'
 
 const props = defineProps({
   modelValue: {

@@ -92,3 +92,11 @@
 - 真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
 - 真实数据库 API 闭环集成验证已补；Flyway 全新库迁移演练、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、生产 mock fallback 收口、生产包样例标识扫描、Docker Compose 容器级启动复验和一轮性能冒烟实测已补。
 - 性能验收已完成一轮冒烟实测和三轮稳定基线；后续仍建议在更接近试点数据规模、固定硬件和 CI 环境下持续采集趋势。
+# 2026-06-08 补充验收：Lot 页 Rework/Scrap 前端闭环
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| Lot 页 Rework 操作 | `HOLD` Lot 可在前端选择返工 Route、返工起始工序、原因与操作人，并调用 `POST /api/v1/lots/{lotNo}/rework` | 已落地，受 `lot:rework` 按钮权限控制 |
+| Lot 页 Scrap 操作 | `HOLD` Lot 可在前端填写原因、责任模块、审批人、操作人，并输入 `SCRAP:{lotNo}` 二次确认后调用 `POST /api/v1/lots/{lotNo}/scrap` | 已落地，受 `lot:scrap` 按钮权限控制 |
+| Lot 页 API 口径 | Lot 列表、Track In/Out、Hold/Release、Rework/Scrap 使用 `/api/v1/lots` 试点接口 | 已统一 |
+| 前端验证 | 契约检查、生产构建、生产包样例标识扫描通过 | 已通过：302 项契约检查，14 个 JS 产物扫描 |

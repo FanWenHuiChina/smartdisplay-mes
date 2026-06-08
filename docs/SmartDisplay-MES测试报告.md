@@ -207,3 +207,12 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端构建 | `npm.cmd run build` | 通过，仅第三方 pure annotation 和 chunk size warning |
 | 生产包扫描 | `npm.cmd run verify:production-bundle` | 14 个 JS 产物通过 |
 | Flyway静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | V1.1-V1.41 共 41 个迁移文件通过 |
+# 2026-06-08 Lot 页 Rework/Scrap 前端补齐复验
+
+本轮补齐 Lot 管理页 Rework/Scrap 操作入口，并将旧 Lot 页 API 统一到 `/api/v1/lots` 试点接口；Track In 弹窗的工序与设备选项同步改为读取 `/api/v1/master/**`。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，302 项检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |

@@ -12,6 +12,8 @@
             <el-option label="PROCESSING" value="PROCESSING" />
             <el-option label="HOLD" value="HOLD" />
             <el-option label="COMPLETED" value="COMPLETED" />
+            <el-option label="REWORK" value="REWORK" />
+            <el-option label="SCRAP" value="SCRAP" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -40,7 +42,7 @@
             <el-tag v-else type="success" size="small">正常</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="400" fixed="right">
+        <el-table-column label="操作" width="560" fixed="right">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -77,6 +79,24 @@
               :icon="CircleCheck"
             >
               Release
+            </el-button>
+            <el-button
+              type="warning"
+              size="small"
+              @click="handleRework(row)"
+              :disabled="!canRework(row)"
+              :icon="RefreshLeft"
+            >
+              Rework
+            </el-button>
+            <el-button
+              type="danger"
+              size="small"
+              @click="handleScrap(row)"
+              :disabled="!canScrap(row)"
+              :icon="Delete"
+            >
+              Scrap
             </el-button>
           </template>
         </el-table-column>
@@ -121,18 +141,33 @@
       :lot-data="selectedLot"
       @success="handleOperationSuccess"
     />
+
+    <ReworkDialog
+      v-model="reworkVisible"
+      :lot-data="selectedLot"
+      @success="handleOperationSuccess"
+    />
+
+    <ScrapDialog
+      v-model="scrapVisible"
+      :lot-data="selectedLot"
+      @success="handleOperationSuccess"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Right, Check, WarningFilled, CircleCheck } from '@element-plus/icons-vue'
+import { Search, Refresh, Right, Check, WarningFilled, CircleCheck, RefreshLeft, Delete } from '@element-plus/icons-vue'
 import { getLotList } from '@/api/lot'
+import { hasButton } from '@/utils/permissions'
 import TrackInDialog from './components/TrackInDialog.vue'
 import TrackOutDialog from './components/TrackOutDialog.vue'
 import HoldDialog from './components/HoldDialog.vue'
 import ReleaseDialog from './components/ReleaseDialog.vue'
+import ReworkDialog from './components/ReworkDialog.vue'
+import ScrapDialog from './components/ScrapDialog.vue'
 
 const loading = ref(false)
 const lotList = ref([])
@@ -141,6 +176,8 @@ const trackInVisible = ref(false)
 const trackOutVisible = ref(false)
 const holdVisible = ref(false)
 const releaseVisible = ref(false)
+const reworkVisible = ref(false)
+const scrapVisible = ref(false)
 
 const queryForm = reactive({
   lotNo: '',
@@ -193,7 +230,9 @@ const getStatusTagType = (status) => {
     'READY': '',
     'PROCESSING': 'success',
     'HOLD': 'danger',
-    'COMPLETED': 'info'
+    'COMPLETED': 'info',
+    'REWORK': 'warning',
+    'SCRAP': 'danger'
   }
   return typeMap[status] || ''
 }
@@ -205,19 +244,27 @@ const tableRowClassName = ({ row }) => {
 
 // 操作权限判断
 const canTrackIn = (row) => {
-  return row.status === 'READY' && row.holdFlag === 0
+  return hasButton('lot:track-in') && row.status === 'READY' && row.holdFlag === 0
 }
 
 const canTrackOut = (row) => {
-  return row.status === 'PROCESSING'
+  return hasButton('lot:track-out') && row.status === 'PROCESSING'
 }
 
 const canHold = (row) => {
-  return (row.status === 'READY' || row.status === 'PROCESSING') && row.holdFlag === 0
+  return hasButton('lot:hold') && (row.status === 'READY' || row.status === 'PROCESSING') && row.holdFlag === 0
 }
 
 const canRelease = (row) => {
-  return row.status === 'HOLD' && row.holdFlag === 1
+  return hasButton('lot:release') && row.status === 'HOLD' && row.holdFlag === 1
+}
+
+const canRework = (row) => {
+  return hasButton('lot:rework') && row.status === 'HOLD' && row.holdFlag === 1
+}
+
+const canScrap = (row) => {
+  return hasButton('lot:scrap') && row.status === 'HOLD' && row.holdFlag === 1
 }
 
 // 操作处理
@@ -239,6 +286,16 @@ const handleHold = (row) => {
 const handleRelease = (row) => {
   selectedLot.value = row
   releaseVisible.value = true
+}
+
+const handleRework = (row) => {
+  selectedLot.value = row
+  reworkVisible.value = true
+}
+
+const handleScrap = (row) => {
+  selectedLot.value = row
+  scrapVisible.value = true
 }
 
 // 操作成功回调
