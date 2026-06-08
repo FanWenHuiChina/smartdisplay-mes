@@ -11,6 +11,7 @@ import com.visionox.mes.common.BusinessException;
 import com.visionox.mes.equipment.adapter.EapAdapter;
 import com.visionox.mes.equipment.service.EapGatewayService;
 import com.visionox.mes.equipment.service.EquipmentService;
+import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
@@ -37,6 +38,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -344,7 +346,9 @@ class PilotMesServiceTest {
     @Test
     void reworkShouldMoveLotToReworkStepAndWriteAudit() {
         Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
         when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
         when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
         when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
 
@@ -355,8 +359,14 @@ class PilotMesServiceTest {
         ));
 
         assertThat(lot.getStatus()).isEqualTo("REWORK");
+        assertThat(lot.getHoldFlag()).isZero();
         assertThat(lot.getCurrentStepCode()).isEqualTo("ETCH");
         assertThat(lot.getCurrentEquipmentCode()).isNull();
+        assertThat(holdRecord.getStatus()).isEqualTo("RELEASED");
+        assertThat(holdRecord.getReleaseBy()).isEqualTo("qe1001");
+        assertThat(holdRecord.getReleaseTime()).isNotNull();
+        assertThat(holdRecord.getDisposition()).contains("RTE_OLED_V1", "ETCH");
+        verify(holdRecordMapper).updateById(holdRecord);
         verify(lotMapper).updateById(lot);
         ArgumentCaptor<String> reworkSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("LOT_REWORK"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
@@ -389,7 +399,9 @@ class PilotMesServiceTest {
     @Test
     void scrapShouldMoveLotToScrapAndWriteAudit() {
         Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
         when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
 
         pilotMesService.scrap("LOT001", Map.of(
                 "scrapConfirmed", true,
@@ -401,7 +413,13 @@ class PilotMesServiceTest {
         ));
 
         assertThat(lot.getStatus()).isEqualTo("SCRAP");
+        assertThat(lot.getHoldFlag()).isZero();
         assertThat(lot.getCurrentEquipmentCode()).isNull();
+        assertThat(holdRecord.getStatus()).isEqualTo("RELEASED");
+        assertThat(holdRecord.getReleaseBy()).isEqualTo("qe1001");
+        assertThat(holdRecord.getReleaseTime()).isNotNull();
+        assertThat(holdRecord.getDisposition()).isEqualTo("MRB scrap");
+        verify(holdRecordMapper).updateById(holdRecord);
         verify(lotMapper).updateById(lot);
         ArgumentCaptor<String> scrapSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("LOT_SCRAP"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
@@ -468,5 +486,16 @@ class PilotMesServiceTest {
         step.setStepCode(stepCode);
         step.setAllowRework(allowRework);
         return step;
+    }
+
+    private HoldRecord holdRecord(String lotNo) {
+        HoldRecord holdRecord = new HoldRecord();
+        holdRecord.setLotNo(lotNo);
+        holdRecord.setHoldReason("Quality exception");
+        holdRecord.setHoldType("QUALITY");
+        holdRecord.setHoldBy("qe1001");
+        holdRecord.setHoldTime(LocalDateTime.now().minusHours(1));
+        holdRecord.setStatus("HOLD");
+        return holdRecord;
     }
 }

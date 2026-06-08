@@ -615,3 +615,10 @@
 - Track In 状态校验从仅允许 `READY` 扩展为允许 `READY/REWORK`，返工 Lot 重新进站仍必须通过 Route、设备、Recipe、Hold、班次、物料齐套和审计等完整校验链。
 - Lot 管理页和生产执行台同步允许 `REWORK` 状态触发 Track In，并更新状态筛选、操作提示和 Track In 校验说明。
 - 新增后端单元测试覆盖 `REWORK -> Track In -> PROCESSING`，前端契约脚本新增 Lot 页和执行台必须允许 REWORK 进站的静态检查。
+
+# 2026-06-08 增量：Rework/Scrap 处置关闭原 Hold
+
+- 修正 HOLD Lot 执行 Rework/Scrap 后仍保留打开 Hold 记录的问题：处置前会查找最新 `HOLD` 状态的 `lot_hold_record`，写入 release 人、release 时间、处置结论，并将记录置为 `RELEASED`。
+- Rework 处置会保留最终状态 `REWORK`、清空当前设备、切换到返工起始工序，并将 `holdFlag` 清零；后续 Track In 仍走完整校验链。
+- Scrap 处置会保留最终状态 `SCRAP`、清空当前设备，并同步清理 Hold 标记，避免追溯中出现 Lot 已报废但仍有打开 Hold 的状态不一致。
+- 已补 `PilotMesServiceTest` 断言 Rework/Scrap 会同步释放 Hold 记录，并运行 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,TrackInServiceTest,PilotMesFlowIntegrationTest" test` 通过，共 27 项测试。

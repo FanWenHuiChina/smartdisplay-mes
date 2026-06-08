@@ -297,14 +297,16 @@ public class PilotMesService {
         if (!Integer.valueOf(1).equals(reworkStep.getAllowRework())) {
             throw new BusinessException("Rework step does not allow rework: " + reworkStepCode);
         }
+        String operator = text(request, "operator", currentUser());
+        String disposition = "MRB rework route=" + reworkRouteCode + ", step=" + reworkStepCode;
+        releaseOpenHoldForDisposition(lot, operator, disposition);
         lot.setStatus("REWORK");
         lot.setCurrentStepCode(reworkStepCode);
         lot.setCurrentEquipmentCode(null);
         lotMapper.updateById(lot);
-        closeExceptionIfProvided(lotNo, request, "REWORK",
-                "MRB rework route=" + reworkRouteCode + ", step=" + reworkStepCode);
+        closeExceptionIfProvided(lotNo, request, "REWORK", disposition);
         audit("LOT_REWORK", lotNo, "Rework route=" + reworkRouteCode + ", step=" + reworkStepCode,
-                text(request, "operator", currentUser()),
+                operator,
                 auditSnapshot(before, lotSnapshot(lot), safeRequest(request)));
     }
 
@@ -315,13 +317,15 @@ public class PilotMesService {
         String reason = requireText(request, "reason", "Scrap reason is required");
         String responsibilityModule = requireText(request, "responsibilityModule", "Scrap responsibility module is required");
         String approver = requireText(request, "approver", "Scrap approver is required");
+        String operator = text(request, "operator", currentUser());
+        releaseOpenHoldForDisposition(lot, operator, reason);
         lot.setStatus("SCRAP");
         lot.setCurrentEquipmentCode(null);
         lotMapper.updateById(lot);
         closeExceptionIfProvided(lotNo, request, "SCRAP", reason);
         audit("LOT_SCRAP", lotNo,
                 "Scrap reason=" + reason + ", module=" + responsibilityModule + ", approver=" + approver,
-                text(request, "operator", currentUser()),
+                operator,
                 auditSnapshot(before, lotSnapshot(lot), safeRequest(request)));
     }
 
@@ -1740,6 +1744,27 @@ public class PilotMesService {
         if (!flag || !expected.equals(confirmText)) {
             throw new BusinessException("Scrap requires second confirmation: scrapConfirmed=true and confirmText=" + expected);
         }
+    }
+
+    private void releaseOpenHoldForDisposition(Lot lot, String operator, String disposition) {
+        if (!Integer.valueOf(1).equals(lot.getHoldFlag())) {
+            return;
+        }
+        HoldRecord holdRecord = holdRecordMapper.selectOne(
+                new LambdaQueryWrapper<HoldRecord>()
+                        .eq(HoldRecord::getLotNo, lot.getLotNo())
+                        .eq(HoldRecord::getStatus, "HOLD")
+                        .orderByDesc(HoldRecord::getHoldTime)
+                        .last("LIMIT 1"));
+        if (holdRecord == null) {
+            throw new BusinessException("未找到待释放Hold记录: " + lot.getLotNo());
+        }
+        holdRecord.setReleaseBy(operator);
+        holdRecord.setReleaseTime(LocalDateTime.now());
+        holdRecord.setDisposition(disposition);
+        holdRecord.setStatus("RELEASED");
+        holdRecordMapper.updateById(holdRecord);
+        lot.setHoldFlag(0);
     }
 
     private Object value(Map<String, Object> request, String key) {

@@ -116,3 +116,12 @@
 | REWORK 状态 Track In | 返工 Lot 状态为 `REWORK` 时，可按返工起始工序重新 Track In，并继续执行完整校验链 | 已落地 |
 | 前端执行入口 | Lot 管理页和生产执行台均允许 `READY/REWORK` 状态触发 Track In | 已落地 |
 | 回归测试 | 后端测试覆盖 `REWORK -> PROCESSING`，前端契约覆盖 REWORK Track In 入口 | 已落地 |
+
+# 2026-06-08 补充验收：Rework/Scrap 处置释放 Hold
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| HOLD Lot Rework | 从 `HOLD` 发起 Rework 时，必须关闭最新打开的 `lot_hold_record`、写入处置结论、清零 `holdFlag`，最终 Lot 状态保持 `REWORK` | 已落地 |
+| HOLD Lot Scrap | 从 `HOLD` 发起 Scrap 时，必须关闭最新打开的 `lot_hold_record`、写入报废原因、清零 `holdFlag`，最终 Lot 状态保持 `SCRAP` | 已落地 |
+| 状态一致性 | Rework/Scrap 后追溯不应出现 Lot 已返工或报废但仍有打开 Hold 的冲突状态 | 已落地 |
+| 回归测试 | `PilotMesServiceTest` 覆盖 Rework/Scrap 释放 Hold 记录，`TrackInServiceTest` 覆盖返工进站校验链 | 已通过 |

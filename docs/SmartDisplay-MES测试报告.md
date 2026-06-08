@@ -238,3 +238,14 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，306 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
+
+# 2026-06-08 Rework/Scrap 释放 Hold 记录复验
+
+本轮修正 HOLD Lot 执行 Rework/Scrap 后原 Hold 记录仍打开的问题，确保处置后 Lot 状态、`holdFlag`、`lot_hold_record` 与追溯状态一致。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| Rework/Scrap 服务层回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,TrackInServiceTest,PilotMesFlowIntegrationTest" test` | 通过，27 项测试 |
+| HOLD Lot Rework | `PilotMesServiceTest.reworkShouldMoveLotToReworkStepAndWriteAudit` | 验证最终状态 `REWORK`、`holdFlag=0`、HoldRecord `RELEASED`、处置结论包含返工 Route/Step |
+| HOLD Lot Scrap | `PilotMesServiceTest.scrapShouldMoveLotToScrapAndWriteAudit` | 验证最终状态 `SCRAP`、`holdFlag=0`、HoldRecord `RELEASED`、处置结论等于报废原因 |
+| 返工进站校验链 | `TrackInServiceTest` | 保持通过，确认 `REWORK` Lot 进站仍执行原完整校验链 |
