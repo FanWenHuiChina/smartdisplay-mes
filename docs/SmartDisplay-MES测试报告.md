@@ -346,3 +346,18 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | Docker 重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | PostgreSQL healthy，后端 `8080`，前端 `8888` |
 | Docker 追溯接口探活 | 经 `http://localhost:8888/api` 登录后调用 `/v1/trace/search` | 通过 | `LOT202406001-SN001` 解析为 `SN -> LOT202406001`；`COATER_01` 设备追溯命中 5 个 Lot |
 | 浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步通过，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-170328.md` |
+## 2026-06-08 载具绑定追溯与 Hybrid Local RAG 复验
+
+本轮补齐载具绑定/解绑动作、Lot 追溯载具证据链，并将 AI SOP 问答从关键词 fallback 推进到本地混合检索。`HYBRID_LOCAL` 仍属于试点本地确定性能力，不调用外部模型，也不自动执行生产动作。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| AI 目标回归 | `mvn.cmd -s D:\workspace\mes\.m2\settings.xml "-Dtest=AiKnowledgeServiceTest,AiKbIndexServiceTest,AiModelConfigServiceTest" test` | 通过 | 10 项测试覆盖 Hybrid Local 索引、RAG 评分和 SOP_QA fallback 配置 |
+| 后端全量回归 | `mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` | 通过 | 213 项测试通过 |
+| 前端契约 | `npm.cmd run verify:frontend-contract` | 通过 | 328 项检查，包含 AI 页 `HYBRID_LOCAL` 入口和载具绑定 API |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留既有 `@vueuse/core` pure annotation 和 chunk size warning |
+| 生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 12 JS assets checked` |
+| Docker 重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | backend、frontend、postgres 均启动，Flyway 从 `1.42` 迁移到 `1.43` |
+| 载具追溯探活 | 登录后绑定 `CST-260606-002` 到演示 Lot 并查询 `/api/v1/trace/lots/{lotNo}` | 通过 | 追溯摘要返回 `carrierCount=1` 和载具号 |
+| Hybrid RAG 探活 | 登录后调用 `/api/v1/ai/kb/index-jobs` 和 `/api/v1/ai/kb/ask` | 通过 | `LOCAL_RAG_HYBRID` 激活；索引 7 个切片；问答返回 `HYBRID_LOCAL`、`HIGH`、3 条引用 |
+| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步通过，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-183556.md` |

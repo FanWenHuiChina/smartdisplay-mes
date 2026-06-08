@@ -104,6 +104,24 @@ class AiKbIndexServiceTest {
     }
 
     @Test
+    void createIndexJobShouldBuildHybridLocalIndex() {
+        AiKbChunk chunk = chunk("SOP-HYBRID-001-001");
+        when(chunkMapper.selectList(any())).thenReturn(List.of(chunk));
+        when(indexJobMapper.insert(any(AiKbIndexJob.class))).thenReturn(1);
+
+        Map<String, Object> result = service.createIndexJob(Map.of("retrievalStrategy", "HYBRID_LOCAL"), "qe1001");
+
+        assertThat(chunk.getRetrievalStrategy()).isEqualTo("HYBRID_LOCAL");
+        assertThat(chunk.getEmbeddingStatus()).isEqualTo("LOCAL_VECTOR_INDEXED");
+        assertThat(chunk.getEmbeddingModel()).isEqualTo("local-hybrid-vector-v1");
+        assertThat(chunk.getEmbeddingRef()).isEqualTo("local-vector://indexed/SOP-HYBRID-001-001");
+        assertThat(result.get("hybridLocal")).isEqualTo(true);
+        assertThat(result.get("vectorReady")).isEqualTo(false);
+        assertThat(result.get("type")).isEqualTo("green");
+        assertThat(String.valueOf(result.get("boundaryNote"))).contains("本地混合检索");
+    }
+
+    @Test
     void createIndexJobShouldRejectUnsupportedStrategy() {
         assertThatThrownBy(() -> service.createIndexJob(Map.of("retrievalStrategy", "VECTOR_SEARCH"), "pe1001"))
                 .isInstanceOf(BusinessException.class)

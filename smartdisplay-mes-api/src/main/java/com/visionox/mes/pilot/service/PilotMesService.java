@@ -723,6 +723,15 @@ public class PilotMesService {
         return fallbackCarriers();
     }
 
+    public Map<String, Object> bindCarrier(String carrierNo, Map<String, Object> request) {
+        Lot lot = findLot(text(request, "lotNo", ""));
+        return materialService.bindCarrier(carrierNo, lot, safeRequest(request));
+    }
+
+    public Map<String, Object> unbindCarrier(String carrierNo, Map<String, Object> request) {
+        return materialService.unbindCarrier(carrierNo, safeRequest(request));
+    }
+
     public Map<String, Object> traceLot(String lotNo) {
         Lot lot = findLot(lotNo);
         List<LotStepRecord> steps = stepRecordMapper.selectList(new LambdaQueryWrapper<LotStepRecord>()
@@ -738,12 +747,16 @@ public class PilotMesService {
         data.put("route", routes().get(0));
         data.put("serialNumbers", serialNumbers);
         data.put("serialNumberSummary", serialNumberSummary(lotNo, serialNumbers));
+        data.put("carriers", carrierTraceRows(lotNo));
         data.put("stepRecords", steps);
         data.put("holdRecords", holds);
         data.put("qualityRecords", qualityInspections(lotNo));
         data.put("exceptionEvents", qualityExceptions(lotNo));
         data.put("materialConsumptions", materialConsumptions(lotNo));
         data.put("auditLogs", auditLogs(lotNo));
+        List<Map<String, Object>> matches = List.of(traceLotMatch(lot));
+        data.put("impactSummary", traceImpactSummary(matches, data));
+        data.put("relatedDimensions", traceRelatedDimensions(matches, data));
         return data;
     }
 
@@ -816,6 +829,27 @@ public class PilotMesService {
             log.warn("物料消耗正式表读取失败，已降级到试点消耗数据: {}", e.getMessage());
         }
         return fallbackMaterialConsumptions(lotNo);
+    }
+
+    private List<Map<String, Object>> carrierTraceRows(String lotNo) {
+        try {
+            List<Map<String, Object>> rows = materialService.carriersByLot(lotNo);
+            return rows == null ? List.of() : rows;
+        } catch (Exception e) {
+            log.warn("Carrier姝ｅ紡琛ㄨ鍙栧け璐ワ紝Lot杩芥函宸插拷鐣arrier璇佹嵁: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private Map<String, Object> traceLotMatch(Lot lot) {
+        Map<String, Object> match = new LinkedHashMap<>();
+        match.put("lotNo", objectText(lot.getLotNo(), ""));
+        match.put("orderNo", objectText(lot.getOrderNo(), ""));
+        match.put("status", objectText(lot.getStatus(), ""));
+        match.put("currentStepCode", objectText(lot.getCurrentStepCode(), ""));
+        match.put("matchField", "lotNo");
+        match.put("evidence", objectText(lot.getLotNo(), ""));
+        return match;
     }
 
     public Map<String, Object> receiveMaterial(Map<String, Object> request) {
@@ -1551,6 +1585,7 @@ public class PilotMesService {
         summary.put("matchedLotCount", matches.size());
         summary.put("holdLotCount", matches.stream().filter(row -> "HOLD".equals(row.get("status"))).count());
         summary.put("serialNumberCount", longValue(fieldValue(trace.get("serialNumberSummary"), "totalCount"), listValue(trace.get("serialNumbers")).size()));
+        summary.put("carrierCount", listValue(trace.get("carriers")).size());
         summary.put("ngInspectionCount", listValue(trace.get("qualityRecords")).stream()
                 .filter(row -> !"OK".equals(fieldText(row, "result")))
                 .count());
@@ -1564,6 +1599,7 @@ public class PilotMesService {
         Map<String, Object> dimensions = new LinkedHashMap<>();
         dimensions.put("orderNos", distinctTextValues(matches, "orderNo"));
         dimensions.put("serialNumbers", distinctTextValues(listValue(trace.get("serialNumbers")), "sn"));
+        dimensions.put("carrierNos", distinctTextValues(listValue(trace.get("carriers")), "carrierNo"));
         dimensions.put("equipmentCodes", distinctTextValues(listValue(trace.get("stepRecords")), "equipmentCode"));
         dimensions.put("materialBatches", distinctTextValues(listValue(trace.get("materialConsumptions")), "batchNo"));
         dimensions.put("defectCodes", distinctTextValues(listValue(trace.get("qualityRecords")), "defectCode"));

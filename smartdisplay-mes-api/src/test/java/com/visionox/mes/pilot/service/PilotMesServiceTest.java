@@ -353,6 +353,32 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void bindCarrierShouldValidateLotScopeBeforeDelegatingToMaterialService() {
+        Lot lot = lot("LOT001", "READY");
+        Map<String, Object> request = Map.of("lotNo", "LOT001", "operator", "op1001");
+        Map<String, Object> carrierRow = Map.of("carrierNo", "CST-001", "lotNo", "LOT001", "status", "BOUND");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(materialService.bindCarrier("CST-001", lot, request)).thenReturn(carrierRow);
+
+        Map<String, Object> result = pilotMesService.bindCarrier("CST-001", request);
+
+        assertThat(result).isSameAs(carrierRow);
+        verify(materialService).bindCarrier("CST-001", lot, request);
+    }
+
+    @Test
+    void unbindCarrierShouldDelegateToMaterialService() {
+        Map<String, Object> request = Map.of("operator", "op1001");
+        Map<String, Object> carrierRow = Map.of("carrierNo", "CST-001", "status", "IDLE");
+        when(materialService.unbindCarrier("CST-001", request)).thenReturn(carrierRow);
+
+        Map<String, Object> result = pilotMesService.unbindCarrier("CST-001", request);
+
+        assertThat(result).isSameAs(carrierRow);
+        verify(materialService).unbindCarrier("CST-001", request);
+    }
+
+    @Test
     void traceSearchShouldResolveEquipmentToMatchedLotAndTraceEnvelope() {
         Lot lot = lot("LOT001", "PROCESSING");
         LotStepRecord stepRecord = stepRecord("LOT001", "COATER_01");
@@ -434,6 +460,11 @@ class PilotMesServiceTest {
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
         when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
+        when(materialService.carriersByLot("LOT001")).thenReturn(List.of(Map.of(
+                "carrierNo", "CST-001",
+                "lotNo", "LOT001",
+                "status", "BOUND"
+        )));
 
         Map<String, Object> trace = pilotMesService.traceLot("LOT001");
 
@@ -441,14 +472,27 @@ class PilotMesServiceTest {
         List<SerialNumber> serialNumbers = (List<SerialNumber>) trace.get("serialNumbers");
         @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) trace.get("serialNumberSummary");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> carriers = (List<Map<String, Object>>) trace.get("carriers");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> impactSummary = (Map<String, Object>) trace.get("impactSummary");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> relatedDimensions = (Map<String, Object>) trace.get("relatedDimensions");
 
         assertThat(serialNumbers).extracting(SerialNumber::getSn)
                 .containsExactly("LOT001-SN001", "LOT001-SN002");
+        assertThat(carriers).hasSize(1);
+        assertThat(carriers.get(0)).containsEntry("carrierNo", "CST-001");
         assertThat(summary)
                 .containsEntry("totalCount", 2L)
                 .containsEntry("returnedCount", 2)
                 .containsEntry("firstSn", "LOT001-SN001")
                 .containsEntry("limited", false);
+        assertThat(impactSummary)
+                .containsEntry("matchedLotCount", 1)
+                .containsEntry("serialNumberCount", 2L)
+                .containsEntry("carrierCount", 1);
+        assertThat(relatedDimensions.get("carrierNos")).isEqualTo(List.of("CST-001"));
     }
 
     @Test

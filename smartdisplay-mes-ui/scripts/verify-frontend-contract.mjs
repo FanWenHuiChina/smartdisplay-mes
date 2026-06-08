@@ -180,6 +180,8 @@ const requiredApiExports = [
   ['completeMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/complete'],
   ['cancelMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/cancel'],
   ['getCarriers', '/v1/carriers'],
+  ['bindCarrier', '/v1/carriers/${carrierNo}/bind'],
+  ['unbindCarrier', '/v1/carriers/${carrierNo}/unbind'],
   ['createYieldReport', '/v1/ai/reports/yield'],
   ['analyzeEquipment', '/v1/ai/equipment/analyze'],
   ['askKnowledgeBase', '/v1/ai/kb/ask'],
@@ -252,7 +254,7 @@ const pageContracts = [
   ['views/execution/index.vue', ['getLots', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
   ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
-  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
+  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['searchTrace'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
   ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
@@ -273,6 +275,9 @@ for (const [relativePath, apiNames, buttonKeys] of pageContracts) {
     check(`page:${relativePath}:no-raw-fallback-warning`, !source.includes('使用开发 fallback 数据'), 'use warnDevFallback(...) instead of raw console fallback warnings')
   }
 }
+
+const aiView = read('src/views/ai/index.vue')
+check('page:views/ai/index.vue:hybrid-local-index', aiView.includes("runKnowledgeIndex('HYBRID_LOCAL')"), 'AI page must expose local hybrid RAG indexing')
 
 const masterView = read('src/views/master/index.vue')
 check('page:views/master/index.vue:bom-change-validation-file', masterView.includes('validationFileName') && masterView.includes('validationFileHash'), 'BOM change submit must carry substitute validation attachment metadata')

@@ -116,7 +116,7 @@ public class AiModelConfigService {
 
     private String retrievalStrategyFor(String useCase) {
         return switch (normalizeUseCase(useCase)) {
-            case "SOP_QA" -> "KEYWORD_FALLBACK";
+            case "SOP_QA" -> "HYBRID_LOCAL";
             case "EQUIPMENT_ANALYSIS" -> "MES_AND_RAG";
             case "YIELD_DAILY" -> "MES_SNAPSHOT";
             default -> "NONE";

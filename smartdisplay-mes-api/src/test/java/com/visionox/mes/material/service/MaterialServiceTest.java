@@ -9,6 +9,7 @@ import com.visionox.mes.material.entity.BomChangeAttachment;
 import com.visionox.mes.material.entity.BomChangeRequest;
 import com.visionox.mes.material.entity.BomEcoApprovalTask;
 import com.visionox.mes.material.entity.BomItem;
+import com.visionox.mes.material.entity.Carrier;
 import com.visionox.mes.material.entity.MaterialBatch;
 import com.visionox.mes.material.entity.MaterialCoaAttachment;
 import com.visionox.mes.material.entity.MaterialConsumption;
@@ -1131,6 +1132,90 @@ class MaterialServiceTest {
         verify(carrierMapper).selectList(any());
     }
 
+    @Test
+    void bindCarrierShouldAttachCarrierToLotAndWriteAudit() {
+        Lot lot = lot();
+        lot.setLineCode("LINE_01");
+        lot.setCurrentStepCode("COATING");
+        lot.setCurrentEquipmentCode("COATER_01");
+        Carrier carrier = carrier("CST-001", "IDLE", null);
+        when(carrierMapper.selectOne(any())).thenReturn(carrier);
+
+        Map<String, Object> row = materialService.bindCarrier("CST-001", lot, Map.of(
+                "operator", "op1001",
+                "location", "LINE_01"
+        ));
+
+        assertThat(row)
+                .containsEntry("carrierNo", "CST-001")
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("status", "BOUND")
+                .containsEntry("lineCode", "LINE_01");
+        assertThat(carrier.getProductCode()).isEqualTo("OLED_PANEL");
+        assertThat(carrier.getStepCode()).isEqualTo("COATING");
+        assertThat(carrier.getEquipmentCode()).isEqualTo("COATER_01");
+        assertThat(carrier.getBindTime()).isNotNull();
+        assertThat(carrier.getUnbindTime()).isNull();
+        verify(carrierMapper).updateById(carrier);
+        verify(auditLogService).record(eq("CARRIER_BIND"), eq("CST-001"), eq("CARRIER"), any(),
+                eq("op1001"), eq("material-service"), isNull());
+    }
+
+    @Test
+    void bindCarrierShouldRejectCarrierBoundToOtherLot() {
+        Carrier carrier = carrier("CST-001", "BOUND", "LOT999");
+        when(carrierMapper.selectOne(any())).thenReturn(carrier);
+
+        assertThatThrownBy(() -> materialService.bindCarrier("CST-001", lot(), Map.of("operator", "op1001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("LOT999");
+
+        verify(carrierMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unbindCarrierShouldClearLotBindingAndWriteAudit() {
+        Carrier carrier = carrier("CST-001", "BOUND", "LOT001");
+        carrier.setProductCode("OLED_PANEL");
+        carrier.setStepCode("COATING");
+        carrier.setEquipmentCode("COATER_01");
+        when(carrierMapper.selectOne(any())).thenReturn(carrier);
+
+        Map<String, Object> row = materialService.unbindCarrier("CST-001", Map.of(
+                "operator", "op1001",
+                "location", "BUFFER"
+        ));
+
+        assertThat(row)
+                .containsEntry("carrierNo", "CST-001")
+                .containsEntry("lotNo", "")
+                .containsEntry("status", "IDLE");
+        assertThat(carrier.getLotNo()).isNull();
+        assertThat(carrier.getProductCode()).isNull();
+        assertThat(carrier.getStepCode()).isNull();
+        assertThat(carrier.getEquipmentCode()).isNull();
+        assertThat(carrier.getUnbindTime()).isNotNull();
+        verify(carrierMapper).updateById(carrier);
+        verify(auditLogService).record(eq("CARRIER_UNBIND"), eq("CST-001"), eq("CARRIER"), any(),
+                eq("op1001"), eq("material-service"), isNull());
+    }
+
+    @Test
+    void carriersByLotShouldReturnTraceRows() {
+        Carrier carrier = carrier("CST-001", "BOUND", "LOT001");
+        when(carrierMapper.selectList(any())).thenReturn(List.of(carrier));
+
+        List<Map<String, Object>> rows = materialService.carriersByLot("LOT001");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("carrierNo", "CST-001")
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("status", "BOUND");
+        verify(carrierMapper).selectList(any());
+    }
+
     private Lot lot() {
         Lot lot = new Lot();
         lot.setLotNo("LOT001");
@@ -1138,6 +1223,19 @@ class MaterialServiceTest {
         lot.setProductCode("OLED_PANEL");
         lot.setQty(100);
         return lot;
+    }
+
+    private Carrier carrier(String carrierNo, String status, String lotNo) {
+        Carrier carrier = new Carrier();
+        carrier.setId(90L);
+        carrier.setCarrierNo(carrierNo);
+        carrier.setCarrierType("Cassette");
+        carrier.setStatus(status);
+        carrier.setLotNo(lotNo);
+        carrier.setLineCode("LINE_01");
+        carrier.setLocation("BUFFER");
+        carrier.setBindTime(LocalDateTime.now().minusHours(1));
+        return carrier;
     }
 
     private LotStepRecord stepRecord() {

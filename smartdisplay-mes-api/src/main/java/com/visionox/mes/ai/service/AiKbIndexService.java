@@ -35,7 +35,7 @@ public class AiKbIndexService {
 
     private static final DateTimeFormatter NO_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
     private static final AtomicLong NO_COUNTER = new AtomicLong();
-    private static final List<String> SUPPORTED_STRATEGIES = List.of("KEYWORD_FALLBACK", "PGVECTOR_READY");
+    private static final List<String> SUPPORTED_STRATEGIES = List.of("KEYWORD_FALLBACK", "HYBRID_LOCAL", "PGVECTOR_READY");
 
     private final AiKbIndexJobMapper indexJobMapper;
     private final AiKbDocumentMapper documentMapper;
@@ -153,6 +153,7 @@ public class AiKbIndexService {
         row.put("createdTime", job.getCreatedTime());
         row.put("time", job.getCreatedTime() == null ? "-" : job.getCreatedTime().toLocalTime().withNano(0).toString());
         row.put("type", statusType(job.getStatus(), job.getRetrievalStrategy()));
+        row.put("hybridLocal", "HYBRID_LOCAL".equals(job.getRetrievalStrategy()));
         row.put("vectorReady", "PGVECTOR_READY".equals(job.getRetrievalStrategy()));
         return row;
     }
@@ -186,23 +187,36 @@ public class AiKbIndexService {
     }
 
     private String embeddingStatus(String strategy) {
-        return "PGVECTOR_READY".equals(strategy) ? "VECTOR_PENDING" : "KEYWORD_INDEXED";
+        return switch (strategy) {
+            case "PGVECTOR_READY" -> "VECTOR_PENDING";
+            case "HYBRID_LOCAL" -> "LOCAL_VECTOR_INDEXED";
+            default -> "KEYWORD_INDEXED";
+        };
     }
 
     private String defaultEmbeddingModel(String strategy) {
-        return "PGVECTOR_READY".equals(strategy) ? "external-embedding-not-configured" : "local-keyword-index-v1";
+        return switch (strategy) {
+            case "PGVECTOR_READY" -> "external-embedding-not-configured";
+            case "HYBRID_LOCAL" -> "local-hybrid-vector-v1";
+            default -> "local-keyword-index-v1";
+        };
     }
 
     private String embeddingRef(String strategy, String chunkNo) {
         String safeChunkNo = valueOr(chunkNo, "unknown");
-        return "PGVECTOR_READY".equals(strategy)
-                ? "pgvector-ready://pending/" + safeChunkNo
-                : "keyword://indexed/" + safeChunkNo;
+        return switch (strategy) {
+            case "PGVECTOR_READY" -> "pgvector-ready://pending/" + safeChunkNo;
+            case "HYBRID_LOCAL" -> "local-vector://indexed/" + safeChunkNo;
+            default -> "keyword://indexed/" + safeChunkNo;
+        };
     }
 
     private String boundaryNote(String strategy) {
         if ("PGVECTOR_READY".equals(strategy)) {
             return "仅标记向量索引待联调状态；未生成真实embedding，未执行pgvector相似度检索。";
+        }
+        if ("HYBRID_LOCAL".equals(strategy)) {
+            return "已重建本地混合检索索引：关键词召回 + 本地确定性向量指纹评分；不调用外部模型，不自动执行生产动作。";
         }
         return "已重建本地关键词fallback索引；RAG仍由关键词召回提供证据。";
     }

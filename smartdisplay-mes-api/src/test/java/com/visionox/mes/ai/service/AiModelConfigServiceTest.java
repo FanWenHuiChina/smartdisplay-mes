@@ -60,5 +60,10 @@ class AiModelConfigServiceTest {
         assertThat(rows).hasSize(3);
         assertThat(rows).extracting(row -> row.get("configCode"))
                 .contains("FALLBACK_YIELD_DAILY", "FALLBACK_EQUIPMENT_ANALYSIS", "FALLBACK_SOP_QA");
+        assertThat(rows.stream()
+                .filter(row -> "FALLBACK_SOP_QA".equals(row.get("configCode")))
+                .findFirst()
+                .orElseThrow()
+                .get("retrievalStrategy")).isEqualTo("HYBRID_LOCAL");
     }
 }

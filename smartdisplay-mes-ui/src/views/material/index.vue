@@ -65,12 +65,24 @@
           <table class="mes-table">
             <thead><tr><th>载具</th><th>Lot</th><th>工序</th><th>状态</th></tr></thead>
             <tbody>
-              <tr v-for="carrier in carriers" :key="carrier.code">
+              <tr v-for="carrier in carriers" :key="carrier.code" @click="selectCarrier(carrier)">
                 <td>{{ carrier.code }}</td><td>{{ carrier.lot }}</td><td>{{ carrier.step }}</td>
                 <td><span class="status-tag" :class="carrier.type">{{ carrier.status }}</span></td>
               </tr>
             </tbody>
           </table>
+          <div class="adapter-strip carrier-action-strip">
+            <div class="carrier-form">
+              <input v-model="carrierForm.carrierNo" class="mes-input" placeholder="Carrier No" />
+              <input v-model="carrierForm.lotNo" class="mes-input" placeholder="Lot No" />
+              <input v-model="carrierForm.stepCode" class="mes-input" placeholder="Step" />
+              <input v-model="carrierForm.equipmentCode" class="mes-input" placeholder="Equipment" />
+            </div>
+            <div class="adapter-actions">
+              <button v-if="canWmsAction" class="mes-btn primary" :disabled="carrierSubmitting" @click="submitCarrierBind">绑定</button>
+              <button v-if="canWmsAction" class="mes-btn" :disabled="carrierSubmitting" @click="submitCarrierUnbind">解绑</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -744,6 +756,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   assignMaterialLocationTask,
+  bindCarrier,
   cancelMaterialLocationTask,
   checkWmsMaterialReadiness,
   completeMaterialLocationTask,
@@ -771,6 +784,7 @@ import {
   ingestWmsInventoryTransaction,
   receiveMaterial,
   returnMaterial,
+  unbindCarrier,
   unfreezeMaterial
 } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
@@ -934,6 +948,7 @@ const loading = ref(false)
 const wmsSubmitting = ref(false)
 const wmsAdapterSubmitting = ref('')
 const wmsAdapterResult = ref(null)
+const carrierSubmitting = ref(false)
 const locationTaskSubmitting = ref(false)
 const iqcSubmitting = ref(false)
 const supplierSubmitting = ref(false)
@@ -949,6 +964,14 @@ const wmsForm = reactive({
   location: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations[0].locationCode : 'WMS-IN',
   reason: '试点WMS库存调整',
   operator: localStorage.getItem('username') || 'admin'
+})
+
+const carrierForm = reactive({
+  carrierNo: __DEV_MOCK_FALLBACK__ ? fallbackCarriers[0].code : '',
+  lotNo: __DEV_MOCK_FALLBACK__ ? fallbackCarriers[0].lot : '',
+  stepCode: __DEV_MOCK_FALLBACK__ ? fallbackCarriers[0].step : 'COATING',
+  equipmentCode: 'COATER_01',
+  location: 'LINE'
 })
 
 const locationTaskForm = reactive({
@@ -1083,9 +1106,19 @@ function mapCarrier(item) {
     code: item.code || item.carrierNo,
     lot: item.lot || item.lotNo || '-',
     step: item.step || item.stepCode || '-',
+    equipmentCode: item.equipmentCode || '',
+    location: item.location || 'LINE',
     status: item.status || 'IDLE',
     type: item.type || statusType(item.status)
   }
+}
+
+function selectCarrier(carrier) {
+  carrierForm.carrierNo = carrier.code || carrier.carrierNo || ''
+  carrierForm.lotNo = carrier.lot && carrier.lot !== '-' ? carrier.lot : ''
+  carrierForm.stepCode = carrier.step && carrier.step !== '-' ? carrier.step : carrierForm.stepCode
+  carrierForm.equipmentCode = carrier.equipmentCode || carrierForm.equipmentCode
+  carrierForm.location = carrier.location || carrierForm.location
 }
 
 function mapConsumption(item) {
@@ -1447,6 +1480,58 @@ function wmsAdapterPayload() {
   return {
     ...payload,
     qty: numberValue(wmsForm.qty, '数量')
+  }
+}
+
+async function submitCarrierBind() {
+  if (!canWmsAction.value) {
+    ElMessage.warning('当前角色无权执行 Carrier 绑定')
+    return
+  }
+  if (!carrierForm.carrierNo || !carrierForm.lotNo) {
+    ElMessage.warning('Carrier No 和 Lot No 不能为空')
+    return
+  }
+  try {
+    carrierSubmitting.value = true
+    await bindCarrier(carrierForm.carrierNo, {
+      lotNo: carrierForm.lotNo,
+      stepCode: carrierForm.stepCode,
+      equipmentCode: carrierForm.equipmentCode,
+      location: carrierForm.location,
+      operator: localStorage.getItem('username') || 'admin'
+    })
+    ElMessage.success('Carrier 已绑定')
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || 'Carrier 绑定失败')
+  } finally {
+    carrierSubmitting.value = false
+  }
+}
+
+async function submitCarrierUnbind() {
+  if (!canWmsAction.value) {
+    ElMessage.warning('当前角色无权执行 Carrier 解绑')
+    return
+  }
+  if (!carrierForm.carrierNo) {
+    ElMessage.warning('Carrier No 不能为空')
+    return
+  }
+  try {
+    carrierSubmitting.value = true
+    await unbindCarrier(carrierForm.carrierNo, {
+      location: carrierForm.location || 'BUFFER',
+      operator: localStorage.getItem('username') || 'admin'
+    })
+    ElMessage.success('Carrier 已解绑')
+    carrierForm.lotNo = ''
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || 'Carrier 解绑失败')
+  } finally {
+    carrierSubmitting.value = false
   }
 }
 
@@ -2229,6 +2314,17 @@ onMounted(loadMaterialData)
   opacity: 0.52;
 }
 
+.carrier-action-strip {
+  margin-top: 12px;
+}
+
+.carrier-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
 @media (max-width: 960px) {
   .wms-form {
     grid-template-columns: 1fr;
@@ -2258,6 +2354,11 @@ onMounted(loadMaterialData)
 
   .supplier-action-form {
     grid-template-columns: 1fr;
+  }
+
+  .carrier-form {
+    grid-template-columns: 1fr;
+    width: 100%;
   }
 
   .supplier-trend-row {

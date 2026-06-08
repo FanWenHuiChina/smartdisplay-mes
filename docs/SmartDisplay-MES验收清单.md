@@ -207,3 +207,15 @@
 | 数据范围控制 | 多入口候选 Lot 必须经当前角色数据范围过滤 | 已落地，候选行最终通过 `findLot` 校验 |
 | 前端追溯页 | 追溯页以接口数据驱动，支持查询类型选择、关键字输入、影响 Lot 列表和证据卡片 | 已落地，浏览器 E2E 通过 |
 | 生产包收口 | 默认生产包不应携带典型 mock/fallback Lot 或工单编号 | 已通过 `verify:production-bundle`，12 个 JS 产物 clean |
+## 2026-06-08 补充验收：载具绑定追溯与 Hybrid Local RAG
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 载具绑定/解绑 | 支持 `/api/v1/carriers/{carrierNo}/bind` 和 `/api/v1/carriers/{carrierNo}/unbind`，校验 Lot 权限、载具占用状态，并写成功审计 | 已落地 |
+| 载具追溯证据 | Lot 追溯返回 `carriers`，并在 `impactSummary` / `relatedDimensions` 中提供载具数量和载具号 | 已落地，Docker 探活 `carrierCount=1` |
+| 载具前端入口 | 物料页提供 Carrier No、Lot No、Step、Equipment 的绑定/解绑操作条，受 `material:wms` 权限控制 | 已落地 |
+| 本地混合 RAG 索引 | 知识库索引任务支持 `HYBRID_LOCAL`，切片标记为 `LOCAL_VECTOR_INDEXED`，不调用外部模型 | 已落地 |
+| RAG 证据评分 | SOP 问答返回引用来源、检索策略、关键词分、向量分、证据等级和证据不足标识 | 已落地 |
+| AI 配置迁移 | Flyway `V1.43` 激活 `LOCAL_RAG_HYBRID`，`SOP_QA` 默认使用 `HYBRID_LOCAL` | 已落地，Docker 运行库已到 `v1.43` |
+| 前端 AI 入口 | AI 页提供 `Hybrid Local` 索引按钮，并纳入前端契约检查 | 已落地，`verify:frontend-contract` 328 项通过 |
+| 回归验证 | 后端全量、前端契约、生产构建、生产包扫描、Docker 探活和浏览器 E2E 均通过 | 已通过 |

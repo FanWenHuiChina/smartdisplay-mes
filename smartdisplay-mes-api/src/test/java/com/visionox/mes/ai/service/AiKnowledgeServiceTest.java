@@ -102,6 +102,42 @@ class AiKnowledgeServiceTest {
     }
 
     @Test
+    void askShouldReturnHybridLocalEvidenceScores() {
+        AiKbDocument document = new AiKbDocument();
+        document.setId(9L);
+        document.setDocumentNo("SOP-HYBRID-001");
+        document.setDocumentName("COATER pressure abnormal SOP");
+        document.setDocumentType("SOP");
+        document.setSourceUri("manual-import://SOP-HYBRID-001");
+
+        AiKbChunk chunk = new AiKbChunk();
+        chunk.setDocumentId(9L);
+        chunk.setChunkNo("SOP-HYBRID-001-001");
+        chunk.setChunkTitle("COATER pressure fluctuation hold rule");
+        chunk.setChunkSeq(1);
+        chunk.setContent("When COATER pressure fluctuation impacts coating thickness, Hold the affected Lot and start MRB review.");
+        chunk.setKeywords("coater pressure fluctuation coating hold lot mrb recipe");
+        chunk.setRetrievalStrategy("HYBRID_LOCAL");
+        chunk.setEmbeddingStatus("LOCAL_VECTOR_INDEXED");
+
+        when(chunkMapper.selectList(any())).thenReturn(List.of(chunk));
+        when(documentMapper.selectBatchIds(anyCollection())).thenReturn(List.of(document));
+
+        Map<String, Object> answer = aiKnowledgeService.ask("coater pressure alarm hold lot mrb");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> sources = (List<Map<String, Object>>) answer.get("sources");
+        assertThat(answer.get("insufficientEvidence")).isEqualTo(false);
+        assertThat(answer.get("retrievalStrategy")).isEqualTo("HYBRID_LOCAL");
+        assertThat(sources).hasSize(1);
+        assertThat(sources.get(0))
+                .containsEntry("retrievalStrategy", "HYBRID_LOCAL")
+                .containsEntry("indexStrategy", "HYBRID_LOCAL");
+        assertThat((Double) sources.get(0).get("keywordScore")).isGreaterThan(0.0);
+        assertThat((Double) sources.get(0).get("vectorScore")).isGreaterThan(0.0);
+    }
+
+    @Test
     void askShouldMarkInsufficientWhenEvidenceScoreIsTooLow() {
         AiKbDocument document = new AiKbDocument();
         document.setId(8L);

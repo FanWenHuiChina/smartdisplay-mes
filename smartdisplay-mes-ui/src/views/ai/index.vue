@@ -163,6 +163,7 @@
               <button class="mes-btn" :disabled="indexing" @click="runKnowledgeIndex('KEYWORD_FALLBACK')">
                 {{ indexing ? '索引中' : '重建关键词索引' }}
               </button>
+              <button class="mes-btn" :disabled="indexing" @click="runKnowledgeIndex('HYBRID_LOCAL')">Hybrid Local</button>
               <button class="mes-btn warn" :disabled="indexing" @click="runKnowledgeIndex('PGVECTOR_READY')">标记向量待联调</button>
             </div>
           </div>

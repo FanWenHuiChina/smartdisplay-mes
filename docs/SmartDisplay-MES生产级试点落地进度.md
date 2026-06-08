@@ -692,3 +692,16 @@
 - 前端生产构建已移除追溯页默认样例编号和 placeholder 样例编号，保留开发环境 mock fallback 但不进入默认生产包。
 - 已验证：`mvn.cmd -s D:\workspace\mes\.m2\settings.xml -Dtest=PilotMesServiceTest test` 通过 21 项；`mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` 后端全量通过 203 项；`npm.cmd run verify:frontend-contract` 通过 322 项；`npm.cmd run build` 通过；`npm.cmd run verify:production-bundle` 通过，扫描 12 个 JS 产物；`npm.cmd run e2e:browser` 通过 12 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-170328.md`。
 - 已重建 Docker：`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 成功；经前端 Nginx 反代验证登录、SN 追溯和设备追溯均返回业务码 `200`，其中 `LOT202406001-SN001` 解析为 `SN -> LOT202406001`，`COATER_01` 设备追溯命中 5 个 Lot。
+## 2026-06-08 增量：载具绑定追溯与 Hybrid Local RAG
+
+- 载具模块从只读列表扩展为可执行绑定/解绑闭环：新增 `POST /api/v1/carriers/{carrierNo}/bind` 和 `POST /api/v1/carriers/{carrierNo}/unbind`，复用 `material:wms` 权限，写入 `CARRIER_BIND` / `CARRIER_UNBIND` 审计。
+- 载具绑定会校验 Lot 数据范围、载具当前状态和是否已绑定其他 Lot；绑定后写入 Lot、产线、产品、工序、设备、位置和时间，解绑后清空生产上下文并恢复 `IDLE`。
+- Lot 追溯新增 `carriers` 证据链，并在直查追溯中返回 `impactSummary.carrierCount` 和 `relatedDimensions.carrierNos`，与多入口追溯搜索的摘要结构保持一致。
+- 前端物料页新增载具绑定/解绑操作条，支持从载具列表点选并回填 Carrier No，按钮继续沿用浅色、低饱和工作台风格。
+- AI 知识库索引新增 `HYBRID_LOCAL` 策略，索引任务会将切片标记为 `LOCAL_VECTOR_INDEXED`，保存 `local-vector://indexed/{chunkNo}` 引用；该策略为本地确定性向量指纹 + 关键词评分，不调用外部模型，不自动执行生产动作。
+- 新增 `V1.43__Add_Hybrid_Local_Rag_Config.sql`，激活 `LOCAL_RAG_HYBRID` 作为 `SOP_QA` 配置，Prompt 版本升级为 `rag-sop-qa-v3`，并将旧本地关键词 SOP_QA 配置置为非激活。
+- RAG 问答引用来源新增 `rawScore`、`keywordScore`、`vectorScore`、`retrievalStrategy` 和 `indexStrategy`，证据不足仍明确提示，不伪装为高置信回答。
+- 前端 AI 页新增 `Hybrid Local` 索引按钮，`verify:frontend-contract` 已加入页面级契约检查，防止后续退回只读关键词索引入口。
+- 已验证：后端全量 `mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` 通过 213 项；前端契约通过 328 项；生产构建通过；生产包扫描 `Production bundle clean: 12 JS assets checked`。
+- Docker 已重建并运行到 Flyway `v1.43`；接口探活显示 `LOCAL_RAG_HYBRID / HYBRID_LOCAL` 为激活 SOP_QA 配置，`HYBRID_LOCAL` 索引任务完成 7 个切片，RAG 问答返回 `evidenceLevel=HIGH`、`evidenceCount=3`、首条引用 `keywordScore=21.0`、`vectorScore=0.6483`。
+- 浏览器 E2E 已通过 12 步，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-183556.md/json`。

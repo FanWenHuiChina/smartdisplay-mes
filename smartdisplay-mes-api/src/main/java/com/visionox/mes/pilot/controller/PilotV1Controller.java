@@ -619,6 +619,18 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.carriers());
     }
 
+    @PostMapping("/carriers/{carrierNo}/bind")
+    public Result<Map<String, Object>> bindCarrier(@PathVariable String carrierNo,
+                                                   @RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.bindCarrier(carrierNo, request));
+    }
+
+    @PostMapping("/carriers/{carrierNo}/unbind")
+    public Result<Map<String, Object>> unbindCarrier(@PathVariable String carrierNo,
+                                                     @RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.unbindCarrier(carrierNo, request));
+    }
+
     @GetMapping("/trace/search")
     public Result<Map<String, Object>> traceSearch(@RequestParam(required = false, defaultValue = "AUTO") String type,
                                                    @RequestParam String keyword) {

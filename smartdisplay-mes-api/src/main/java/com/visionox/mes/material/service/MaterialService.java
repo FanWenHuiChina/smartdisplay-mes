@@ -818,6 +818,68 @@ public class MaterialService {
                 .collect(Collectors.toList());
     }
 
+    public List<Map<String, Object>> carriersByLot(String lotNo) {
+        if (lotNo == null || lotNo.isBlank()) {
+            return List.of();
+        }
+        LambdaQueryWrapper<Carrier> wrapper = new LambdaQueryWrapper<Carrier>()
+                .eq(Carrier::getLotNo, lotNo)
+                .orderByDesc(Carrier::getBindTime)
+                .orderByDesc(Carrier::getId)
+                .last("LIMIT 50");
+        applyLineDataScope(wrapper);
+        return carrierMapper.selectList(wrapper)
+                .stream()
+                .map(this::carrierRow)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> bindCarrier(String carrierNo, Lot lot, Map<String, Object> request) {
+        Carrier carrier = carrier(carrierNo);
+        if ("BOUND".equals(carrier.getStatus()) && carrier.getLotNo() != null
+                && !carrier.getLotNo().isBlank() && !carrier.getLotNo().equals(lot.getLotNo())) {
+            throw new BusinessException("Carrier宸茬粦瀹氬叾浠朙ot: " + carrierNo + "/" + carrier.getLotNo());
+        }
+        String operator = text(request, "operator", AuthContext.username());
+        carrier.setStatus("BOUND");
+        carrier.setLotNo(lot.getLotNo());
+        carrier.setLineCode(lot.getLineCode());
+        carrier.setProductCode(lot.getProductCode());
+        carrier.setStepCode(text(request, "stepCode", lot.getCurrentStepCode()));
+        carrier.setEquipmentCode(text(request, "equipmentCode", valueOr(lot.getCurrentEquipmentCode(), "")));
+        carrier.setBindTime(LocalDateTime.now());
+        carrier.setUnbindTime(null);
+        carrier.setLocation(text(request, "location", valueOr(carrier.getLocation(), "LINE")));
+        carrier.setUpdatedTime(LocalDateTime.now());
+        carrierMapper.updateById(carrier);
+        audit("CARRIER_BIND", carrierNo, "CARRIER",
+                "Carrier缁戝畾 Lot=" + lot.getLotNo() + ", step=" + carrier.getStepCode(), operator);
+        return carrierRow(carrier);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> unbindCarrier(String carrierNo, Map<String, Object> request) {
+        Carrier carrier = carrier(carrierNo);
+        if (!"BOUND".equals(carrier.getStatus())) {
+            throw new BusinessException("Carrier鏈浜庣粦瀹氱姸鎬? " + carrierNo);
+        }
+        String lotNo = carrier.getLotNo();
+        String operator = text(request, "operator", AuthContext.username());
+        carrier.setStatus("IDLE");
+        carrier.setLotNo(null);
+        carrier.setProductCode(null);
+        carrier.setStepCode(null);
+        carrier.setEquipmentCode(null);
+        carrier.setUnbindTime(LocalDateTime.now());
+        carrier.setLocation(text(request, "location", valueOr(carrier.getLocation(), "BUFFER")));
+        carrier.setUpdatedTime(LocalDateTime.now());
+        carrierMapper.updateById(carrier);
+        audit("CARRIER_UNBIND", carrierNo, "CARRIER",
+                "Carrier瑙ｇ粦 Lot=" + valueOr(lotNo, "-"), operator);
+        return carrierRow(carrier);
+    }
+
     public List<Map<String, Object>> materialConsumptions(String lotNo) {
         LambdaQueryWrapper<MaterialConsumption> wrapper = new LambdaQueryWrapper<>();
         applyLotDataScope(wrapper);
@@ -3262,6 +3324,21 @@ public class MaterialService {
             throw new BusinessException("物料批次不存在: " + batchNo);
         }
         return batch;
+    }
+
+    private Carrier carrier(String carrierNo) {
+        if (carrierNo == null || carrierNo.isBlank()) {
+            throw new BusinessException("Carrier涓嶈兘涓虹┖");
+        }
+        LambdaQueryWrapper<Carrier> wrapper = new LambdaQueryWrapper<Carrier>()
+                .eq(Carrier::getCarrierNo, carrierNo)
+                .last("LIMIT 1");
+        applyLineDataScope(wrapper);
+        Carrier carrier = carrierMapper.selectOne(wrapper);
+        if (carrier == null) {
+            throw new BusinessException("Carrier涓嶅瓨鍦ㄦ垨鏃犳潈闄愯闂? " + carrierNo);
+        }
+        return carrier;
     }
 
     private void touchStock(MaterialBatch batch) {

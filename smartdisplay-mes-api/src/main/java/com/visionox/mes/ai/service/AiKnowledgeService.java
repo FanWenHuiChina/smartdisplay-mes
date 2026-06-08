@@ -37,6 +37,8 @@ public class AiKnowledgeService {
     private static final int TARGET_CHUNK_SIZE = 520;
     private static final int MAX_CHUNK_SIZE = 900;
     private static final String RETRIEVAL_STRATEGY = "KEYWORD_FALLBACK";
+    private static final String HYBRID_RETRIEVAL_STRATEGY = "HYBRID_LOCAL";
+    private static final int LOCAL_VECTOR_DIMENSION = 64;
     private static final double MIN_SUFFICIENT_EVIDENCE_SCORE = 0.65;
     private static final double MEDIUM_EVIDENCE_SCORE = 0.75;
     private static final double HIGH_EVIDENCE_SCORE = 0.85;
@@ -184,7 +186,7 @@ public class AiKnowledgeService {
                 .eq(AiKbChunk::getStatus, "ACTIVE")
                 .orderByAsc(AiKbChunk::getChunkSeq));
         return chunks.stream()
-                .map(chunk -> new Match(chunk, score(question, chunk)))
+                .map(chunk -> matchForQuestion(question, chunk))
                 .filter(match -> match.rawScore() > 0.0)
                 .sorted(Comparator.comparingDouble(Match::rawScore).reversed())
                 .limit(Math.max(1, limit))
@@ -312,8 +314,11 @@ public class AiKnowledgeService {
         row.put("score", evidenceScore);
         row.put("evidenceScore", evidenceScore);
         row.put("evidenceLevel", evidenceLevel(evidenceScore, 1));
-        row.put("retrievalStrategy", RETRIEVAL_STRATEGY);
-        row.put("indexStrategy", valueOr(match.chunk().getRetrievalStrategy(), RETRIEVAL_STRATEGY));
+        row.put("retrievalStrategy", retrievalStrategy(match.chunk()));
+        row.put("indexStrategy", retrievalStrategy(match.chunk()));
+        row.put("rawScore", round(match.rawScore()));
+        row.put("keywordScore", round(match.keywordScore()));
+        row.put("vectorScore", round(match.vectorScore()));
         row.put("content", match.chunk().getContent());
         row.put("sourceUri", document == null ? "" : document.getSourceUri());
         return row;
@@ -340,8 +345,8 @@ public class AiKnowledgeService {
         row.put("chunkTitle", chunk.getChunkTitle());
         row.put("chunkSeq", chunk.getChunkSeq());
         row.put("keywords", chunk.getKeywords());
-        row.put("retrievalStrategy", RETRIEVAL_STRATEGY);
-        row.put("indexStrategy", valueOr(chunk.getRetrievalStrategy(), RETRIEVAL_STRATEGY));
+        row.put("retrievalStrategy", retrievalStrategy(chunk));
+        row.put("indexStrategy", retrievalStrategy(chunk));
         row.put("embeddingStatus", valueOr(chunk.getEmbeddingStatus(), "NOT_INDEXED"));
         row.put("content", chunk.getContent());
         return row;
@@ -354,7 +359,7 @@ public class AiKnowledgeService {
                 .max()
                 .orElse(0.0);
         String evidenceLevel = evidenceLevel(maxEvidenceScore, evidenceCount);
-        output.put("retrievalStrategy", RETRIEVAL_STRATEGY);
+        output.put("retrievalStrategy", dominantRetrievalStrategy(sources));
         output.put("evidenceCount", evidenceCount);
         output.put("maxEvidenceScore", maxEvidenceScore);
         output.put("confidence", maxEvidenceScore);
@@ -368,6 +373,9 @@ public class AiKnowledgeService {
         long keywordIndexed = safeChunks.stream()
                 .filter(chunk -> "KEYWORD_INDEXED".equals(valueOr(chunk.getEmbeddingStatus(), "")))
                 .count();
+        long hybridIndexed = safeChunks.stream()
+                .filter(chunk -> "LOCAL_VECTOR_INDEXED".equals(valueOr(chunk.getEmbeddingStatus(), "")))
+                .count();
         long vectorPending = safeChunks.stream()
                 .filter(chunk -> "VECTOR_PENDING".equals(valueOr(chunk.getEmbeddingStatus(), "")))
                 .count();
@@ -379,6 +387,7 @@ public class AiKnowledgeService {
                 .count();
         row.put("chunkCount", safeChunks.size());
         row.put("indexedChunkCount", keywordIndexed);
+        row.put("hybridIndexedChunkCount", hybridIndexed);
         row.put("vectorPendingChunkCount", vectorPending);
         row.put("notIndexedChunkCount", notIndexed);
         row.put("lastIndexedTime", safeChunks.stream()
@@ -386,14 +395,17 @@ public class AiKnowledgeService {
                 .filter(Objects::nonNull)
                 .max(LocalDateTime::compareTo)
                 .orElse(null));
-        String indexStatus = documentIndexStatus(safeChunks.size(), keywordIndexed, vectorPending, notIndexed);
+        String indexStatus = documentIndexStatus(safeChunks.size(), keywordIndexed, hybridIndexed, vectorPending, notIndexed);
         row.put("indexStatus", indexStatus);
         row.put("indexType", indexStatusType(indexStatus));
     }
 
-    private String documentIndexStatus(int chunkCount, long keywordIndexed, long vectorPending, long notIndexed) {
+    private String documentIndexStatus(int chunkCount, long keywordIndexed, long hybridIndexed, long vectorPending, long notIndexed) {
         if (chunkCount == 0) {
             return "NO_CHUNK";
+        }
+        if (hybridIndexed == chunkCount) {
+            return "HYBRID_LOCAL";
         }
         if (vectorPending == chunkCount) {
             return "VECTOR_PENDING";
@@ -409,14 +421,23 @@ public class AiKnowledgeService {
 
     private String indexStatusType(String indexStatus) {
         return switch (valueOr(indexStatus, "NOT_INDEXED")) {
-            case "KEYWORD_INDEXED" -> "green";
+            case "KEYWORD_INDEXED", "HYBRID_LOCAL" -> "green";
             case "VECTOR_PENDING", "PARTIAL_INDEXED" -> "amber";
             case "NO_CHUNK" -> "gray";
             default -> "red";
         };
     }
 
-    private double score(String question, AiKbChunk chunk) {
+    private Match matchForQuestion(String question, AiKbChunk chunk) {
+        double keywordScore = keywordScore(question, chunk);
+        double vectorScore = isHybridLocal(chunk) ? localVectorSimilarity(question, chunk) : 0.0;
+        double hybridBoost = isHybridLocal(chunk) && (keywordScore > 0.0 || vectorScore >= 0.45)
+                ? Math.max(0.0, vectorScore - 0.20) * 8.0
+                : 0.0;
+        return new Match(chunk, keywordScore + hybridBoost, keywordScore, vectorScore);
+    }
+
+    private double keywordScore(String question, AiKbChunk chunk) {
         String normalizedQuestion = normalize(question);
         String content = normalize(chunk.getChunkTitle() + " " + chunk.getContent() + " " + chunk.getKeywords());
         String keywords = normalize(chunk.getKeywords());
@@ -442,6 +463,57 @@ public class AiKnowledgeService {
             }
         }
         return score;
+    }
+
+    private double localVectorSimilarity(String question, AiKbChunk chunk) {
+        String chunkText = normalize(chunk.getChunkTitle() + " " + chunk.getContent() + " " + chunk.getKeywords());
+        double[] queryVector = localVector(normalize(question));
+        double[] chunkVector = localVector(chunkText);
+        return cosine(queryVector, chunkVector);
+    }
+
+    private double[] localVector(String text) {
+        double[] vector = new double[LOCAL_VECTOR_DIMENSION];
+        for (String term : extractTerms(text)) {
+            addVectorFeature(vector, term, 1.0);
+            if (term.length() > 3) {
+                for (int i = 0; i <= term.length() - 3; i++) {
+                    addVectorFeature(vector, term.substring(i, i + 3), 0.35);
+                }
+            }
+        }
+        for (String term : DOMAIN_TERMS) {
+            String normalizedTerm = normalize(term);
+            if (!normalizedTerm.isBlank() && text.contains(normalizedTerm)) {
+                addVectorFeature(vector, normalizedTerm, 2.0);
+            }
+        }
+        return vector;
+    }
+
+    private void addVectorFeature(double[] vector, String feature, double weight) {
+        if (feature == null || feature.isBlank()) {
+            return;
+        }
+        int hash = feature.hashCode();
+        int index = Math.floorMod(hash, vector.length);
+        int sign = (hash & 1) == 0 ? 1 : -1;
+        vector[index] += sign * weight;
+    }
+
+    private double cosine(double[] left, double[] right) {
+        double dot = 0.0;
+        double leftNorm = 0.0;
+        double rightNorm = 0.0;
+        for (int i = 0; i < left.length; i++) {
+            dot += left[i] * right[i];
+            leftNorm += left[i] * left[i];
+            rightNorm += right[i] * right[i];
+        }
+        if (leftNorm == 0.0 || rightNorm == 0.0) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(1.0, dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm))));
     }
 
     private List<String> extractTerms(String text) {
@@ -480,6 +552,34 @@ public class AiKnowledgeService {
         };
     }
 
+    private String dominantRetrievalStrategy(List<Map<String, Object>> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return RETRIEVAL_STRATEGY;
+        }
+        return sources.stream()
+                .map(source -> String.valueOf(source.getOrDefault("retrievalStrategy", RETRIEVAL_STRATEGY)))
+                .filter(strategy -> !strategy.isBlank())
+                .findFirst()
+                .orElse(RETRIEVAL_STRATEGY);
+    }
+
+    private boolean isHybridLocal(AiKbChunk chunk) {
+        return HYBRID_RETRIEVAL_STRATEGY.equals(retrievalStrategy(chunk));
+    }
+
+    private String retrievalStrategy(AiKbChunk chunk) {
+        String strategy = chunk == null ? "" : valueOr(chunk.getRetrievalStrategy(), RETRIEVAL_STRATEGY);
+        if (HYBRID_RETRIEVAL_STRATEGY.equalsIgnoreCase(strategy)
+                || "LOCAL_VECTOR_INDEXED".equalsIgnoreCase(chunk == null ? "" : valueOr(chunk.getEmbeddingStatus(), ""))) {
+            return HYBRID_RETRIEVAL_STRATEGY;
+        }
+        return "PGVECTOR_READY".equalsIgnoreCase(strategy) ? "PGVECTOR_READY" : RETRIEVAL_STRATEGY;
+    }
+
+    private double round(double value) {
+        return Math.round(value * 10000.0) / 10000.0;
+    }
+
     private double doubleValue(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -513,6 +613,6 @@ public class AiKnowledgeService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private record Match(AiKbChunk chunk, double rawScore) {
+    private record Match(AiKbChunk chunk, double rawScore, double keywordScore, double vectorScore) {
     }
 }
