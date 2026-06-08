@@ -176,6 +176,9 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "ai", "kb", "import")) {
             return target("AI_KB_IMPORT", null, "SOP_KB");
         }
+        if (matches(parts, offset, "ai", "kb", "index-jobs")) {
+            return target("AI_KB_INDEX", null, "SOP_KB");
+        }
         return Optional.empty();
     }
 

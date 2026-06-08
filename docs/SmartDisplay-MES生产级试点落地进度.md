@@ -622,3 +622,9 @@
 - Rework 处置会保留最终状态 `REWORK`、清空当前设备、切换到返工起始工序，并将 `holdFlag` 清零；后续 Track In 仍走完整校验链。
 - Scrap 处置会保留最终状态 `SCRAP`、清空当前设备，并同步清理 Hold 标记，避免追溯中出现 Lot 已报废但仍有打开 Hold 的状态不一致。
 - 已补 `PilotMesServiceTest` 断言 Rework/Scrap 会同步释放 Hold 记录，并运行 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,TrackInServiceTest,PilotMesFlowIntegrationTest" test` 通过，共 27 项测试。
+
+# 2026-06-08 增量：AI 知识库索引失败审计
+
+- 补齐 `POST /api/v1/ai/kb/index-jobs` 的失败审计映射，创建知识库索引任务失败时会按 `AI_KB_INDEX / SOP_KB` 写入失败审计，覆盖无可索引切片、文档不存在、检索策略非法等业务异常路径。
+- 成功索引任务原本已由 `AiKbIndexService` 写入 `AI_KB_INDEX` 审计，本轮补齐失败路径后，AI 知识库索引动作具备成功/失败双向留痕。
+- 已补 `AuditFailureResolverTest` 和 `AuditFailureServiceTest`，并运行审计定向测试通过 36 项；随后运行 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 后端全量测试通过 194 项。

@@ -317,6 +317,18 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapAiKnowledgeIndexFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/ai/kb/index-jobs");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("AI_KB_INDEX");
+        assertThat(target.get().bizNo()).isNull();
+        assertThat(target.get().bizType()).isEqualTo("SOP_KB");
+    }
+
+    @Test
     void resolveShouldMapEquipmentEventCloseFailure() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/equipment/events/EVT001/close");
 

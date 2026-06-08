@@ -46,6 +46,23 @@ class AuditFailureServiceTest {
     }
 
     @Test
+    void recordShouldWriteFailureAuditForAiKnowledgeIndexJob() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/ai/kb/index-jobs");
+
+        auditFailureService.record(request, "BusinessException", 400, "知识库没有可索引切片");
+
+        verify(auditLogService).recordFailure(
+                eq("AI_KB_INDEX"),
+                isNull(),
+                eq("SOP_KB"),
+                contains("操作失败"),
+                isNull(),
+                eq("smartdisplay-mes-api"),
+                contains("知识库没有可索引切片")
+        );
+    }
+
+    @Test
     void recordShouldIgnoreNonKeyReadRequest() {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/dashboard/overview");
 

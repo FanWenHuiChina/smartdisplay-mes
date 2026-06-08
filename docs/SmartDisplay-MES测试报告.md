@@ -249,3 +249,14 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | HOLD Lot Rework | `PilotMesServiceTest.reworkShouldMoveLotToReworkStepAndWriteAudit` | 验证最终状态 `REWORK`、`holdFlag=0`、HoldRecord `RELEASED`、处置结论包含返工 Route/Step |
 | HOLD Lot Scrap | `PilotMesServiceTest.scrapShouldMoveLotToScrapAndWriteAudit` | 验证最终状态 `SCRAP`、`holdFlag=0`、HoldRecord `RELEASED`、处置结论等于报废原因 |
 | 返工进站校验链 | `TrackInServiceTest` | 保持通过，确认 `REWORK` Lot 进站仍执行原完整校验链 |
+
+# 2026-06-08 AI 知识库索引失败审计复验
+
+本轮补齐 `POST /api/v1/ai/kb/index-jobs` 的失败审计映射，保证知识库索引任务在业务异常或参数异常时也能形成 `AI_KB_INDEX / SOP_KB` 失败审计。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 审计失败映射回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditFailureResolverTest,AuditFailureServiceTest,AuditLogServiceTest,GlobalExceptionHandlerTest" test` | 通过，36 项测试 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过，194 项测试 |
+| AI 索引失败解析 | `AuditFailureResolverTest.resolveShouldMapAiKnowledgeIndexFailure` | `POST /api/v1/ai/kb/index-jobs` 解析为 `AI_KB_INDEX / SOP_KB` |
+| AI 索引失败写入 | `AuditFailureServiceTest.recordShouldWriteFailureAuditForAiKnowledgeIndexJob` | 失败消息会进入 `recordFailure` 快照，便于审计追溯 |
