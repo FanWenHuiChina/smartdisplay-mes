@@ -108,3 +108,11 @@
 | MRB 报废建议 | 质量页 MRB 待处置卡片提供 `SCRAP` 复判入口，提交后形成报废处置意见、MRB 履历和会签待办 | 已落地 |
 | MRB 前端权限 | 放行/返工/报废复判只受 `quality:mrb-review` 控制，关闭异常只受 `quality:exception-close` 控制 | 已落地 |
 | 前端契约 | 自动检查质量页必须包含 `SCRAP` 复判入口和复判/关闭权限拆分 | 已落地 |
+
+# 2026-06-08 补充验收：Rework Lot 重新进站
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| REWORK 状态 Track In | 返工 Lot 状态为 `REWORK` 时，可按返工起始工序重新 Track In，并继续执行完整校验链 | 已落地 |
+| 前端执行入口 | Lot 管理页和生产执行台均允许 `READY/REWORK` 状态触发 Track In | 已落地 |
+| 回归测试 | 后端测试覆盖 `REWORK -> PROCESSING`，前端契约覆盖 REWORK Track In 入口 | 已落地 |

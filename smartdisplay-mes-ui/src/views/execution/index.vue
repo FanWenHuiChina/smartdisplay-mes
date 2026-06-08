@@ -22,7 +22,7 @@
         <div class="mes-filters">
           <div class="mes-field"><label>Lot / SN</label><input class="mes-input" placeholder="请输入 Lot / SN" /></div>
           <div class="mes-field"><label>工序</label><select class="mes-select"><option>全部工序</option></select></div>
-          <div class="mes-field"><label>状态</label><select class="mes-select"><option>READY / PROCESSING / HOLD</option></select></div>
+          <div class="mes-field"><label>状态</label><select class="mes-select"><option>READY / REWORK / PROCESSING / HOLD</option></select></div>
           <div class="mes-field"><label>设备</label><select class="mes-select"><option>全部设备</option></select></div>
           <button class="mes-btn primary">查询</button>
         </div>
@@ -99,7 +99,7 @@ const fallbackLotQueue = [
 ]
 
 const checks = __DEV_MOCK_FALLBACK__ ? [
-  { title: 'Lot 状态', text: 'READY', type: 'green' },
+  { title: 'Lot 状态', text: 'READY / REWORK', type: 'green' },
   { title: 'Route 下一站', text: 'COATING 合法', type: 'green' },
   { title: '设备状态', text: 'IDLE', type: 'green' },
   { title: '设备能力', text: '支持涂胶', type: 'green' },
@@ -121,7 +121,7 @@ const lotQueue = ref(__DEV_MOCK_FALLBACK__ ? fallbackLotQueue : [])
 const selectedLotNo = ref('')
 const selectedLot = computed(() =>
   lotQueue.value.find(lot => lot.no === selectedLotNo.value)
-  || lotQueue.value.find(lot => lot.status === 'READY')
+  || lotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))
   || lotQueue.value[0])
 const canTrackIn = computed(() => hasButton('lot:track-in'))
 const canTrackOut = computed(() => hasButton('lot:track-out'))
@@ -142,7 +142,7 @@ const actionMap = {
   PROCESSING: { text: '可 Track Out', type: 'teal' },
   HOLD: { text: 'Release 需质量工程师', type: 'red' },
   COMPLETED: { text: '已完成', type: 'blue' },
-  REWORK: { text: '返工中', type: 'amber' },
+  REWORK: { text: '可返工进站', type: 'amber' },
   SCRAP: { text: '已报废', type: 'red' }
 }
 
@@ -183,7 +183,7 @@ async function loadLots() {
     if (Array.isArray(data.records)) {
       lotQueue.value = data.records.map(mapLot)
       if (!lotQueue.value.some(lot => lot.no === selectedLotNo.value)) {
-        selectedLotNo.value = lotQueue.value.find(lot => lot.status === 'READY')?.no || lotQueue.value[0]?.no || ''
+        selectedLotNo.value = lotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))?.no || lotQueue.value[0]?.no || ''
       }
     }
   } catch (error) {
@@ -198,8 +198,8 @@ async function trackInSelectedLot() {
     return
   }
   const lot = selectedLot.value
-  if (!lot || lot.status !== 'READY') {
-    ElMessage.warning('请选择 READY 状态 Lot')
+  if (!lot || !['READY', 'REWORK'].includes(lot.status)) {
+    ElMessage.warning('请选择 READY 或 REWORK 状态 Lot')
     return
   }
   try {

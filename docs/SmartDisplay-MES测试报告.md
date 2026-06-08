@@ -226,3 +226,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，304 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |
+
+# 2026-06-08 Rework Lot 重新进站复验
+
+本轮修正返工闭环：Track In 状态校验允许 `READY/REWORK`，前端 Lot 页和生产执行台同步允许 `REWORK` Lot 重新进站。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端 Track In 定向测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=TrackInServiceTest" test` | 通过，10 项测试 |
+| 后端执行闭环回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=TrackInServiceTest,PilotMesFlowIntegrationTest" test` | 通过，11 项测试 |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，306 项检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过，仅有既有第三方 pure annotation 与 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过，14 个 JS 产物未发现典型 mock/fallback 样例业务标识 |

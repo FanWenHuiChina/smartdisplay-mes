@@ -45,7 +45,7 @@
       >
         <template #default>
           <div style="font-size: 13px; line-height: 1.8">
-            1. Lot状态校验（必须READY）<br />
+            1. Lot状态校验（必须READY或REWORK）<br />
             2. Route防跳站校验（匹配当前待执行工序）<br />
             3. 设备状态校验（IDLE/RUNNING）<br />
             4. 设备能力校验（设备支持该工序）<br />

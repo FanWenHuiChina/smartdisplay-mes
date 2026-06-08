@@ -149,6 +149,25 @@ class TrackInServiceTest {
     }
 
     @Test
+    void trackInShouldAllowReworkLotToRestartAtReworkStep() {
+        Lot lot = lot("LOT001", "REWORK", 0);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(equipmentMapper.selectOne(any())).thenReturn(equipment("COATER_01", "IDLE", "[\"COATING\"]"));
+        when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe("RCP_COAT_01"));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
+
+        trackInService.trackIn(trackInRequest());
+
+        verify(routeService).validateTrackInStep("OLED_PANEL", "COATING", "COATING");
+        verify(materialService).validateReadiness(lot, "COATING");
+        assertThat(lot.getStatus()).isEqualTo("PROCESSING");
+        assertThat(lot.getCurrentEquipmentCode()).isEqualTo("COATER_01");
+        verify(lotMapper).updateById(lot);
+        verify(stepRecordMapper).insert(any(LotStepRecord.class));
+        verify(materialService).lockForTrackIn(eq(lot), eq("COATING"), eq("COATER_01"), eq("op1001"));
+    }
+
+    @Test
     void trackInShouldRejectWhenNoActiveShiftWindowMatches() {
         Lot lot = lot("LOT001", "READY", 0);
         when(lotMapper.selectOne(any())).thenReturn(lot);

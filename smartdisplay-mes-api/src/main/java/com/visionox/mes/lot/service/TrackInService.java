@@ -29,7 +29,7 @@ import java.util.List;
  *
  * 核心业务逻辑：
  * Track In 8层校验（参考显示行业通用 MES 执行控制模型）：
- * 1. Lot状态校验 - 必须是READY状态
+ * 1. Lot状态校验 - 必须是READY或REWORK状态
  * 2. Route防跳站校验 - 请求工序必须等于Lot当前待执行工序，且在产品生效Route中
  * 3. 设备状态校验 - 必须是IDLE或RUNNING
  * 4. 设备能力校验 - 设备必须支持该工序
@@ -85,9 +85,9 @@ public class TrackInService {
             throw new BusinessException("Lot不存在: " + request.getLotNo());
         }
 
-        if (!"READY".equals(lot.getStatus())) {
+        if (!isTrackInAllowedStatus(lot.getStatus())) {
             throw new BusinessException(
-                    String.format("Lot状态不允许进站: 当前状态=%s, 期望状态=READY", lot.getStatus())
+                    String.format("Lot状态不允许进站: 当前状态=%s, 期望状态=READY/REWORK", lot.getStatus())
             );
         }
 
@@ -250,6 +250,10 @@ public class TrackInService {
                     equipment.getEquipmentCode(), capabilitySteps, e);
             return false;
         }
+    }
+
+    private boolean isTrackInAllowedStatus(String status) {
+        return "READY".equals(status) || "REWORK".equals(status);
     }
 
     private void validateActiveShift(Lot lot) {

@@ -244,7 +244,7 @@ const tableRowClassName = ({ row }) => {
 
 // 操作权限判断
 const canTrackIn = (row) => {
-  return hasButton('lot:track-in') && row.status === 'READY' && row.holdFlag === 0
+  return hasButton('lot:track-in') && ['READY', 'REWORK'].includes(row.status) && row.holdFlag === 0
 }
 
 const canTrackOut = (row) => {
