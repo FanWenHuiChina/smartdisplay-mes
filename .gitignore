@@ -41,6 +41,7 @@ docs/*real-db-api-flow-*.json
 docs/*real-db-api-flow-*.md
 smartdisplay-mes-api/.mvn-test-settings.xml
 smartdisplay-mes-api/track-in-test.json
+smartdisplay-mes-api/tmp
 
 # Misc local outputs
 bin/

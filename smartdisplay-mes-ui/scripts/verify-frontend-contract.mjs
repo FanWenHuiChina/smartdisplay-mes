@@ -43,6 +43,12 @@ function hasExport(source, name, endpointFragment) {
   return names.has(name) && source.includes(endpointFragment)
 }
 
+function unwiredButtons(source) {
+  return Array.from(source.matchAll(/<button\b([^>]*)>/g))
+    .map(match => match[0])
+    .filter(tag => !tag.includes('@click') && !tag.includes('type='))
+}
+
 const router = read('src/router/index.js')
 const request = read('src/api/request.js')
 const authApi = read('src/api/auth.js')
@@ -285,7 +291,9 @@ check('page:views/master/index.vue:bom-change-attachment-count', masterView.incl
 
 const orderView = read('src/views/order/index.vue')
 check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['importErpOrders', 'submitErpImport', 'erpImportResult']), 'Order page must expose ERP adapter import and show the latest import result')
+check('page:views/order/index.vue:query-filters', hasAll(orderView, ['orderFilters', 'v-model.trim="orderFilters.keyword"', 'params.status = orderFilters.value.status', 'displayOrders']), 'Order page must wire query filters to API status and visible rows')
 check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
+check('page:views/order/index.vue:no-unwired-buttons', unwiredButtons(orderView).length === 0, `unwired buttons: ${unwiredButtons(orderView).join(', ')}`)
 
 const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')

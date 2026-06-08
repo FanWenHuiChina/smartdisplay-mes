@@ -20,19 +20,51 @@
         </div>
         <div class="mes-card__body">
           <div class="mes-filters">
-            <div class="mes-field"><label>工单 / 产品</label><input class="mes-input" placeholder="请输入工单或产品" /></div>
-            <div class="mes-field"><label>状态</label><select class="mes-select"><option>待释放 / 已释放 / Hold</option></select></div>
-            <div class="mes-field"><label>路线版本</label><select class="mes-select"><option>全部</option></select></div>
-            <div class="mes-field"><label>优先级</label><select class="mes-select"><option>全部</option><option>Hot Lot</option></select></div>
-            <button class="mes-btn primary">查询</button>
+            <div class="mes-field">
+              <label>工单 / 产品</label>
+              <input v-model.trim="orderFilters.keyword" class="mes-input" placeholder="请输入工单或产品" @keyup.enter="loadOrders" />
+            </div>
+            <div class="mes-field">
+              <label>状态</label>
+              <select v-model="orderFilters.status" class="mes-select">
+                <option value="">全部状态</option>
+                <option value="CREATED">待释放</option>
+                <option value="RELEASED">已释放</option>
+                <option value="HOLD">Hold</option>
+                <option value="COMPLETED">完成</option>
+              </select>
+            </div>
+            <div class="mes-field">
+              <label>路线版本</label>
+              <select v-model="orderFilters.route" class="mes-select">
+                <option value="">全部路线</option>
+                <option value="RTE_G6_V08">RTE_G6_V08</option>
+                <option value="RTE_G6_V05">RTE_G6_V05</option>
+                <option value="RTE_MOD_V04">RTE_MOD_V04</option>
+              </select>
+            </div>
+            <div class="mes-field">
+              <label>优先级</label>
+              <select v-model="orderFilters.priority" class="mes-select">
+                <option value="">全部优先级</option>
+                <option value="hot">Hot Lot</option>
+                <option value="normal">普通</option>
+              </select>
+            </div>
+            <button class="mes-btn primary" :disabled="loading" @click="loadOrders">
+              {{ loading ? '查询中' : '查询' }}
+            </button>
           </div>
           <table class="mes-table">
             <thead><tr><th>工单</th><th>产品</th><th>计划数</th><th>Route</th><th>优先级</th><th>状态</th><th>计划窗口</th></tr></thead>
             <tbody>
-              <tr v-for="order in orders" :key="order.no" :class="{ hot: order.hot }">
+              <tr v-for="order in displayOrders" :key="order.no" :class="{ hot: order.hot }">
                 <td>{{ order.no }}</td><td>{{ order.product }}</td><td>{{ order.qty }}</td><td>{{ order.route }}</td>
                 <td><span v-if="order.hot" class="status-tag orange">Hot</span><span v-else>普通</span></td>
                 <td><span class="status-tag" :class="order.statusType">{{ order.status }}</span></td><td>{{ order.window }}</td>
+              </tr>
+              <tr v-if="!displayOrders.length">
+                <td colspan="7">没有符合条件的工单</td>
               </tr>
             </tbody>
           </table>
@@ -156,11 +188,29 @@ const erpImportForm = ref({
   priority: 0,
   lineCode: 'LINE_01'
 })
+const orderFilters = ref({
+  keyword: '',
+  status: '',
+  route: '',
+  priority: ''
+})
 
 const pendingCount = computed(() => orders.value.filter(order => ['CREATED', '待释放', '计划'].includes(order.rawStatus || order.status)).length)
 const previewLotCount = computed(() => lots.value.length || 10)
 const canCreateOrder = computed(() => hasButton('order:create'))
 const canReleaseOrder = computed(() => hasButton('order:release'))
+const displayOrders = computed(() => {
+  const keyword = orderFilters.value.keyword.trim().toLowerCase()
+  return orders.value.filter(order => {
+    const matchesKeyword = !keyword
+      || order.no.toLowerCase().includes(keyword)
+      || order.product.toLowerCase().includes(keyword)
+    const matchesRoute = !orderFilters.value.route || order.route === orderFilters.value.route
+    const matchesPriority = !orderFilters.value.priority
+      || (orderFilters.value.priority === 'hot' ? order.hot : !order.hot)
+    return matchesKeyword && matchesRoute && matchesPriority
+  })
+})
 const erpImportSummary = computed(() => {
   if (!erpImportResult.value) return ''
   const result = erpImportResult.value
@@ -209,14 +259,21 @@ function mapLot(lot) {
 }
 
 async function loadOrders() {
+  loading.value = true
   try {
-    const data = await getOrders({ current: 1, size: 20 })
+    const params = { current: 1, size: 20 }
+    if (orderFilters.value.status) {
+      params.status = orderFilters.value.status
+    }
+    const data = await getOrders(params)
     if (Array.isArray(data.records)) {
       orders.value = data.records.map(mapOrder)
     }
   } catch (error) {
     warnDevFallback('工单接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) orders.value = fallbackOrders
+  } finally {
+    loading.value = false
   }
 }
 
@@ -281,7 +338,7 @@ async function releaseFirstOrder() {
     ElMessage.warning('当前角色无权释放工单')
     return
   }
-  const target = orders.value.find(order => order.rawStatus === 'CREATED' || order.status === '待释放')
+  const target = displayOrders.value.find(order => order.rawStatus === 'CREATED' || order.status === '待释放')
   if (!target) {
     ElMessage.warning('当前没有可释放工单')
     return
