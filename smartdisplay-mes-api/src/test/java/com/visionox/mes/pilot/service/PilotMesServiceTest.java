@@ -13,6 +13,7 @@ import com.visionox.mes.equipment.service.EapGatewayService;
 import com.visionox.mes.equipment.service.EquipmentService;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
+import com.visionox.mes.lot.entity.LotStepRecord;
 import com.visionox.mes.lot.mapper.EquipmentMapper;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
@@ -327,6 +328,73 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void traceSearchShouldResolveEquipmentToMatchedLotAndTraceEnvelope() {
+        Lot lot = lot("LOT001", "PROCESSING");
+        LotStepRecord stepRecord = stepRecord("LOT001", "COATER_01");
+        when(stepRecordMapper.selectList(any())).thenReturn(List.of(stepRecord));
+        when(lotMapper.selectList(any())).thenReturn(List.of(lot));
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        when(qualityService.inspectionRows("LOT001")).thenReturn(List.of(Map.of(
+                "lotNo", "LOT001",
+                "itemCode", "THICKNESS",
+                "result", "OK"
+        )));
+        when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
+        when(materialService.materialConsumptions("LOT001")).thenReturn(List.of(Map.of(
+                "lotNo", "LOT001",
+                "batchNo", "PI260606-A",
+                "materialCode", "MAT-PI-001"
+        )));
+
+        Map<String, Object> result = pilotMesService.traceSearch("EQUIPMENT", "COATER_01");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> query = (Map<String, Object>) result.get("query");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> matches = (List<Map<String, Object>>) result.get("matches");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> trace = (Map<String, Object>) result.get("trace");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> impactSummary = (Map<String, Object>) result.get("impactSummary");
+
+        assertThat(query.get("resolvedType")).isEqualTo("EQUIPMENT");
+        assertThat(matches).hasSize(1);
+        assertThat(matches.get(0)).containsEntry("lotNo", "LOT001");
+        assertThat(trace.get("lot")).isSameAs(lot);
+        assertThat(impactSummary.get("matchedLotCount")).isEqualTo(1);
+        assertThat(impactSummary.get("equipmentCount")).isEqualTo(1);
+    }
+
+    @Test
+    void traceSearchShouldResolveSnToLotTrace() {
+        Lot lot = lot("LOT001", "READY");
+        LotStepRecord stepRecord = stepRecord("LOT001", "COATER_01");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(stepRecordMapper.selectList(any())).thenReturn(List.of(stepRecord));
+        when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
+        when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
+        when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
+
+        Map<String, Object> result = pilotMesService.traceSearch("AUTO", "LOT001-SN001");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> query = (Map<String, Object>) result.get("query");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> trace = (Map<String, Object>) result.get("trace");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sn = (Map<String, Object>) trace.get("sn");
+
+        assertThat(query.get("resolvedType")).isEqualTo("SN");
+        assertThat(query.get("selectedLotNo")).isEqualTo("LOT001");
+        assertThat(sn).containsEntry("sn", "LOT001-SN001")
+                .containsEntry("lotNo", "LOT001");
+    }
+
+    @Test
     void dashboardYieldShouldNotFallbackDefectTopNWhenFormalQueryReturnsEmpty() {
         when(qualityService.defectTopN(5)).thenReturn(List.of());
 
@@ -550,6 +618,18 @@ class PilotMesServiceTest {
         step.setStepCode(stepCode);
         step.setAllowRework(allowRework);
         return step;
+    }
+
+    private LotStepRecord stepRecord(String lotNo, String equipmentCode) {
+        LotStepRecord record = new LotStepRecord();
+        record.setLotNo(lotNo);
+        record.setStepCode("COATING");
+        record.setEquipmentCode(equipmentCode);
+        record.setRecipeCode("RCP_COAT_01");
+        record.setResult("OK");
+        record.setTrackInTime(LocalDateTime.now().minusMinutes(30));
+        record.setTrackOutTime(LocalDateTime.now().minusMinutes(5));
+        return record;
     }
 
     private HoldRecord holdRecord(String lotNo) {

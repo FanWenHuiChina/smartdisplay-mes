@@ -113,6 +113,7 @@ const requiredApiExports = [
   ['publishRecipe', '/v1/recipes/${id}/publish'],
   ['getTraceLot', '/v1/trace/lots/${lotNo}'],
   ['getTraceSn', '/v1/trace/sn/${sn}'],
+  ['searchTrace', '/v1/trace/search'],
   ['getQualityInspections', '/v1/quality/inspections'],
   ['getQualityExceptions', '/v1/quality/exceptions'],
   ['getQualityMrbRecords', '/v1/quality/exceptions/${eventNo}/mrb-records'],
@@ -252,7 +253,7 @@ const pageContracts = [
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
   ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
-  ['views/trace/index.vue', ['getTraceLot'], []],
+  ['views/trace/index.vue', ['searchTrace'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
   ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
 ]

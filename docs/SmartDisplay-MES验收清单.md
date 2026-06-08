@@ -192,3 +192,18 @@
 | QMS Adapter 页面级 E2E | 浏览器脚本必须从质量页填写 QMS 表单、点击“提交 QMS 上报”，并校验检验项真实落库 | 已通过，`QMS_E2E_*` 检验项落库 |
 | WMS Adapter 页面级 E2E | 浏览器脚本必须从物料页点击“Adapter 齐套”和“Adapter 事务”，并校验新入库批次真实落库 | 已通过，`WMSE2E*` 批次落库 |
 | E2E 稳定性 | Track In 后等待后端状态和页面行状态都刷新为 `PROCESSING` 后再执行 Track Out | 已落地，12 步 E2E 通过 |
+## 2026-06-08 补充验收：多入口追溯搜索
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| Lot 追溯 | 输入 Lot 后返回工单、Route、过站、Hold、质检、异常、物料消耗和审计链路 | 已落地，复用 `traceLot` 全链路 |
+| SN 追溯 | 输入 `LOT...-SN...` 可解析到绑定 Lot，并返回 SN 信息和 Lot 全链路 | 已落地，`LOT202406001-SN001` Docker 探活通过 |
+| 工单追溯 | 输入工单号可归集该工单下受影响 Lot 列表，并展开首个 Lot 证据链 | 已落地于 `/api/v1/trace/search?type=ORDER` |
+| 设备追溯 | 输入设备号可基于过站记录和当前设备反查受影响 Lot | 已落地，`COATER_01` Docker 探活命中 5 个 Lot |
+| 物料批次追溯 | 输入物料批次可基于 `material_consumption` 反查受影响 Lot | 已落地于 `/api/v1/trace/search?type=MATERIAL_BATCH` |
+| 缺陷代码追溯 | 输入缺陷代码可基于质检记录反查受影响 Lot | 已落地于 `/api/v1/trace/search?type=DEFECT_CODE` |
+| 影响范围摘要 | 返回命中 Lot 数、Hold Lot 数、NG 检验数、物料批次数、缺陷代码数和设备数 | 已落地，返回 `impactSummary` |
+| 相关维度聚合 | 返回工单、设备、物料批次和缺陷代码维度，便于反向排查 | 已落地，返回 `relatedDimensions` |
+| 数据范围控制 | 多入口候选 Lot 必须经当前角色数据范围过滤 | 已落地，候选行最终通过 `findLot` 校验 |
+| 前端追溯页 | 追溯页以接口数据驱动，支持查询类型选择、关键字输入、影响 Lot 列表和证据卡片 | 已落地，浏览器 E2E 通过 |
+| 生产包收口 | 默认生产包不应携带典型 mock/fallback Lot 或工单编号 | 已通过 `verify:production-bundle`，12 个 JS 产物 clean |

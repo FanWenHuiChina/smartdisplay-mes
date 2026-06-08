@@ -35,6 +35,7 @@ export const publishRecipe = (id) => request.post(`/v1/recipes/${id}/publish`)
 
 export const getTraceLot = lotNo => request.get(`/v1/trace/lots/${lotNo}`)
 export const getTraceSn = sn => request.get(`/v1/trace/sn/${sn}`)
+export const searchTrace = (params = {}) => request.get('/v1/trace/search', { params })
 
 export const getQualityInspections = (params = {}) => request.get('/v1/quality/inspections', { params })
 export const getQualityExceptions = (params = {}) => request.get('/v1/quality/exceptions', { params })

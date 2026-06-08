@@ -78,6 +78,12 @@ public class PilotMesService {
     private static final List<String> DEFAULT_ROUTE = List.of(
             "CLEAN", "COATING", "EXPOSURE", "ETCH", "EVAPORATION", "ENCAPSULATION", "INSPECTION", "AGING"
     );
+    private static final List<String> TRACE_TYPES = List.of(
+            "LOT", "SN", "ORDER", "EQUIPMENT", "MATERIAL_BATCH", "DEFECT_CODE"
+    );
+
+    private record TraceCandidate(String lotNo, String matchType, String matchField, String evidence) {
+    }
 
     private final ProductionOrderMapper orderMapper;
     private final LotMapper lotMapper;
@@ -703,10 +709,52 @@ public class PilotMesService {
     }
 
     public Map<String, Object> traceSn(String sn) {
-        String lotNo = sn != null && sn.contains("-") ? sn.substring(0, sn.lastIndexOf("-")) : "LOT202406001";
+        String lotNo = resolveLotNoFromSn(sn);
+        if (lotNo.isBlank()) {
+            throw new BusinessException("SN未绑定Lot或格式不支持: " + sn);
+        }
         Map<String, Object> trace = traceLot(lotNo);
-        trace.put("sn", Map.of("sn", sn, "grade", "A", "status", "IN_PROCESS"));
+        trace.put("sn", Map.of("sn", sn, "lotNo", lotNo, "grade", "A", "status", "IN_PROCESS"));
         return trace;
+    }
+
+    public Map<String, Object> traceSearch(String type, String keyword) {
+        String query = objectText(keyword, "").trim();
+        if (query.isBlank()) {
+            throw new BusinessException("追溯关键字不能为空");
+        }
+        String normalizedType = normalizeTraceType(type);
+        List<String> searchTypes = "AUTO".equals(normalizedType) ? traceSearchTypes(query) : List.of(normalizedType);
+        String resolvedType = searchTypes.get(0);
+        List<TraceCandidate> candidates = List.of();
+        for (String searchType : searchTypes) {
+            candidates = traceCandidates(searchType, query);
+            if (!candidates.isEmpty()) {
+                resolvedType = searchType;
+                break;
+            }
+        }
+
+        List<Map<String, Object>> matches = traceCandidateRows(candidates);
+        if (matches.isEmpty()) {
+            throw new BusinessException("未找到可追溯对象: " + query);
+        }
+
+        String selectedLotNo = objectText(matches.get(0).get("lotNo"), "");
+        Map<String, Object> trace = "SN".equals(resolvedType) ? traceSn(query) : traceLot(selectedLotNo);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("query", Map.of(
+                "type", normalizedType,
+                "keyword", query,
+                "resolvedType", resolvedType,
+                "selectedLotNo", selectedLotNo,
+                "matchedLotCount", matches.size()
+        ));
+        data.put("matches", matches);
+        data.put("trace", trace);
+        data.put("impactSummary", traceImpactSummary(matches, trace));
+        data.put("relatedDimensions", traceRelatedDimensions(matches, trace));
+        return data;
     }
 
     public List<Map<String, Object>> qualityInspections(String lotNo) {
@@ -1248,6 +1296,241 @@ public class PilotMesService {
         if (lotNo != null && !lotNo.isBlank()) {
             findLot(lotNo);
         }
+    }
+
+    private String normalizeTraceType(String type) {
+        String normalized = objectText(type, "AUTO").trim().toUpperCase(Locale.ROOT).replace("-", "_");
+        return switch (normalized) {
+            case "", "AUTO", "LOT", "SN", "ORDER", "EQUIPMENT", "MATERIAL", "MATERIAL_BATCH", "DEFECT", "DEFECT_CODE" ->
+                    "MATERIAL".equals(normalized) ? "MATERIAL_BATCH"
+                            : "DEFECT".equals(normalized) ? "DEFECT_CODE"
+                            : normalized.isBlank() ? "AUTO" : normalized;
+            default -> throw new BusinessException("不支持的追溯类型: " + type);
+        };
+    }
+
+    private List<String> traceSearchTypes(String keyword) {
+        Map<String, Boolean> types = new LinkedHashMap<>();
+        types.put(inferTraceType(keyword), true);
+        for (String type : TRACE_TYPES) {
+            types.put(type, true);
+        }
+        return new ArrayList<>(types.keySet());
+    }
+
+    private String inferTraceType(String keyword) {
+        String upper = objectText(keyword, "").trim().toUpperCase(Locale.ROOT);
+        if (upper.contains("-SN") || upper.startsWith("SN")) {
+            return "SN";
+        }
+        if (upper.startsWith("MO")) {
+            return "ORDER";
+        }
+        if (upper.startsWith("LOT")) {
+            return "LOT";
+        }
+        if (upper.startsWith("D-") || upper.startsWith("DEFECT")) {
+            return "DEFECT_CODE";
+        }
+        return "EQUIPMENT";
+    }
+
+    private List<TraceCandidate> traceCandidates(String type, String keyword) {
+        return switch (type) {
+            case "LOT" -> traceLotCandidates(keyword);
+            case "SN" -> traceSnCandidates(keyword);
+            case "ORDER" -> traceOrderCandidates(keyword);
+            case "EQUIPMENT" -> traceEquipmentCandidates(keyword);
+            case "MATERIAL_BATCH" -> traceMaterialBatchCandidates(keyword);
+            case "DEFECT_CODE" -> traceDefectCodeCandidates(keyword);
+            default -> throw new BusinessException("不支持的追溯类型: " + type);
+        };
+    }
+
+    private List<TraceCandidate> traceLotCandidates(String keyword) {
+        try {
+            Lot lot = findLot(keyword);
+            return List.of(new TraceCandidate(lot.getLotNo(), "LOT", "lotNo", lot.getLotNo()));
+        } catch (BusinessException ignored) {
+            return List.of();
+        }
+    }
+
+    private List<TraceCandidate> traceSnCandidates(String keyword) {
+        String lotNo = resolveLotNoFromSn(keyword);
+        if (lotNo.isBlank()) {
+            return List.of();
+        }
+        try {
+            Lot lot = findLot(lotNo);
+            return List.of(new TraceCandidate(lot.getLotNo(), "SN", "sn", keyword));
+        } catch (BusinessException ignored) {
+            return List.of();
+        }
+    }
+
+    private List<TraceCandidate> traceOrderCandidates(String keyword) {
+        return lotMapper.selectList(lotScopedWrapper()
+                        .eq(Lot::getOrderNo, keyword)
+                        .orderByDesc(Lot::getCreatedTime)
+                        .last("LIMIT 50"))
+                .stream()
+                .map(lot -> new TraceCandidate(lot.getLotNo(), "ORDER", "orderNo", keyword))
+                .toList();
+    }
+
+    private List<TraceCandidate> traceEquipmentCandidates(String keyword) {
+        Map<String, TraceCandidate> candidates = new LinkedHashMap<>();
+        List<LotStepRecord> stepRecords = stepRecordMapper.selectList(new LambdaQueryWrapper<LotStepRecord>()
+                .eq(LotStepRecord::getEquipmentCode, keyword)
+                .orderByDesc(LotStepRecord::getTrackInTime)
+                .last("LIMIT 100"));
+        for (LotStepRecord record : stepRecords) {
+            addTraceCandidate(candidates, new TraceCandidate(record.getLotNo(), "EQUIPMENT", "equipmentCode",
+                    keyword + " / " + objectText(record.getStepCode(), "-")));
+        }
+        List<Lot> currentLots = lotMapper.selectList(lotScopedWrapper()
+                .eq(Lot::getCurrentEquipmentCode, keyword)
+                .orderByDesc(Lot::getUpdatedTime)
+                .last("LIMIT 50"));
+        for (Lot lot : currentLots) {
+            addTraceCandidate(candidates, new TraceCandidate(lot.getLotNo(), "EQUIPMENT", "currentEquipmentCode", keyword));
+        }
+        return new ArrayList<>(candidates.values());
+    }
+
+    private List<TraceCandidate> traceMaterialBatchCandidates(String keyword) {
+        Map<String, TraceCandidate> candidates = new LinkedHashMap<>();
+        for (Map<String, Object> row : materialConsumptions(null)) {
+            if (sameText(row.get("batchNo"), keyword) || sameText(row.get("batch"), keyword)) {
+                addTraceCandidate(candidates, new TraceCandidate(objectText(row.get("lotNo"), ""), "MATERIAL_BATCH",
+                        "batchNo", keyword + " / " + objectText(row.get("materialCode"), "-")));
+            }
+        }
+        return new ArrayList<>(candidates.values());
+    }
+
+    private List<TraceCandidate> traceDefectCodeCandidates(String keyword) {
+        Map<String, TraceCandidate> candidates = new LinkedHashMap<>();
+        for (Map<String, Object> row : qualityInspections(null)) {
+            if (sameText(row.get("defectCode"), keyword)) {
+                addTraceCandidate(candidates, new TraceCandidate(objectText(row.get("lotNo"), ""), "DEFECT_CODE",
+                        "defectCode", keyword + " / " + objectText(row.get("itemCode"), "-")));
+            }
+        }
+        return new ArrayList<>(candidates.values());
+    }
+
+    private void addTraceCandidate(Map<String, TraceCandidate> candidates, TraceCandidate candidate) {
+        if (candidate != null && candidate.lotNo() != null && !candidate.lotNo().isBlank()) {
+            candidates.putIfAbsent(candidate.lotNo(), candidate);
+        }
+    }
+
+    private List<Map<String, Object>> traceCandidateRows(List<TraceCandidate> candidates) {
+        Map<String, Map<String, Object>> rows = new LinkedHashMap<>();
+        for (TraceCandidate candidate : candidates) {
+            try {
+                Lot lot = findLot(candidate.lotNo());
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("lotNo", lot.getLotNo());
+                row.put("orderNo", lot.getOrderNo());
+                row.put("productCode", lot.getProductCode());
+                row.put("lineCode", lot.getLineCode());
+                row.put("qty", lot.getQty());
+                row.put("status", lot.getStatus());
+                row.put("currentStepCode", lot.getCurrentStepCode());
+                row.put("currentEquipmentCode", lot.getCurrentEquipmentCode());
+                row.put("matchType", candidate.matchType());
+                row.put("matchField", candidate.matchField());
+                row.put("evidence", candidate.evidence());
+                rows.putIfAbsent(lot.getLotNo(), row);
+            } catch (BusinessException ignored) {
+                log.debug("追溯候选Lot不在当前数据范围内: {}", candidate.lotNo());
+            }
+        }
+        return new ArrayList<>(rows.values());
+    }
+
+    private Map<String, Object> traceImpactSummary(List<Map<String, Object>> matches, Map<String, Object> trace) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("matchedLotCount", matches.size());
+        summary.put("holdLotCount", matches.stream().filter(row -> "HOLD".equals(row.get("status"))).count());
+        summary.put("ngInspectionCount", listValue(trace.get("qualityRecords")).stream()
+                .filter(row -> !"OK".equals(fieldText(row, "result")))
+                .count());
+        summary.put("materialBatchCount", distinctTextCount(listValue(trace.get("materialConsumptions")), "batchNo"));
+        summary.put("defectCodeCount", distinctTextCount(listValue(trace.get("qualityRecords")), "defectCode"));
+        summary.put("equipmentCount", distinctTextCount(listValue(trace.get("stepRecords")), "equipmentCode"));
+        return summary;
+    }
+
+    private Map<String, Object> traceRelatedDimensions(List<Map<String, Object>> matches, Map<String, Object> trace) {
+        Map<String, Object> dimensions = new LinkedHashMap<>();
+        dimensions.put("orderNos", distinctTextValues(matches, "orderNo"));
+        dimensions.put("equipmentCodes", distinctTextValues(listValue(trace.get("stepRecords")), "equipmentCode"));
+        dimensions.put("materialBatches", distinctTextValues(listValue(trace.get("materialConsumptions")), "batchNo"));
+        dimensions.put("defectCodes", distinctTextValues(listValue(trace.get("qualityRecords")), "defectCode"));
+        return dimensions;
+    }
+
+    private List<?> listValue(Object value) {
+        return value instanceof List<?> list ? list : List.of();
+    }
+
+    private int distinctTextCount(List<?> rows, String fieldName) {
+        return distinctTextValues(rows, fieldName).size();
+    }
+
+    private List<String> distinctTextValues(List<?> rows, String fieldName) {
+        Map<String, Boolean> values = new LinkedHashMap<>();
+        for (Object row : rows) {
+            String text = fieldText(row, fieldName);
+            if (!text.isBlank()) {
+                values.put(text, true);
+            }
+        }
+        return new ArrayList<>(values.keySet());
+    }
+
+    private String fieldText(Object row, String fieldName) {
+        if (row instanceof Map<?, ?> map) {
+            return objectText(map.get(fieldName), "");
+        }
+        if (row instanceof LotStepRecord record) {
+            return switch (fieldName) {
+                case "lotNo" -> objectText(record.getLotNo(), "");
+                case "stepCode" -> objectText(record.getStepCode(), "");
+                case "equipmentCode" -> objectText(record.getEquipmentCode(), "");
+                case "recipeCode" -> objectText(record.getRecipeCode(), "");
+                case "result" -> objectText(record.getResult(), "");
+                default -> "";
+            };
+        }
+        if (row instanceof Lot lot) {
+            return switch (fieldName) {
+                case "lotNo" -> objectText(lot.getLotNo(), "");
+                case "orderNo" -> objectText(lot.getOrderNo(), "");
+                case "productCode" -> objectText(lot.getProductCode(), "");
+                case "status" -> objectText(lot.getStatus(), "");
+                default -> "";
+            };
+        }
+        return "";
+    }
+
+    private boolean sameText(Object value, String expected) {
+        return objectText(value, "").equalsIgnoreCase(objectText(expected, ""));
+    }
+
+    private String resolveLotNoFromSn(String sn) {
+        String text = objectText(sn, "").trim();
+        String upper = text.toUpperCase(Locale.ROOT);
+        int snMarker = upper.lastIndexOf("-SN");
+        if (snMarker > 0) {
+            return text.substring(0, snMarker);
+        }
+        return "";
     }
 
     private long readyCount(List<Lot> lots) {
@@ -1912,5 +2195,13 @@ public class PilotMesService {
 
     private String valueOr(String value, String fallback) {
         return Objects.requireNonNullElse(value, fallback);
+    }
+
+    private String objectText(Object value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? fallback : text;
     }
 }

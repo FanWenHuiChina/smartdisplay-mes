@@ -619,6 +619,12 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.carriers());
     }
 
+    @GetMapping("/trace/search")
+    public Result<Map<String, Object>> traceSearch(@RequestParam(required = false, defaultValue = "AUTO") String type,
+                                                   @RequestParam String keyword) {
+        return Result.success(pilotMesService.traceSearch(type, keyword));
+    }
+
     @GetMapping("/trace/lots/{lotNo}")
     public Result<Map<String, Object>> traceLot(@PathVariable String lotNo) {
         return Result.success(pilotMesService.traceLot(lotNo));

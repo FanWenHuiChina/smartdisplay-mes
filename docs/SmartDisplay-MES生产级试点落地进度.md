@@ -683,3 +683,12 @@
 - WMS E2E 先点击“Adapter 齐套”验证页面状态返回，再切换到“入库”事务，使用独立批次号 `WMSE2E{timestamp}` 点击“Adapter 事务”，并通过 `/api/v1/material/batches` 校验批次落库。
 - 修正 E2E 中原 Track In/Out 步骤的等待策略：点击 Track In 后不仅等待后端 Lot 变为 `PROCESSING`，还等待页面表格行刷新为 `PROCESSING` 后再触发 Track Out，避免 Vue 异步刷新未完成时误点出站。
 - 已运行 `npm.cmd run e2e:browser` 通过，12 步全部 PASS，Console/Network 错误数为 0；报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md/json`。
+## 2026-06-08 增量：多入口追溯搜索与影响范围聚合
+
+- 后端新增 `GET /api/v1/trace/search`，支持 `AUTO/LOT/SN/ORDER/EQUIPMENT/MATERIAL_BATCH/DEFECT_CODE` 查询类型；查询结果统一返回 `query`、`matches`、`trace`、`impactSummary` 和 `relatedDimensions`，其中 `trace` 继续复用现有 Lot 全链路证据。
+- SN 追溯由显式格式 `LOT...-SN...` 解析到 Lot，不再静默回退到固定样例 Lot，避免生产环境出现错误归因。
+- 设备、物料批次和缺陷代码查询会先反查受影响 Lot，再通过 Lot 数据范围校验过滤候选，避免跨角色/跨产线数据泄露。
+- 前端追溯页升级为“查询类型 + 关键字”的多入口工作台，展示命中 Lot、Hold Lot、NG 检验、关联设备、Route、物料批次、质检记录和审计日志；页面继续使用当前浅色 Codex app 风格组件。
+- 前端生产构建已移除追溯页默认样例编号和 placeholder 样例编号，保留开发环境 mock fallback 但不进入默认生产包。
+- 已验证：`mvn.cmd -s D:\workspace\mes\.m2\settings.xml -Dtest=PilotMesServiceTest test` 通过 21 项；`mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` 后端全量通过 203 项；`npm.cmd run verify:frontend-contract` 通过 322 项；`npm.cmd run build` 通过；`npm.cmd run verify:production-bundle` 通过，扫描 12 个 JS 产物；`npm.cmd run e2e:browser` 通过 12 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-170328.md`。
+- 已重建 Docker：`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 成功；经前端 Nginx 反代验证登录、SN 追溯和设备追溯均返回业务码 `200`，其中 `LOT202406001-SN001` 解析为 `SN -> LOT202406001`，`COATER_01` 设备追溯命中 5 个 Lot。

@@ -323,7 +323,7 @@ async function main() {
       return json.data.records[0].lotNo
     })()`)
     await clickByText('追溯分析')
-    await waitForExpression(`location.pathname === '/trace' && document.body.innerText.includes('追溯分析 / Lot')`)
+    await waitForExpression(`location.pathname === '/trace' && document.body.innerText.includes('追溯分析 / 多入口')`)
     await setTraceInput(lotNo)
     await clickByText('查询追溯')
     await waitForExpression(`document.body.innerText.includes(${JSON.stringify(lotNo)}) || document.body.innerText.includes('工艺履历时间线')`)
@@ -403,7 +403,7 @@ async function setTraceInput(value) {
   const ok = await evaluate(`(() => {
     const input = Array.from(document.querySelectorAll('.mes-field input')).find(el => {
       const label = el.closest('.mes-field')?.innerText || ''
-      return label.includes('Lot / SN')
+      return label.includes('关键字') || label.includes('Lot / SN')
     })
     if (!input) return false
     input.focus()

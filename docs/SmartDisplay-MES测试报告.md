@@ -332,3 +332,17 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | QMS Adapter 页面操作 | 质量页填写当前 E2E Lot 的 QMS OK 上报并点击“提交 QMS 上报” | 通过 | 通过 `/api/v1/quality/inspections?lotNo=...` 校验 `QMS_E2E_*` 检验项已落库 |
 | WMS Adapter 页面操作 | 物料页点击“Adapter 齐套”，再切换“入库”并点击“Adapter 事务” | 通过 | 页面返回 `RECEIVE ACCEPTED`，并通过 `/api/v1/material/batches` 校验 `WMSE2E*` 批次已落库 |
 | Track In/Out E2E 稳定性 | 点击 Track In 后等待后端状态与页面表格行均变为 `PROCESSING` 再点击 Track Out | 通过 | 避免 Vue 异步刷新未完成时出站操作未对准当前 E2E Lot |
+## 2026-06-08 多入口追溯搜索复验
+
+本轮将追溯能力从单 Lot 查询扩展为多入口搜索聚合，覆盖 Lot、SN、工单、设备、物料批次和缺陷代码入口。后端新增 `GET /api/v1/trace/search`，前端追溯页改为查询类型和关键字驱动，并展示影响范围、首个 Lot 全链路证据、质检/物料/审计摘要。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端追溯服务回归 | `mvn.cmd -s D:\workspace\mes\.m2\settings.xml -Dtest=PilotMesServiceTest test` | 通过 | `Tests run: 21, Failures: 0, Errors: 0, Skipped: 0`，覆盖设备反查和 SN 自动解析 |
+| 后端全量回归 | `mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` | 通过 | `Tests run: 203, Failures: 0, Errors: 0, Skipped: 0` |
+| 前端契约 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 322 checks`，追溯页已要求 `searchTrace` 接线 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留既有第三方 pure annotation 和 chunk size warning |
+| 生产包样例扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 12 JS assets checked`，追溯页生产包不携带样例 Lot/工单编号 |
+| Docker 重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | PostgreSQL healthy，后端 `8080`，前端 `8888` |
+| Docker 追溯接口探活 | 经 `http://localhost:8888/api` 登录后调用 `/v1/trace/search` | 通过 | `LOT202406001-SN001` 解析为 `SN -> LOT202406001`；`COATER_01` 设备追溯命中 5 个 Lot |
+| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步通过，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-170328.md` |
