@@ -104,3 +104,41 @@ jobs:
 
       - name: Verify Docker Compose config
         run: docker compose -f smartdisplay-mes-api\docker-compose.yml config
+
+  browser-e2e:
+    name: Docker browser E2E
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+      - delivery-gates
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Start pilot stack
+        run: docker compose -f smartdisplay-mes-api/docker-compose.yml up -d --build
+
+      - name: Run browser E2E
+        working-directory: smartdisplay-mes-ui
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8888
+          E2E_APP_TIMEOUT_MS: "180000"
+        run: node scripts/run-browser-e2e.mjs
+
+      - name: Upload browser E2E reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-reports
+          path: docs/SmartDisplay-MES-browser-e2e-*.*
+          if-no-files-found: ignore
+
+      - name: Stop pilot stack
+        if: always()
+        run: docker compose -f smartdisplay-mes-api/docker-compose.yml down -v

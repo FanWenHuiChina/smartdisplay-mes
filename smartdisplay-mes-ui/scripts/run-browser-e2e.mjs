@@ -38,6 +38,9 @@ main().catch(async error => {
 async function main() {
   ensureChrome()
   mkdirSync(reportDir, { recursive: true })
+  const appTimeoutMs = Number(process.env.E2E_APP_TIMEOUT_MS || 120000)
+  await waitForHttpStatus(baseUrl, appTimeoutMs)
+  await waitForHttpStatus(`${baseUrl}/api/v1/auth/login`, appTimeoutMs)
   await launchChrome()
   const pageWs = await getPageWebSocket()
   client = await CdpClient.connect(pageWs)
@@ -987,11 +990,34 @@ function ensureChrome() {
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/opt/google/chrome/chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
   ].filter(Boolean)
   const chrome = candidates.find(path => existsSync(path))
   if (!chrome) throw new Error('未找到 Chrome 或 Edge，可设置 CHROME_PATH 后重试')
   return chrome
+}
+
+async function waitForHttpStatus(url, timeoutMs) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const response = await fetch(url, { redirect: 'manual' })
+      if (response.status > 0 && response.status < 500) {
+        return
+      }
+    } catch {
+      // 服务启动过程中连接失败是预期情况，继续等待。
+    }
+    await delay(500)
+  }
+  throw new Error(`等待 HTTP 服务就绪超时: ${url}`)
 }
 
 async function waitForHttp(url, timeoutMs) {
