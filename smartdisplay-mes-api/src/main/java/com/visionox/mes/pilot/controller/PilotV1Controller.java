@@ -218,6 +218,12 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.createOrder(request));
     }
 
+    @GetMapping("/orders/{orderNo}/release-checks")
+    public Result<Map<String, Object>> orderReleaseChecks(@PathVariable String orderNo,
+                                                          @RequestParam(defaultValue = "100") int lotQty) {
+        return Result.success(pilotMesService.orderReleaseChecks(orderNo, lotQty));
+    }
+
     @PostMapping("/orders/{orderNo}/release")
     public Result<Map<String, Object>> releaseOrder(@PathVariable String orderNo,
                                                     @RequestBody(required = false) Map<String, Object> request) {

@@ -108,6 +108,7 @@ const requiredApiExports = [
   ['getYieldDashboard', '/v1/dashboard/yield'],
   ['getOrders', '/v1/orders'],
   ['createOrder', '/v1/orders'],
+  ['getOrderReleaseChecks', '/v1/orders/${orderNo}/release-checks'],
   ['releaseOrder', '/v1/orders/${orderNo}/release'],
   ['getLots', '/v1/lots'],
   ['trackInLot', '/v1/lots/${lotNo}/track-in'],
@@ -333,6 +334,9 @@ check('page:views/master/index.vue:bom-change-attachment-count', masterView.incl
 const orderView = read('src/views/order/index.vue')
 check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['importErpOrders', 'submitErpImport', 'erpImportResult']), 'Order page must expose ERP adapter import and show the latest import result')
 check('page:views/order/index.vue:erp-import-audit-receipt', hasAll(orderView, ['erpImportCards', 'erpSampleOrders', 'ERP_ORDER_IMPORT']), 'Order page must show ERP adapter import batch, sample orders and audit action')
+check('page:views/order/index.vue:release-checks-api-driven', hasAll(orderView, ['getOrderReleaseChecks', 'loadReleaseChecks', 'releaseCheckResult', 'releaseCheckBadgeText', 'releaseButtonDisabled']), 'Order release checks must be driven by /orders/{orderNo}/release-checks')
+check('page:views/order/index.vue:no-static-release-check-badge', !orderView.includes('7/8 通过'), 'Order page must not hard-code release check pass count')
+check('page:views/order/index.vue:release-checks-block-release', hasAll(orderView, ['releaseCheckResult.value?.releasable', '工单释放预校验未通过']), 'Order release action must block when backend release checks fail')
 check('page:views/order/index.vue:query-filters', hasAll(orderView, ['orderFilters', 'v-model.trim="orderFilters.keyword"', 'params.status = orderFilters.value.status', 'displayOrders']), 'Order page must wire query filters to API status and visible rows')
 check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
 check('page:views/order/index.vue:no-unwired-buttons', unwiredButtons(orderView).length === 0, `unwired buttons: ${unwiredButtons(orderView).join(', ')}`)

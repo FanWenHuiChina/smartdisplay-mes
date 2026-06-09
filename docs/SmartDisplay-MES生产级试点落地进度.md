@@ -19,7 +19,7 @@
   - Auth/System：`POST /api/v1/auth/login`、`GET /api/v1/system/users`、`GET /api/v1/system/audit-logs`。
   - Master：`/api/v1/master/products`、`/api/v1/master/process-steps`、`/api/v1/master/equipments`、`/api/v1/master/defect-codes`。
   - Route/BOM/Recipe：`/api/v1/routes`、`/api/v1/boms`、`/api/v1/boms/change-requests`、`/api/v1/boms/eco-approvals`、`POST /api/v1/boms/eco-approvals/{taskNo}/decision`、`POST /api/v1/boms/change-requests/{changeNo}/review`、`POST /api/v1/boms/change-requests/{changeNo}/publish`、`/api/v1/recipes`、`POST /api/v1/recipes/{id}/publish`。
-  - Order/Lot/Execution：`/api/v1/orders`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、Track In/Out、Hold、Release、Rework、Scrap。
+  - Order/Lot/Execution：`/api/v1/orders`、`GET /api/v1/orders/{orderNo}/release-checks`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、Track In/Out、Hold、Release、Rework、Scrap。
   - ERP Adapter：`POST /api/v1/adapters/erp/orders`，支持模拟 ERP 工单数组下发和 `count=1000` 批量生成试点工单。
   - Quality/Exception：`/api/v1/quality/inspections`、`/api/v1/quality/exceptions`、`/api/v1/quality/exceptions/{eventNo}/mrb-records`、`/api/v1/quality/mrb-records/{mrbNo}/minutes`、`/api/v1/quality/mrb-approvals`、`POST /api/v1/quality/mrb-approvals/refresh-sla`。
   - Equipment/EAP：`/api/v1/equipment/events`、`POST /api/v1/equipment/events`、`POST /api/v1/equipment/events/{eventNo}/close`、`/api/v1/equipment/oee`、`/api/v1/equipment/status-history`、`POST /api/v1/equipment/status/report`、`/api/v1/equipment/cycle-samples`、`POST /api/v1/equipment/cycle-samples/report`、`/api/v1/equipment/standard-cycles`、`POST /api/v1/equipment/standard-cycles`、`/api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways/{gatewayCode}/heartbeat`、`POST /api/v1/equipment/gateways/{gatewayCode}/health-check`、`/api/v1/equipment/gateway-health-checks`、`/api/v1/equipment/gateway-drivers`、`/api/v1/equipment/gateway-messages`、`/api/v1/equipment/parameters`、`POST /api/v1/equipment/parameters/report`、`/api/v1/equipment/pm-tasks`、`POST /api/v1/equipment/pm-tasks/{taskNo}/complete`、`/api/v1/equipment/recipe-downloads`、`POST /api/v1/equipment/recipe-downloads`、`POST /api/v1/adapters/eap/messages`。
@@ -40,6 +40,7 @@
 - 新增 `equipment_gateway_health_check`，支持手动网关健康检查、协议驱动健康结果、PASS/WARN/FAIL 履历、网关状态联动和审计留痕；真实 SECS/GEM、OPC UA、厂商 HTTP 当前明确返回待真机联调的 WARN 口径。
 - 新增 JWT 拦截器和轻量级 RBAC：除登录、Swagger、API Docs 外，`/api/**` 默认要求 Bearer Token；写操作按管理员、计划员、操作员、质量工程师、工艺工程师、设备工程师做角色控制。
 - 新增 `ErpOrderAdapterService`，模拟 ERP 下发工单并落 `prod_order`；接口支持单批最多 1000 条、批量查重、重复工单跳过、导入汇总审计 `ERP_ORDER_IMPORT` 和失败审计映射，默认只有具备 `order:create` 权限的角色可调用。
+- 新增工单释放预校验闭环：`GET /api/v1/orders/{orderNo}/release-checks` 返回工单状态、产品编码、Route首站、生效BOM、目标产线设备能力、Recipe覆盖、Lot拆分和权限审计结果；`POST /api/v1/orders/{orderNo}/release` 复用同一套阻断校验，前端工单页已移除静态 `7/8 通过` 并按真实接口动态展示。
 - 新增 `ai_report_record`，AI良率日报、设备异常分析、SOP问答都会保存输入快照、Prompt模板版本、模型、输出JSON、创建人和创建时间；V1.31 已扩展模型供应方、模型模式、配置编码、检索策略、证据数量、最高证据分、证据等级和依据不足标志。
 - 新增 `ai_model_config`，保存良率日报、设备异常分析、SOP问答的模型运行配置，区分 `SIMULATED`、`SHADOW` 等模式，并内置 OpenAI 兼容接口影子配置占位但默认禁用。
 - 新增 `ai_kb_document`、`ai_kb_chunk`，内置 Hold/Release、蒸镀报警、Mura判定、关键物料批次追溯等 SOP/手册/质量标准切片；SOP问答会从正式切片检索引用，依据不足时明确提示；V1.31 已为切片增加检索策略、embedding状态和向量索引预留字段。
@@ -62,7 +63,7 @@
 - 登录页已切换到 `/api/v1/auth/login`，展示管理员、计划员、操作员、质量工程师、工艺工程师、设备工程师 6 类试点账号。
 - 关键页面已从纯静态改为“接口优先 + 开发 fallback”：
   - 生产总览：接入 `/v1/dashboard/overview`。
-  - 工单页面：接入 `/v1/orders`、`/v1/adapters/erp/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`，并展示 ERP Adapter 批次、样例工单和审计动作回执。
+  - 工单页面：接入 `/v1/orders`、`/v1/orders/{orderNo}/release-checks`、`/v1/adapters/erp/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`，并展示 ERP Adapter 批次、样例工单、审计动作回执和接口驱动释放校验。
   - 生产执行：接入 `/v1/lots`、Track In、Track Out、Hold。
   - 质量管理：接入 `/v1/quality/inspections`、`/v1/quality/exceptions`、`/v1/quality/exceptions/{eventNo}/mrb-records`、`/v1/quality/mrb-approvals`、`/v1/quality/mrb-approvals/refresh-sla`、`/v1/dashboard/yield`。
   - 物料与载具：接入 `/v1/material/batches`、`/v1/material/consumptions`、`/v1/material/inventory-transactions`、`/v1/material/incoming-inspections`、`/v1/material/location-tasks`、`/v1/material/suppliers`、`/v1/material/suppliers/trends`、`/v1/material/suppliers/qualification-reviews`、WMS 入库/冻结/解冻/退料/盘点、库位上架/整批移库/盘点任务、来料 IQC/COA、供应商准入/复审/8D和 `/v1/carriers`。
@@ -74,10 +75,10 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执和生产 mock fallback 禁用约束，共 383 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线和生产 mock fallback 禁用约束，共 387 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-142348.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 216, Failures: 0, Errors: 0, Skipped: 0`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-162220.md`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 217, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
 - Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。

@@ -20,7 +20,7 @@
 | 数据范围 SQL | 按 ALL/LINE/SELF_SHIFT/SELF 生成安全 SQL 条件，工单、Lot、质量、异常、物料消耗、载具等列表按域过滤 | 已落地，组织/产线/班次主数据已补 |
 | 组织/产线/班次主数据 | 基地、产线、班次有正式表、种子数据和 `/api/v1/master/**` 查询接口 | 已落地 |
 | ERP模拟工单导入 | 支持 `/api/v1/adapters/erp/orders` 下发工单、批量查重、1000 条模拟导入、成功/失败审计和角色权限控制 | 已落地，工单页已提供 Adapter 批次、样例工单和审计动作回执 |
-| 工单释放 | 工单释放后生成 Lot 并写审计 | 已落地 |
+| 工单释放 | 工单释放前必须通过状态、产品编码、Route首站、生效BOM、设备能力、Recipe覆盖、Lot拆分和权限审计预校验；通过后生成 Lot 并写审计 | 已落地，新增 `/api/v1/orders/{orderNo}/release-checks`，工单页释放校验已改为接口驱动 |
 | Route 防跳站 | Track In 必须匹配 Route 下一站 | 已落地 |
 | Recipe 校验 | Track In 校验产品+工序+设备生效 Recipe | 已落地 |
 | 班次校验 | Track In 校验 Lot 产线当前时间处于 ACTIVE 班次窗口 | 已落地 |
@@ -69,7 +69,7 @@
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.41` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，383 项检查 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，387 项检查；已覆盖工单释放预校验 API 接线和禁止静态 `7/8 通过` |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |

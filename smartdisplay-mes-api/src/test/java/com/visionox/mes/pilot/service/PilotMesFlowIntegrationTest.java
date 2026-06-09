@@ -43,6 +43,7 @@ import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.entity.RecipeParam;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
+import com.visionox.mes.route.entity.Route;
 import com.visionox.mes.recipe.service.RecipeService;
 import com.visionox.mes.route.service.RouteService;
 import com.visionox.mes.system.service.AuditLogService;
@@ -360,15 +361,25 @@ class PilotMesFlowIntegrationTest {
     }
 
     private void wireMasterRules() {
-        Recipe recipe = recipe();
+        Recipe recipe = recipe("RCP_COAT_01", "COATING", "COATER_01");
+        Recipe exposureRecipe = recipe("RCP_EXPOSURE_01", "EXPOSURE", "EXPOSURE_01");
         RecipeParam thicknessParam = thicknessParam();
-        Equipment coater = equipment();
+        Equipment coater = equipment("COATER_01", "COATING");
+        Equipment exposure = equipment("EXPOSURE_01", "EXPOSURE");
 
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route());
         when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("COATING", "EXPOSURE"));
-        when(equipmentMapper.selectList(any())).thenReturn(List.of(coater));
+        when(materialService.activeBomSummary("OLED_PANEL")).thenReturn(Map.of(
+                "bomCode", "BOM_OLED_V1",
+                "bomVersion", "V1",
+                "status", "ACTIVE",
+                "keyItems", 2
+        ));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(coater, exposure));
         when(equipmentMapper.selectOne(any())).thenReturn(coater);
         when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe);
         when(recipeMapper.selectOne(any())).thenReturn(recipe);
+        when(recipeMapper.selectList(any())).thenReturn(List.of(recipe, exposureRecipe));
         when(recipeParamMapper.selectList(any())).thenReturn(List.of(thicknessParam));
         when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
         when(routeService.activeRouteSummaries()).thenReturn(List.of(Map.of(
@@ -390,21 +401,31 @@ class PilotMesFlowIntegrationTest {
         return order;
     }
 
-    private Equipment equipment() {
+    private Route route() {
+        Route route = new Route();
+        route.setRouteCode("RTE-OLED-PILOT");
+        route.setRouteVersion("V1");
+        route.setProductCode("OLED_PANEL");
+        route.setStatus("ACTIVE");
+        return route;
+    }
+
+    private Equipment equipment(String equipmentCode, String stepCode) {
         Equipment equipment = new Equipment();
-        equipment.setEquipmentCode("COATER_01");
+        equipment.setEquipmentCode(equipmentCode);
+        equipment.setLineCode("LINE_01");
         equipment.setStatus("IDLE");
-        equipment.setCapabilitySteps("[\"COATING\"]");
+        equipment.setCapabilitySteps("[\"" + stepCode + "\"]");
         return equipment;
     }
 
-    private Recipe recipe() {
+    private Recipe recipe(String recipeCode, String stepCode, String equipmentCode) {
         Recipe recipe = new Recipe();
         recipe.setId(101L);
-        recipe.setRecipeCode("RCP_COAT_01");
+        recipe.setRecipeCode(recipeCode);
         recipe.setProductCode("OLED_PANEL");
-        recipe.setStepCode("COATING");
-        recipe.setEquipmentCode("COATER_01");
+        recipe.setStepCode(stepCode);
+        recipe.setEquipmentCode(equipmentCode);
         recipe.setStatus("ACTIVE");
         return recipe;
     }

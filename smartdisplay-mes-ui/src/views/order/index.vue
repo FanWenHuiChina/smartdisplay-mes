@@ -74,7 +74,7 @@
       <div class="mes-card">
         <div class="mes-card__head">
           <div class="mes-card__title">释放校验</div>
-          <span class="status-tag green">7/8 通过</span>
+          <span class="status-tag" :class="releaseCheckTagType">{{ releaseCheckBadgeText }}</span>
         </div>
         <div class="mes-card__body">
           <div class="matrix two">
@@ -129,9 +129,10 @@
             </table>
           </div>
           <div class="toolbar">
-            <button v-if="canReleaseOrder" class="mes-btn primary" :disabled="releasing" @click="releaseFirstOrder">
+            <button v-if="canReleaseOrder" class="mes-btn primary" :disabled="releaseButtonDisabled" @click="releaseFirstOrder">
               {{ releasing ? '释放中' : `生成 ${previewLotCount} 个 Lot` }}
             </button>
+            <button class="mes-btn" :disabled="releaseCheckLoading" @click="loadReleaseChecks">刷新释放校验</button>
             <button class="mes-btn" :disabled="loading" @click="loadLots">刷新 Lot 预览</button>
           </div>
         </div>
@@ -161,7 +162,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getOrders, getLots, importErpOrders, releaseOrder } from '@/api/pilot'
+import { getOrders, getLots, getOrderReleaseChecks, importErpOrders, releaseOrder } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
@@ -172,7 +173,7 @@ const fallbackOrders = [
   { no: 'MO20260606015', product: 'AMOLED_65', qty: '1,200', route: 'RTE_G6_V08', status: '计划', statusType: 'gray', window: '06/07 16:00-06/08 04:00' }
 ]
 
-const releaseChecks = [
+const fallbackReleaseChecks = [
   { title: '产品状态', text: 'AMOLED_65 已启用', type: 'green' },
   { title: 'Route 版本', text: 'RTE_G6_V08 已生效', type: 'green' },
   { title: 'BOM', text: 'BOM_65_V06 已生效', type: 'green' },
@@ -194,6 +195,8 @@ const lots = ref(__DEV_MOCK_FALLBACK__ ? fallbackLots : [])
 const loading = ref(false)
 const importing = ref(false)
 const releasing = ref(false)
+const releaseCheckLoading = ref(false)
+const releaseCheckResult = ref(null)
 const erpImportResult = ref(null)
 const erpImportForm = ref({
   count: 3,
@@ -210,7 +213,7 @@ const orderFilters = ref({
 })
 
 const pendingCount = computed(() => orders.value.filter(order => ['CREATED', '待释放', '计划'].includes(order.rawStatus || order.status)).length)
-const previewLotCount = computed(() => lots.value.length || 10)
+const previewLotCount = computed(() => releaseCheckResult.value ? Number(releaseCheckResult.value.expectedLotCount || 0) : (lots.value.length || 10))
 const canCreateOrder = computed(() => hasButton('order:create'))
 const canReleaseOrder = computed(() => hasButton('order:release'))
 const displayOrders = computed(() => {
@@ -225,6 +228,31 @@ const displayOrders = computed(() => {
     return matchesKeyword && matchesRoute && matchesPriority
   })
 })
+const targetReleaseOrder = computed(() => displayOrders.value.find(order => order.rawStatus === 'CREATED' || order.status === '待释放'))
+const releaseChecks = computed(() => {
+  const checks = releaseCheckResult.value?.checks
+  if (Array.isArray(checks) && checks.length) {
+    return checks.map(item => ({
+      title: item.title,
+      text: item.text,
+      type: item.type || (item.passed ? 'green' : 'red')
+    }))
+  }
+  if (__DEV_MOCK_FALLBACK__) return fallbackReleaseChecks
+  return [{ title: '等待工单', text: '当前没有可释放工单', type: 'gray' }]
+})
+const releaseCheckBadgeText = computed(() => {
+  if (releaseCheckLoading.value) return '校验中'
+  const result = releaseCheckResult.value
+  if (!result) return targetReleaseOrder.value ? '等待校验' : '无待释放工单'
+  return `${result.passedCount || 0}/${result.total || 0} 通过`
+})
+const releaseCheckTagType = computed(() => {
+  if (releaseCheckLoading.value) return 'blue'
+  if (!releaseCheckResult.value) return targetReleaseOrder.value ? 'amber' : 'gray'
+  return releaseCheckResult.value.releasable ? 'green' : 'red'
+})
+const releaseButtonDisabled = computed(() => releasing.value || releaseCheckLoading.value || !targetReleaseOrder.value || !releaseCheckResult.value?.releasable)
 const erpImportSummary = computed(() => {
   if (!erpImportResult.value) return ''
   const result = erpImportResult.value
@@ -298,9 +326,11 @@ async function loadOrders() {
     if (Array.isArray(data.records)) {
       orders.value = data.records.map(mapOrder)
     }
+    await loadReleaseChecks()
   } catch (error) {
     warnDevFallback('工单接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) orders.value = fallbackOrders
+    await loadReleaseChecks()
   } finally {
     loading.value = false
   }
@@ -315,6 +345,36 @@ async function loadLots() {
   } catch (error) {
     warnDevFallback('Lot 接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) lots.value = fallbackLots
+  }
+}
+
+function fallbackReleaseCheckResult(order) {
+  return {
+    orderNo: order?.no || '',
+    productCode: order?.product || '',
+    lotQty: 100,
+    expectedLotCount: 10,
+    checks: fallbackReleaseChecks,
+    passedCount: 7,
+    total: fallbackReleaseChecks.length,
+    releasable: true
+  }
+}
+
+async function loadReleaseChecks() {
+  const target = targetReleaseOrder.value
+  if (!target) {
+    releaseCheckResult.value = null
+    return
+  }
+  releaseCheckLoading.value = true
+  try {
+    releaseCheckResult.value = await getOrderReleaseChecks(target.no, { lotQty: 100 })
+  } catch (error) {
+    warnDevFallback('工单释放预校验接口不可用', error)
+    releaseCheckResult.value = __DEV_MOCK_FALLBACK__ ? fallbackReleaseCheckResult(target) : null
+  } finally {
+    releaseCheckLoading.value = false
   }
 }
 
@@ -367,13 +427,18 @@ async function releaseFirstOrder() {
     ElMessage.warning('当前角色无权释放工单')
     return
   }
-  const target = displayOrders.value.find(order => order.rawStatus === 'CREATED' || order.status === '待释放')
+  const target = targetReleaseOrder.value
   if (!target) {
     ElMessage.warning('当前没有可释放工单')
     return
   }
   releasing.value = true
   try {
+    await loadReleaseChecks()
+    if (!releaseCheckResult.value?.releasable) {
+      ElMessage.warning('工单释放预校验未通过')
+      return
+    }
     await releaseOrder(target.no, { lotQty: 100 })
     ElMessage.success(`${target.no} 已释放并生成 Lot`)
     await Promise.all([loadOrders(), loadLots()])

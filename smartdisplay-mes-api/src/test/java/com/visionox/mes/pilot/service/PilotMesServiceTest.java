@@ -14,6 +14,7 @@ import com.visionox.mes.common.BusinessException;
 import com.visionox.mes.equipment.adapter.EapAdapter;
 import com.visionox.mes.equipment.service.EapGatewayService;
 import com.visionox.mes.equipment.service.EquipmentService;
+import com.visionox.mes.lot.entity.Equipment;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
@@ -252,7 +253,24 @@ class PilotMesServiceTest {
     void releaseOrderShouldSplitOrderIntoReadyLotsAndWriteAudit() {
         ProductionOrder order = order("MO20260607001", 250);
         when(orderMapper.selectOne(any())).thenReturn(order);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
         when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN", "COATING", "EXPOSURE"));
+        when(materialService.activeBomSummary("OLED_PANEL")).thenReturn(Map.of(
+                "bomCode", "BOM_OLED_V1",
+                "bomVersion", "V1",
+                "status", "ACTIVE",
+                "keyItems", 3
+        ));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(
+                equipment("CLEANER_01", "CLEAN"),
+                equipment("COATER_01", "COATING"),
+                equipment("EXPOSURE_01", "EXPOSURE")
+        ));
+        when(recipeMapper.selectList(any())).thenReturn(List.of(
+                recipe("RCP_CLEAN_V1", "CLEAN", "CLEANER_01"),
+                recipe("RCP_COATING_V1", "COATING", "COATER_01"),
+                recipe("RCP_EXPOSURE_V1", "EXPOSURE", "EXPOSURE_01")
+        ));
         when(lotMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> result = pilotMesService.releaseOrder("MO20260607001", Map.of("lotQty", 100));
@@ -315,6 +333,26 @@ class PilotMesServiceTest {
                 .contains("\"createdLotCount\":3")
                 .contains("\"createdSnCount\":250")
                 .contains("\"changedFields\"");
+    }
+
+    @Test
+    void releaseOrderShouldRejectWhenActiveBomMissing() {
+        ProductionOrder order = order("MO20260607001", 250);
+        when(orderMapper.selectOne(any())).thenReturn(order);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN"));
+        when(materialService.activeBomSummary("OLED_PANEL")).thenReturn(Map.of());
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment("CLEANER_01", "CLEAN")));
+        when(recipeMapper.selectList(any())).thenReturn(List.of(recipe("RCP_CLEAN_V1", "CLEAN", "CLEANER_01")));
+
+        assertThatThrownBy(() -> pilotMesService.releaseOrder("MO20260607001", Map.of("lotQty", 100)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工单释放预校验未通过")
+                .hasMessageContaining("BOM");
+
+        verify(lotMapper, never()).insert(any());
+        verify(orderMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -784,8 +822,28 @@ class PilotMesServiceTest {
         Route route = new Route();
         route.setRouteCode(routeCode);
         route.setProductCode("OLED_PANEL");
+        route.setRouteVersion("V1");
         route.setStatus("ACTIVE");
         return route;
+    }
+
+    private Equipment equipment(String equipmentCode, String stepCode) {
+        Equipment equipment = new Equipment();
+        equipment.setEquipmentCode(equipmentCode);
+        equipment.setLineCode("LINE_01");
+        equipment.setStatus("IDLE");
+        equipment.setCapabilitySteps("[\"" + stepCode + "\"]");
+        return equipment;
+    }
+
+    private Recipe recipe(String recipeCode, String stepCode, String equipmentCode) {
+        Recipe recipe = new Recipe();
+        recipe.setRecipeCode(recipeCode);
+        recipe.setProductCode("OLED_PANEL");
+        recipe.setStepCode(stepCode);
+        recipe.setEquipmentCode(equipmentCode);
+        recipe.setStatus("ACTIVE");
+        return recipe;
     }
 
     private RouteStep routeStep(String stepCode, int allowRework) {

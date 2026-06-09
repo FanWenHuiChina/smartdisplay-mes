@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -155,6 +156,11 @@ public class PilotMesService {
         return orderMapper.selectPage(new Page<>(current, size), wrapper);
     }
 
+    public Map<String, Object> orderReleaseChecks(String orderNo, int lotQty) {
+        ProductionOrder order = findOrderByNo(orderNo);
+        return buildOrderReleaseChecks(order, Math.max(1, lotQty));
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ProductionOrder createOrder(Map<String, Object> request) {
         ProductionOrder order = new ProductionOrder();
@@ -177,14 +183,16 @@ public class PilotMesService {
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> releaseOrder(String orderNo, Map<String, Object> request) {
-        ProductionOrder order = orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, orderNo));
+        ProductionOrder order = findOrderByNo(orderNo);
         if (order == null) {
             throw new BusinessException("工单不存在: " + orderNo);
         }
         Map<String, Object> before = orderSnapshot(order);
         int lotQty = Math.max(1, intValue(value(request, "lotQty"), 100));
+        Map<String, Object> releaseChecks = buildOrderReleaseChecks(order, lotQty);
+        assertReleaseChecksPassed(releaseChecks);
         int lotCount = Math.max(1, (int) Math.ceil(order.getPlannedQty() * 1.0 / lotQty));
-        String firstStepCode = firstRouteStepCode(order.getProductCode());
+        String firstStepCode = objectText(releaseChecks.get("firstStepCode"), firstRouteStepCode(order.getProductCode()));
         String operator = currentUser();
         List<Lot> lots = new ArrayList<>();
         List<SerialNumber> createdSerialNumbers = new ArrayList<>();
@@ -228,6 +236,208 @@ public class PilotMesService {
                 "createdSnCount", createdSerialNumbers.size(),
                 "createdSnPreview", createdSerialNumbers.stream().limit(10).map(SerialNumber::getSn).toList()
         );
+    }
+
+    private ProductionOrder findOrderByNo(String orderNo) {
+        if (!hasText(orderNo)) {
+            return null;
+        }
+        return orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, orderNo));
+    }
+
+    private Map<String, Object> buildOrderReleaseChecks(ProductionOrder order, int lotQty) {
+        int normalizedLotQty = Math.max(1, lotQty);
+        List<Map<String, Object>> checks = new ArrayList<>();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("checkedTime", LocalDateTime.now());
+        result.put("lotQty", normalizedLotQty);
+        result.put("orderNo", order == null ? "" : order.getOrderNo());
+
+        if (order == null) {
+            checks.add(releaseCheck("orderStatus", "工单状态", false, true, "red", "工单不存在或无权限访问"));
+            checks.add(releaseCheck("product", "产品资料", false, true, "gray", "缺少工单，无法解析产品"));
+            checks.add(releaseCheck("route", "Route版本", false, true, "gray", "缺少工单，无法读取生效路线"));
+            checks.add(releaseCheck("bom", "BOM", false, true, "gray", "缺少工单，无法读取生效BOM"));
+            checks.add(releaseCheck("recipe", "Recipe覆盖", false, true, "gray", "缺少工单，无法校验Recipe"));
+            checks.add(releaseCheck("equipment", "设备能力", false, true, "gray", "缺少工单，无法校验产线设备"));
+            checks.add(releaseCheck("lotSplit", "Lot拆分", false, true, "gray", "缺少工单，无法计算Lot数量"));
+            checks.add(releaseCheck("permissionAudit", "权限审计", currentRoleHasButton("order:release"), false,
+                    currentRoleHasButton("order:release") ? "green" : "amber", permissionAuditText()));
+            return releaseCheckResult(result, checks);
+        }
+
+        result.put("productCode", order.getProductCode());
+        result.put("lineCode", order.getLineCode());
+        result.put("plannedQty", order.getPlannedQty());
+        result.put("status", order.getStatus());
+
+        boolean created = "CREATED".equals(order.getStatus());
+        checks.add(releaseCheck("orderStatus", "工单状态", created, true, created ? "green" : "red",
+                created ? "CREATED，可释放" : "当前状态 " + valueOr(order.getStatus(), "-") + " 不允许释放"));
+
+        Map<String, Object> product = products().stream()
+                .filter(row -> Objects.equals(order.getProductCode(), row.get("productCode")))
+                .findFirst()
+                .orElse(Map.of());
+        boolean productReady = !product.isEmpty() && "ACTIVE".equals(product.get("status"));
+        boolean productBound = hasText(order.getProductCode());
+        checks.add(releaseCheck("product", "产品资料", productBound, true,
+                productReady ? "green" : productBound ? "amber" : "red",
+                productReady ? order.getProductCode() + " 已启用"
+                        : productBound ? order.getProductCode() + " 已绑定，生产适配由Route/BOM/Recipe交叉校验"
+                        : "产品编码为空"));
+
+        Route activeRoute = null;
+        List<String> routeSteps = List.of();
+        String routeError = "";
+        if (hasText(order.getProductCode())) {
+            try {
+                activeRoute = routeService.findActiveRoute(order.getProductCode());
+                routeSteps = safeList(routeService.activeStepCodes(order.getProductCode()));
+            } catch (Exception e) {
+                routeError = e.getMessage();
+            }
+        }
+        boolean routeReady = activeRoute != null && !routeSteps.isEmpty();
+        String firstStepCode = routeSteps.isEmpty() ? "" : routeSteps.get(0);
+        result.put("routeCode", activeRoute == null ? "" : activeRoute.getRouteCode());
+        result.put("routeVersion", activeRoute == null ? "" : activeRoute.getRouteVersion());
+        result.put("firstStepCode", firstStepCode);
+        result.put("routeSteps", routeSteps);
+        checks.add(releaseCheck("route", "Route版本", routeReady, true, routeReady ? "green" : "red",
+                routeReady
+                        ? activeRoute.getRouteCode() + " / " + valueOr(activeRoute.getRouteVersion(), "-") + "，首站 " + firstStepCode
+                        : "未找到生效Route或工序: " + valueOr(routeError, order.getProductCode())));
+
+        Map<String, Object> bom = Map.of();
+        String bomError = "";
+        if (hasText(order.getProductCode())) {
+            try {
+                Map<String, Object> activeBom = materialService.activeBomSummary(order.getProductCode());
+                bom = activeBom == null ? Map.of() : activeBom;
+            } catch (Exception e) {
+                bomError = e.getMessage();
+            }
+        }
+        boolean bomReady = !bom.isEmpty() && "ACTIVE".equals(bom.get("status"));
+        result.put("bomCode", objectText(bom.get("bomCode"), ""));
+        result.put("bomVersion", objectText(bom.get("bomVersion"), ""));
+        checks.add(releaseCheck("bom", "BOM", bomReady, true, bomReady ? "green" : "red",
+                bomReady
+                        ? bom.get("bomCode") + " / " + bom.get("bomVersion") + "，关键物料 " + bom.getOrDefault("keyItems", 0)
+                        : "未找到生效BOM: " + valueOr(bomError, order.getProductCode())));
+
+        List<Equipment> lineEquipments = safeList(equipmentMapper.selectList(new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getLineCode, order.getLineCode())));
+        List<String> missingEquipmentSteps = routeSteps.stream()
+                .filter(step -> lineEquipments.stream().noneMatch(equipment -> usableEquipment(equipment) && supportsStep(equipment, step)))
+                .toList();
+        boolean equipmentReady = routeReady && missingEquipmentSteps.isEmpty();
+        result.put("equipmentCount", lineEquipments.size());
+        result.put("missingEquipmentSteps", missingEquipmentSteps);
+        checks.add(releaseCheck("equipment", "设备能力", equipmentReady, true, equipmentReady ? "green" : "red",
+                equipmentReady
+                        ? order.getLineCode() + " 覆盖 " + routeSteps.size() + " 个工序"
+                        : "缺少可用设备能力: " + String.join("/", missingEquipmentSteps)));
+
+        List<Recipe> activeRecipes = safeList(recipeMapper.selectList(new LambdaQueryWrapper<Recipe>()
+                .eq(Recipe::getProductCode, order.getProductCode())
+                .eq(Recipe::getStatus, "ACTIVE")));
+        Set<String> capableEquipments = lineEquipments.stream()
+                .filter(this::usableEquipment)
+                .map(Equipment::getEquipmentCode)
+                .filter(this::hasText)
+                .collect(Collectors.toSet());
+        List<String> missingRecipeSteps = routeSteps.stream()
+                .filter(step -> activeRecipes.stream().noneMatch(recipe -> step.equals(recipe.getStepCode())
+                        && (!hasText(recipe.getEquipmentCode()) || capableEquipments.contains(recipe.getEquipmentCode()))))
+                .toList();
+        boolean recipeReady = routeReady && missingRecipeSteps.isEmpty();
+        result.put("recipeCount", activeRecipes.size());
+        result.put("missingRecipeSteps", missingRecipeSteps);
+        checks.add(releaseCheck("recipe", "Recipe覆盖", recipeReady, true, recipeReady ? "green" : "red",
+                recipeReady
+                        ? "产品+工序+设备 Recipe 覆盖 " + routeSteps.size() + "/" + routeSteps.size()
+                        : "缺少生效Recipe: " + String.join("/", missingRecipeSteps)));
+
+        int plannedQty = order.getPlannedQty() == null ? 0 : order.getPlannedQty();
+        int lotCount = plannedQty <= 0 ? 0 : Math.max(1, (int) Math.ceil(plannedQty * 1.0 / normalizedLotQty));
+        result.put("expectedLotCount", lotCount);
+        boolean lotSplitReady = plannedQty > 0 && normalizedLotQty > 0;
+        checks.add(releaseCheck("lotSplit", "Lot拆分", lotSplitReady, true, lotSplitReady ? "green" : "red",
+                lotSplitReady ? "计划 " + plannedQty + "，按 " + normalizedLotQty + " 拆 " + lotCount + " 个 Lot" : "计划数量必须大于0"));
+
+        boolean permissionReady = currentRoleHasButton("order:release");
+        checks.add(releaseCheck("permissionAudit", "权限审计", permissionReady, false,
+                permissionReady ? "green" : "amber", permissionAuditText()));
+        return releaseCheckResult(result, checks);
+    }
+
+    private void assertReleaseChecksPassed(Map<String, Object> releaseChecks) {
+        if (Boolean.TRUE.equals(releaseChecks.get("releasable"))) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> checks = (List<Map<String, Object>>) releaseChecks.getOrDefault("checks", List.of());
+        String reasons = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .map(check -> check.get("title") + "=" + check.get("text"))
+                .collect(Collectors.joining("; "));
+        throw new BusinessException("工单释放预校验未通过: " + reasons);
+    }
+
+    private Map<String, Object> releaseCheckResult(Map<String, Object> result, List<Map<String, Object>> checks) {
+        long passedCount = checks.stream().filter(check -> Boolean.TRUE.equals(check.get("passed"))).count();
+        long blockingFailedCount = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .count();
+        result.put("checks", checks);
+        result.put("passedCount", passedCount);
+        result.put("total", checks.size());
+        result.put("blockingFailedCount", blockingFailedCount);
+        result.put("releasable", blockingFailedCount == 0);
+        return result;
+    }
+
+    private Map<String, Object> releaseCheck(String key, String title, boolean passed, boolean blocking,
+                                             String type, String text) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("key", key);
+        check.put("title", title);
+        check.put("passed", passed);
+        check.put("blocking", blocking);
+        check.put("type", type);
+        check.put("text", text);
+        return check;
+    }
+
+    private boolean currentRoleHasButton(String button) {
+        try {
+            RolePermissionService.PermissionSnapshot snapshot = rolePermissionService.permissionSnapshot(AuthContext.role());
+            return snapshot != null && ("ADMIN".equals(snapshot.role()) || snapshot.buttons().contains(button));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String permissionAuditText() {
+        String role = AuthContext.role();
+        return currentRoleHasButton("order:release")
+                ? role + " 可释放，ORDER_RELEASE 审计已配置"
+                : role + " 无释放按钮权限，写接口将由RBAC拦截";
+    }
+
+    private boolean usableEquipment(Equipment equipment) {
+        if (equipment == null) {
+            return false;
+        }
+        return "IDLE".equals(equipment.getStatus()) || "RUNNING".equals(equipment.getStatus());
+    }
+
+    private <T> List<T> safeList(List<T> rows) {
+        return rows == null ? List.of() : rows;
     }
 
     private List<SerialNumber> createSerialNumbers(ProductionOrder order, Lot lot, String operator) {

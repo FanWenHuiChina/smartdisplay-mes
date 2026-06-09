@@ -126,6 +126,7 @@ async function main() {
     await setFieldValueByLabel('工单 / 产品', e2eOrderNo)
     await clickButtonByText('查询')
     await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eOrderNo)}')`, 10000)
+    await waitForExpression(`document.body.innerText.includes('Recipe覆盖') && document.body.innerText.includes('Lot拆分') && /\\d+\\/\\d+ 通过/.test(document.body.innerText)`, 10000)
     await clickByText('释放工单')
     await waitForExpression(`(async () => {
       const token = localStorage.getItem('token')

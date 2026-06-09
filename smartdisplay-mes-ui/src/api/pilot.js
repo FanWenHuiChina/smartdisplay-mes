@@ -5,6 +5,7 @@ export const getYieldDashboard = () => request.get('/v1/dashboard/yield')
 
 export const getOrders = (params = {}) => request.get('/v1/orders', { params })
 export const createOrder = (data = {}) => request.post('/v1/orders', data)
+export const getOrderReleaseChecks = (orderNo, params = {}) => request.get(`/v1/orders/${orderNo}/release-checks`, { params })
 export const releaseOrder = (orderNo, data = {}) => request.post(`/v1/orders/${orderNo}/release`, data)
 
 export const getLots = (params = {}) => request.get('/v1/lots', { params })

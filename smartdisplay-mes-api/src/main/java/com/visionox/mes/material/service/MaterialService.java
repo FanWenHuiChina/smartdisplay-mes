@@ -234,6 +234,11 @@ public class MaterialService {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, Object> activeBomSummary(String productCode) {
+        Bom bom = activeBom(productCode);
+        return bom == null ? Map.of() : bomRow(bom);
+    }
+
     public List<Map<String, Object>> bomChangeRequests(String status) {
         LambdaQueryWrapper<BomChangeRequest> wrapper = new LambdaQueryWrapper<>();
         if (status != null && !status.isBlank()) {
