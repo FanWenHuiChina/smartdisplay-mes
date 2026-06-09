@@ -488,6 +488,41 @@ public class PilotMesService {
                 trackIn.getOperator(), auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
     }
 
+    public Map<String, Object> trackInChecks(String lotNo, Map<String, Object> request) {
+        Lot lot = findLot(lotNo);
+        TrackInRequest trackIn = new TrackInRequest();
+        trackIn.setLotNo(lotNo);
+        String stepCode = text(request, "stepCode", lot.getCurrentStepCode());
+        trackIn.setStepCode(stepCode);
+        trackIn.setEquipmentCode(text(request, "equipmentCode", defaultEquipmentCode(stepCode)));
+        trackIn.setOperator(text(request, "operator", currentUser()));
+        Map<String, Object> checks = new LinkedHashMap<>(trackInService.trackInChecks(trackIn));
+        checks.put("selectedEquipmentCode", trackIn.getEquipmentCode());
+        checks.put("operator", trackIn.getOperator());
+        return enrichTrackInChecks(checks);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> enrichTrackInChecks(Map<String, Object> result) {
+        List<Map<String, Object>> checks = new ArrayList<>((List<Map<String, Object>>) result.getOrDefault("checks", List.of()));
+        boolean permissionReady = currentRoleHasButton("lot:track-in");
+        checks.add(releaseCheck("permission", "操作权限", permissionReady, true,
+                permissionReady ? "green" : "red",
+                permissionReady ? AuthContext.role() + " 可执行 Track In" : AuthContext.role() + " 无 Track In 权限"));
+        checks.add(releaseCheck("audit", "审计留痕", true, false, "blue", "Track In 成功后写入 TRACK_IN 审计"));
+        long passedCount = checks.stream().filter(check -> Boolean.TRUE.equals(check.get("passed"))).count();
+        long blockingFailedCount = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .count();
+        result.put("checks", checks);
+        result.put("passedCount", passedCount);
+        result.put("total", checks.size());
+        result.put("blockingFailedCount", blockingFailedCount);
+        result.put("trackInReady", blockingFailedCount == 0);
+        return result;
+    }
+
     public Map<String, Object> trackOut(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);

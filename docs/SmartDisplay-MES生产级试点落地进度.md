@@ -19,7 +19,7 @@
   - Auth/System：`POST /api/v1/auth/login`、`GET /api/v1/system/users`、`GET /api/v1/system/audit-logs`。
   - Master：`/api/v1/master/products`、`/api/v1/master/process-steps`、`/api/v1/master/equipments`、`/api/v1/master/defect-codes`。
   - Route/BOM/Recipe：`/api/v1/routes`、`/api/v1/boms`、`/api/v1/boms/change-requests`、`/api/v1/boms/eco-approvals`、`POST /api/v1/boms/eco-approvals/{taskNo}/decision`、`POST /api/v1/boms/change-requests/{changeNo}/review`、`POST /api/v1/boms/change-requests/{changeNo}/publish`、`/api/v1/recipes`、`POST /api/v1/recipes/{id}/publish`。
-  - Order/Lot/Execution：`/api/v1/orders`、`GET /api/v1/orders/{orderNo}/release-checks`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、Track In/Out、Hold、Release、Rework、Scrap。
+  - Order/Lot/Execution：`/api/v1/orders`、`GET /api/v1/orders/{orderNo}/release-checks`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、`GET /api/v1/lots/{lotNo}/track-in-checks`、Track In/Out、Hold、Release、Rework、Scrap。
   - ERP Adapter：`POST /api/v1/adapters/erp/orders`，支持模拟 ERP 工单数组下发和 `count=1000` 批量生成试点工单。
   - Quality/Exception：`/api/v1/quality/inspections`、`/api/v1/quality/exceptions`、`/api/v1/quality/exceptions/{eventNo}/mrb-records`、`/api/v1/quality/mrb-records/{mrbNo}/minutes`、`/api/v1/quality/mrb-approvals`、`POST /api/v1/quality/mrb-approvals/refresh-sla`。
   - Equipment/EAP：`/api/v1/equipment/events`、`POST /api/v1/equipment/events`、`POST /api/v1/equipment/events/{eventNo}/close`、`/api/v1/equipment/oee`、`/api/v1/equipment/status-history`、`POST /api/v1/equipment/status/report`、`/api/v1/equipment/cycle-samples`、`POST /api/v1/equipment/cycle-samples/report`、`/api/v1/equipment/standard-cycles`、`POST /api/v1/equipment/standard-cycles`、`/api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways/{gatewayCode}/heartbeat`、`POST /api/v1/equipment/gateways/{gatewayCode}/health-check`、`/api/v1/equipment/gateway-health-checks`、`/api/v1/equipment/gateway-drivers`、`/api/v1/equipment/gateway-messages`、`/api/v1/equipment/parameters`、`POST /api/v1/equipment/parameters/report`、`/api/v1/equipment/pm-tasks`、`POST /api/v1/equipment/pm-tasks/{taskNo}/complete`、`/api/v1/equipment/recipe-downloads`、`POST /api/v1/equipment/recipe-downloads`、`POST /api/v1/adapters/eap/messages`。
@@ -41,6 +41,7 @@
 - 新增 JWT 拦截器和轻量级 RBAC：除登录、Swagger、API Docs 外，`/api/**` 默认要求 Bearer Token；写操作按管理员、计划员、操作员、质量工程师、工艺工程师、设备工程师做角色控制。
 - 新增 `ErpOrderAdapterService`，模拟 ERP 下发工单并落 `prod_order`；接口支持单批最多 1000 条、批量查重、重复工单跳过、导入汇总审计 `ERP_ORDER_IMPORT` 和失败审计映射，默认只有具备 `order:create` 权限的角色可调用。
 - 新增工单释放预校验闭环：`GET /api/v1/orders/{orderNo}/release-checks` 返回工单状态、产品编码、Route首站、生效BOM、目标产线设备能力、Recipe覆盖、Lot拆分和权限审计结果；`POST /api/v1/orders/{orderNo}/release` 复用同一套阻断校验，前端工单页已移除静态 `7/8 通过` 并按真实接口动态展示。
+- 新增 Track In 预校验闭环：`GET /api/v1/lots/{lotNo}/track-in-checks` 返回 Lot 状态、Route 下一站、设备状态、设备能力、Recipe、Hold、班次、物料齐套、操作权限和审计留痕矩阵；`POST /api/v1/lots/{lotNo}/track-in` 复用同一套阻断逻辑，执行页已从静态 `8 项校验` 改为接口驱动的动态通过数。
 - 新增 `ai_report_record`，AI良率日报、设备异常分析、SOP问答都会保存输入快照、Prompt模板版本、模型、输出JSON、创建人和创建时间；V1.31 已扩展模型供应方、模型模式、配置编码、检索策略、证据数量、最高证据分、证据等级和依据不足标志。
 - 新增 `ai_model_config`，保存良率日报、设备异常分析、SOP问答的模型运行配置，区分 `SIMULATED`、`SHADOW` 等模式，并内置 OpenAI 兼容接口影子配置占位但默认禁用。
 - 新增 `ai_kb_document`、`ai_kb_chunk`，内置 Hold/Release、蒸镀报警、Mura判定、关键物料批次追溯等 SOP/手册/质量标准切片；SOP问答会从正式切片检索引用，依据不足时明确提示；V1.31 已为切片增加检索策略、embedding状态和向量索引预留字段。
@@ -64,7 +65,7 @@
 - 关键页面已从纯静态改为“接口优先 + 开发 fallback”：
   - 生产总览：接入 `/v1/dashboard/overview`。
   - 工单页面：接入 `/v1/orders`、`/v1/orders/{orderNo}/release-checks`、`/v1/adapters/erp/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`，并展示 ERP Adapter 批次、样例工单、审计动作回执和接口驱动释放校验。
-  - 生产执行：接入 `/v1/lots`、Track In、Track Out、Hold。
+  - 生产执行：接入 `/v1/lots`、`/v1/lots/{lotNo}/track-in-checks`、Track In、Track Out、Hold，并在点击 Track In 前按接口校验结果阻断不合规进站。
   - 质量管理：接入 `/v1/quality/inspections`、`/v1/quality/exceptions`、`/v1/quality/exceptions/{eventNo}/mrb-records`、`/v1/quality/mrb-approvals`、`/v1/quality/mrb-approvals/refresh-sla`、`/v1/dashboard/yield`。
   - 物料与载具：接入 `/v1/material/batches`、`/v1/material/consumptions`、`/v1/material/inventory-transactions`、`/v1/material/incoming-inspections`、`/v1/material/location-tasks`、`/v1/material/suppliers`、`/v1/material/suppliers/trends`、`/v1/material/suppliers/qualification-reviews`、WMS 入库/冻结/解冻/退料/盘点、库位上架/整批移库/盘点任务、来料 IQC/COA、供应商准入/复审/8D和 `/v1/carriers`。
   - 设备与自动化：接入 `/v1/master/equipments`、`/v1/equipment/events`、`/v1/equipment/events/{eventNo}/close`、`/v1/equipment/oee`、`/v1/equipment/status-history`、`/v1/equipment/status/report`、`/v1/equipment/cycle-samples`、`/v1/equipment/cycle-samples/report`、`/v1/equipment/standard-cycles`、`/v1/equipment/gateways`、`/v1/equipment/gateway-drivers`、`/v1/equipment/gateway-health-checks`、`/v1/equipment/gateway-messages`、`/v1/equipment/parameters`、`/v1/equipment/pm-tasks`、`/v1/equipment/recipe-downloads`、`/v1/adapters/eap/messages`、设备事件创建/关闭、OEE拆解、停机原因TopN、EAP状态上报、节拍采样、标准节拍主数据、网关连接配置、驱动配置、网关心跳、健康检查、消息履历、参数上报、PM完成、Recipe下发/回读和统一EAP消息入口。
@@ -75,10 +76,10 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线和生产 mock fallback 禁用约束，共 387 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线和生产 mock fallback 禁用约束，共 392 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-162220.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 217, Failures: 0, Errors: 0, Skipped: 0`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-181400.md`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 219, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
 - Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。
@@ -123,6 +124,13 @@
 - `.github/workflows/ci.yml` 新增 `Manual Docker performance baseline` job，仅在 `workflow_dispatch` 且勾选 `run_performance_baseline` 时运行，避免每次普通提交都执行 1000 条级别导入压测。
 - 该 job 会启动 Docker Compose 三服务，等待前端反代 `/api/v1/auth/login` 返回非 5xx 后执行 `tools/run-pilot-performance-baseline.ps1`。
 - 手动触发参数支持 `performance_rounds`、`performance_samples` 和 `performance_import_count`，性能报告和每轮 smoke 报告会作为 artifact 上传，便于交付复验归档。
+
+## 2026-06-09 增量：Track In预校验矩阵接口化
+
+- `TrackInService` 新增无副作用预校验能力，返回 Lot状态、Route下一站、设备状态、设备能力、Recipe、Hold、班次窗口和物料齐套矩阵；正式 `trackIn` 写接口复用同一套评估结果，避免页面展示和生产阻断逻辑分叉。
+- `PilotV1Controller` 新增 `GET /api/v1/lots/{lotNo}/track-in-checks`，`PilotMesService` 在基础校验矩阵上追加操作权限和审计留痕两项，前端执行页以动态 `x/y 通过` 替代静态 `8 项校验`。
+- 浏览器 E2E 在点击 Track In 前会调用预校验接口并等待页面展示 Recipe、物料齐套、操作权限等动态校验项，确认 Docker 前端不再依赖静态矩阵。
+- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过 219 项；`npm.cmd run verify:frontend-contract` 通过 392 项；`npm.cmd run build`、`npm.cmd run verify:production-bundle`、`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 和 `npm.cmd run e2e:browser` 均通过，最新 E2E 报告 `docs/SmartDisplay-MES-browser-e2e-20260609-181400.md/json`。
 
 ## 2026-06-09 增量：供应商到期复审自动提醒
 

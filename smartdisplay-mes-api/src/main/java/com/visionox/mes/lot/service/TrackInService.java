@@ -22,7 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Track In/Out服务
@@ -76,83 +79,10 @@ public class TrackInService {
         log.info("Track In开始: lotNo={}, step={}, equipment={}",
                 request.getLotNo(), request.getStepCode(), request.getEquipmentCode());
 
-        // ====== 第1层：Lot状态校验 ======
-        Lot lot = lotMapper.selectOne(
-                new LambdaQueryWrapper<Lot>()
-                        .eq(Lot::getLotNo, request.getLotNo())
-        );
-        if (lot == null) {
-            throw new BusinessException("Lot不存在: " + request.getLotNo());
-        }
-
-        if (!isTrackInAllowedStatus(lot.getStatus())) {
-            throw new BusinessException(
-                    String.format("Lot状态不允许进站: 当前状态=%s, 期望状态=READY/REWORK", lot.getStatus())
-            );
-        }
-
-        // ====== 第2层：工序合法性校验 ======
-        routeService.validateTrackInStep(lot.getProductCode(), lot.getCurrentStepCode(), request.getStepCode());
-
-        // ====== 第3层：设备状态校验 ======
-        Equipment equipment = equipmentMapper.selectOne(
-                new LambdaQueryWrapper<Equipment>()
-                        .eq(Equipment::getEquipmentCode, request.getEquipmentCode())
-        );
-        if (equipment == null) {
-            throw new BusinessException("设备不存在: " + request.getEquipmentCode());
-        }
-
-        if (!"IDLE".equals(equipment.getStatus()) && !"RUNNING".equals(equipment.getStatus())) {
-            throw new BusinessException(
-                    String.format("设备状态不可用: equipment=%s, status=%s",
-                            request.getEquipmentCode(), equipment.getStatus())
-            );
-        }
-
-        // ====== 第4层：设备能力校验 ======
-        if (!checkEquipmentCapability(equipment, request.getStepCode())) {
-            throw new BusinessException(
-                    String.format("设备不支持该工序: equipment=%s, step=%s",
-                            request.getEquipmentCode(), request.getStepCode())
-            );
-        }
-
-        // ====== 第5层：Recipe校验 ======
-        Recipe recipe;
-        try {
-            recipe = recipeService.findActiveRecipe(
-                    lot.getProductCode(),
-                    request.getStepCode(),
-                    request.getEquipmentCode()
-            );
-            log.debug("找到有效Recipe: {}", recipe.getRecipeCode());
-        } catch (BusinessException e) {
-            throw new BusinessException(
-                    String.format("Recipe校验失败: product=%s, step=%s, equipment=%s - %s",
-                            lot.getProductCode(), request.getStepCode(),
-                            request.getEquipmentCode(), e.getMessage())
-            );
-        }
-
-        // ====== 第6层：Hold状态校验 ======
-        if (lot.getHoldFlag() != null && lot.getHoldFlag() == 1) {
-            // 查询未Release的Hold记录
-            Long holdCount = holdRecordMapper.selectCount(
-                    new LambdaQueryWrapper<HoldRecord>()
-                            .eq(HoldRecord::getLotNo, request.getLotNo())
-                            .eq(HoldRecord::getStatus, "HOLD")
-            );
-            if (holdCount > 0) {
-                throw new BusinessException("Lot处于Hold状态，不能进站: " + request.getLotNo());
-            }
-        }
-
-        // ====== 第7层：班次校验 ======
-        validateActiveShift(lot);
-
-        // ====== 第8层：关键物料齐套校验 ======
-        materialService.validateReadiness(lot, request.getStepCode());
+        TrackInEvaluation evaluation = evaluateTrackIn(request);
+        assertTrackInChecksPassed(evaluation.result());
+        Lot lot = evaluation.lot();
+        Recipe recipe = evaluation.recipe();
 
         // ====== 校验通过，执行Track In ======
 
@@ -176,6 +106,13 @@ public class TrackInService {
         materialService.lockForTrackIn(lot, request.getStepCode(), request.getEquipmentCode(), record.getOperator());
 
         log.info("Track In成功: lotNo={}, recordId={}", request.getLotNo(), record.getId());
+    }
+
+    /**
+     * Track In 进站前预校验，供前端执行台展示和写接口复用。
+     */
+    public Map<String, Object> trackInChecks(TrackInRequest request) {
+        return evaluateTrackIn(request).result();
     }
 
     /**
@@ -256,6 +193,230 @@ public class TrackInService {
         return "READY".equals(status) || "REWORK".equals(status);
     }
 
+    private TrackInEvaluation evaluateTrackIn(TrackInRequest request) {
+        List<Map<String, Object>> checks = new ArrayList<>();
+        Map<String, Object> result = new LinkedHashMap<>();
+        String lotNo = request == null ? "" : valueOr(request.getLotNo(), "");
+        String stepCode = request == null ? "" : valueOr(request.getStepCode(), "");
+        String equipmentCode = request == null ? "" : valueOr(request.getEquipmentCode(), "");
+        result.put("checkedTime", LocalDateTime.now());
+        result.put("lotNo", lotNo);
+        result.put("requestedStepCode", stepCode);
+        result.put("equipmentCode", equipmentCode);
+
+        if (request == null || lotNo.isBlank()) {
+            checks.add(trackInCheck("lotStatus", "Lot状态", false, true, "red", "Lot不能为空"));
+            addUnavailableTrackInChecks(checks, "缺少Lot，无法执行后续校验");
+            return trackInCheckResult(new TrackInEvaluation(null, null, null, result), checks);
+        }
+
+        Lot lot = lotMapper.selectOne(new LambdaQueryWrapper<Lot>().eq(Lot::getLotNo, lotNo));
+        if (lot == null) {
+            checks.add(trackInCheck("lotStatus", "Lot状态", false, true, "red", "Lot不存在: " + lotNo));
+            addUnavailableTrackInChecks(checks, "缺少Lot，无法执行后续校验");
+            return trackInCheckResult(new TrackInEvaluation(null, null, null, result), checks);
+        }
+        result.put("productCode", lot.getProductCode());
+        result.put("lineCode", lot.getLineCode());
+        result.put("currentStepCode", lot.getCurrentStepCode());
+        result.put("status", lot.getStatus());
+        result.put("holdFlag", lot.getHoldFlag());
+
+        boolean lotReady = isTrackInAllowedStatus(lot.getStatus());
+        checks.add(trackInCheck("lotStatus", "Lot状态", lotReady, true, lotReady ? "green" : "red",
+                lotReady ? lot.getStatus() + "，允许进站" : "当前状态 " + valueOr(lot.getStatus(), "-") + " 不允许进站"));
+        if (!lotReady) {
+            addUnavailableTrackInChecks(checks, "Lot状态未通过，后续校验未执行");
+            return trackInCheckResult(new TrackInEvaluation(lot, null, null, result), checks);
+        }
+
+        boolean routeReady = false;
+        try {
+            routeService.validateTrackInStep(lot.getProductCode(), lot.getCurrentStepCode(), stepCode);
+            routeReady = true;
+            checks.add(trackInCheck("route", "Route下一站", true, true, "green",
+                    valueOr(stepCode, "-") + " 与当前待执行工序一致"));
+        } catch (Exception e) {
+            checks.add(trackInCheck("route", "Route下一站", false, true, "red", e.getMessage()));
+        }
+
+        Equipment equipment = null;
+        boolean equipmentUsable = false;
+        if (equipmentCode.isBlank()) {
+            checks.add(trackInCheck("equipmentStatus", "设备状态", false, true, "red", "设备编码不能为空"));
+        } else {
+            equipment = equipmentMapper.selectOne(new LambdaQueryWrapper<Equipment>()
+                    .eq(Equipment::getEquipmentCode, equipmentCode));
+            if (equipment == null) {
+                checks.add(trackInCheck("equipmentStatus", "设备状态", false, true, "red", "设备不存在: " + equipmentCode));
+            } else {
+                result.put("equipmentStatus", equipment.getStatus());
+                equipmentUsable = "IDLE".equals(equipment.getStatus()) || "RUNNING".equals(equipment.getStatus());
+                checks.add(trackInCheck("equipmentStatus", "设备状态", equipmentUsable, true,
+                        equipmentUsable ? "green" : "red",
+                        equipmentCode + " / " + valueOr(equipment.getStatus(), "-")));
+            }
+        }
+
+        boolean capabilityReady = equipment != null && checkEquipmentCapability(equipment, stepCode);
+        checks.add(trackInCheck("equipmentCapability", "设备能力", capabilityReady, true,
+                capabilityReady ? "green" : equipment == null ? "gray" : "red",
+                capabilityReady ? equipmentCode + " 支持 " + stepCode
+                        : equipment == null ? "缺少设备，无法校验能力" : equipmentCode + " 不支持 " + stepCode));
+
+        Recipe recipe = null;
+        if (routeReady && equipmentUsable && capabilityReady) {
+            try {
+                recipe = recipeService.findActiveRecipe(lot.getProductCode(), stepCode, equipmentCode);
+                log.debug("找到有效Recipe: {}", recipe.getRecipeCode());
+                checks.add(trackInCheck("recipe", "Recipe", true, true, "green",
+                        recipe.getRecipeCode() + " 已生效"));
+                result.put("recipeCode", recipe.getRecipeCode());
+            } catch (BusinessException e) {
+                checks.add(trackInCheck("recipe", "Recipe", false, true, "red",
+                        String.format("Recipe校验失败: product=%s, step=%s, equipment=%s - %s",
+                                lot.getProductCode(), stepCode, equipmentCode, e.getMessage())));
+            }
+        } else {
+            checks.add(trackInCheck("recipe", "Recipe", false, true, "gray", "Route或设备未通过，暂不匹配Recipe"));
+        }
+
+        boolean holdReady = true;
+        String holdText = "无未解除Hold";
+        String holdType = "green";
+        if (lot.getHoldFlag() != null && lot.getHoldFlag() == 1) {
+            Long holdCount = holdRecordMapper.selectCount(new LambdaQueryWrapper<HoldRecord>()
+                    .eq(HoldRecord::getLotNo, lotNo)
+                    .eq(HoldRecord::getStatus, "HOLD"));
+            holdReady = holdCount == null || holdCount <= 0;
+            holdText = holdReady ? "Hold标识为1但无打开Hold记录" : "Lot处于Hold状态，不能进站: " + lotNo;
+            holdType = holdReady ? "amber" : "red";
+        }
+        checks.add(trackInCheck("hold", "Hold状态", holdReady, true, holdType, holdText));
+
+        if (!holdReady) {
+            checks.add(trackInCheck("shift", "班次窗口", false, true, "gray", "Hold未解除，班次校验未执行"));
+            checks.add(trackInCheck("material", "物料齐套", false, true, "gray", "Hold未解除，物料校验未执行"));
+            result.put("materialReady", false);
+            return trackInCheckResult(new TrackInEvaluation(lot, equipment, recipe, result), checks);
+        }
+
+        Map<String, Object> shiftCheck = activeShiftCheck(lot);
+        checks.add(shiftCheck);
+        boolean shiftReady = Boolean.TRUE.equals(shiftCheck.get("passed"));
+
+        boolean materialReady = false;
+        if (routeReady && equipmentUsable && capabilityReady && recipe != null && shiftReady) {
+            try {
+                materialService.validateReadiness(lot, stepCode);
+                materialReady = true;
+                checks.add(trackInCheck("material", "物料齐套", true, true, "green", "关键物料批次齐套"));
+            } catch (BusinessException e) {
+                checks.add(trackInCheck("material", "物料齐套", false, true, "red", e.getMessage()));
+            }
+        } else {
+            String materialText = materialSkipText(routeReady, equipmentUsable, capabilityReady, recipe, shiftReady);
+            checks.add(trackInCheck("material", "物料齐套", false, true, "gray", materialText));
+        }
+        result.put("materialReady", materialReady);
+
+        return trackInCheckResult(new TrackInEvaluation(lot, equipment, recipe, result), checks);
+    }
+
+    private void assertTrackInChecksPassed(Map<String, Object> result) {
+        if (Boolean.TRUE.equals(result.get("trackInReady"))) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> checks = (List<Map<String, Object>>) result.getOrDefault("checks", List.of());
+        String reasons = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .map(check -> check.get("title") + "=" + check.get("text"))
+                .collect(java.util.stream.Collectors.joining("; "));
+        throw new BusinessException("Track In预校验未通过: " + reasons);
+    }
+
+    private TrackInEvaluation trackInCheckResult(TrackInEvaluation evaluation, List<Map<String, Object>> checks) {
+        long passedCount = checks.stream().filter(check -> Boolean.TRUE.equals(check.get("passed"))).count();
+        long blockingFailedCount = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .count();
+        Map<String, Object> result = evaluation.result();
+        result.put("checks", checks);
+        result.put("passedCount", passedCount);
+        result.put("total", checks.size());
+        result.put("blockingFailedCount", blockingFailedCount);
+        result.put("trackInReady", blockingFailedCount == 0);
+        return evaluation;
+    }
+
+    private Map<String, Object> trackInCheck(String key, String title, boolean passed, boolean blocking,
+                                             String type, String text) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("key", key);
+        check.put("title", title);
+        check.put("passed", passed);
+        check.put("blocking", blocking);
+        check.put("type", type);
+        check.put("text", valueOr(text, "-"));
+        return check;
+    }
+
+    private void addUnavailableTrackInChecks(List<Map<String, Object>> checks, String text) {
+        checks.add(trackInCheck("route", "Route下一站", false, true, "gray", text));
+        checks.add(trackInCheck("equipmentStatus", "设备状态", false, true, "gray", text));
+        checks.add(trackInCheck("equipmentCapability", "设备能力", false, true, "gray", text));
+        checks.add(trackInCheck("recipe", "Recipe", false, true, "gray", text));
+        checks.add(trackInCheck("hold", "Hold状态", false, true, "gray", text));
+        checks.add(trackInCheck("shift", "班次窗口", false, true, "gray", text));
+        checks.add(trackInCheck("material", "物料齐套", false, true, "gray", text));
+    }
+
+    private String materialSkipText(boolean routeReady, boolean equipmentUsable, boolean capabilityReady,
+                                    Recipe recipe, boolean shiftReady) {
+        if (!routeReady) {
+            return "Route未通过，暂不校验物料";
+        }
+        if (!equipmentUsable) {
+            return "设备状态未通过，物料校验未执行";
+        }
+        if (!capabilityReady) {
+            return "设备能力未通过，物料校验未执行";
+        }
+        if (recipe == null) {
+            return "Recipe未通过，物料校验未执行";
+        }
+        if (!shiftReady) {
+            return "班次未通过，物料校验未执行";
+        }
+        return "上游校验未通过，物料校验未执行";
+    }
+
+    private Map<String, Object> activeShiftCheck(Lot lot) {
+        String lineCode = lot.getLineCode();
+        if (lineCode == null || lineCode.isBlank()) {
+            return trackInCheck("shift", "班次窗口", false, true, "red",
+                    "Track In班次校验失败: Lot未绑定产线 " + lot.getLotNo());
+        }
+        List<WorkShift> shifts = workShiftMapper.selectList(new LambdaQueryWrapper<WorkShift>()
+                .eq(WorkShift::getLineCode, lineCode)
+                .eq(WorkShift::getStatus, "ACTIVE"));
+        if (shifts == null || shifts.isEmpty()) {
+            return trackInCheck("shift", "班次窗口", false, true, "red",
+                    "Track In班次校验失败: 产线无ACTIVE班次 " + lineCode);
+        }
+        LocalTime now = LocalTime.now();
+        boolean matched = shifts.stream().anyMatch(shift -> isWithinShift(now, shift));
+        if (!matched) {
+            return trackInCheck("shift", "班次窗口", false, true, "red",
+                    "Track In班次校验失败: 当前时间不在产线ACTIVE班次窗口 " + lineCode);
+        }
+        return trackInCheck("shift", "班次窗口", true, true, "green",
+                "命中ACTIVE班次 " + shifts.size() + " 个");
+    }
+
     private void validateActiveShift(Lot lot) {
         String lineCode = lot.getLineCode();
         if (lineCode == null || lineCode.isBlank()) {
@@ -288,5 +449,12 @@ public class TrackInService {
             return !now.isBefore(start) || now.isBefore(end);
         }
         return !now.isBefore(start) && now.isBefore(end);
+    }
+
+    private String valueOr(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private record TrackInEvaluation(Lot lot, Equipment equipment, Recipe recipe, Map<String, Object> result) {
     }
 }

@@ -245,6 +245,18 @@ public class PilotV1Controller {
         return Result.success();
     }
 
+    @GetMapping("/lots/{lotNo}/track-in-checks")
+    public Result<Map<String, Object>> trackInChecks(@PathVariable String lotNo,
+                                                     @RequestParam(required = false) String stepCode,
+                                                     @RequestParam(required = false) String equipmentCode,
+                                                     @RequestParam(required = false) String operator) {
+        return Result.success(pilotMesService.trackInChecks(lotNo, Map.of(
+                "stepCode", stepCode == null ? "" : stepCode,
+                "equipmentCode", equipmentCode == null ? "" : equipmentCode,
+                "operator", operator == null ? "" : operator
+        )));
+    }
+
     @PostMapping("/lots/{lotNo}/track-out")
     public Result<Map<String, Object>> trackOut(@PathVariable String lotNo,
                                                 @RequestBody(required = false) Map<String, Object> request) {

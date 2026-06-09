@@ -9,6 +9,7 @@ export const getOrderReleaseChecks = (orderNo, params = {}) => request.get(`/v1/
 export const releaseOrder = (orderNo, data = {}) => request.post(`/v1/orders/${orderNo}/release`, data)
 
 export const getLots = (params = {}) => request.get('/v1/lots', { params })
+export const getTrackInChecks = (lotNo, params = {}) => request.get(`/v1/lots/${lotNo}/track-in-checks`, { params })
 export const trackInLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/track-in`, data)
 export const trackOutLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/track-out`, data)
 export const holdLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/hold`, data)

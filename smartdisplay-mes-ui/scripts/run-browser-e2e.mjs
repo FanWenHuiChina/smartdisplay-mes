@@ -257,6 +257,23 @@ async function main() {
     assert(await textExists('Track Out'), '执行页面缺少 Track Out')
     await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
     await clickTableRowByText(e2eLotNo)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/lots/' + encodeURIComponent('${escapeJs(e2eLotNo)}') + '/track-in-checks', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      const checks = json.data?.checks || []
+      return json.data?.trackInReady === true
+        && checks.some(item => item.title === 'Recipe')
+        && checks.some(item => item.title === '物料齐套')
+        && checks.some(item => item.title === '操作权限')
+        && checks.some(item => item.title === '审计留痕')
+    })()`, 15000)
+    await waitForExpression(`/\\d+\\/\\d+ 通过/.test(document.body.innerText)
+      && document.body.innerText.includes('Recipe')
+      && document.body.innerText.includes('物料齐套')
+      && document.body.innerText.includes('操作权限')`, 15000)
     await clickButtonByText('Track In')
     await waitForExpression(`(async () => {
       const token = localStorage.getItem('token')

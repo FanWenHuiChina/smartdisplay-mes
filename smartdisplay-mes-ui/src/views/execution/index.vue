@@ -74,16 +74,16 @@
       <div class="mes-card">
         <div class="mes-card__head">
           <div class="mes-card__title">Track In 校验链</div>
-          <span class="status-tag green">8 项校验</span>
+          <span class="status-tag" :class="trackInCheckBadgeType">{{ trackInCheckBadgeText }}</span>
         </div>
         <div class="mes-card__body">
           <div class="matrix">
-            <div v-for="item in checks" :key="item.title" class="check-cell" :class="item.type">
+            <div v-for="item in checks" :key="item.key || item.title" class="check-cell" :class="item.type">
               <strong>{{ item.title }}</strong><span>{{ item.text }}</span>
             </div>
           </div>
           <div class="toolbar">
-            <button v-if="canTrackIn" class="mes-btn primary" @click="trackInSelectedLot">确认 Track In</button>
+            <button v-if="canTrackIn" class="mes-btn primary" :disabled="loadingTrackInChecks" @click="trackInSelectedLot">确认 Track In</button>
             <button v-if="canTrackOut" class="mes-btn primary" @click="trackOutSelectedLot">确认 Track Out</button>
             <button class="mes-btn" @click="switchSelectedEquipment">切换设备</button>
             <button v-if="canHold" class="mes-btn warn" @click="holdSelectedLot">Hold 当前 Lot</button>
@@ -111,9 +111,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLots, holdLot, trackInLot, trackOutLot } from '@/api/pilot'
+import { getLots, getTrackInChecks, holdLot, trackInLot, trackOutLot } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
@@ -124,7 +124,7 @@ const fallbackLotQueue = [
   { no: 'LOT260606-020', product: 'AMOLED_65', route: 'RTE_G6_V08', step: 'AOI', equipment: 'INSPECT_03', status: 'PROCESSING', statusType: 'green', wait: '检测中', action: '录入缺陷', actionType: 'purple' }
 ]
 
-const checks = __DEV_MOCK_FALLBACK__ ? [
+const fallbackChecks = [
   { title: 'Lot 状态', text: 'READY / REWORK', type: 'green' },
   { title: 'Route 下一站', text: 'COATING 合法', type: 'green' },
   { title: '设备状态', text: 'IDLE', type: 'green' },
@@ -135,7 +135,7 @@ const checks = __DEV_MOCK_FALLBACK__ ? [
   { title: '权限', text: '操作员可执行', type: 'green' },
   { title: '班次', text: '白班', type: 'green' },
   { title: '审计', text: '将写入日志', type: 'blue' }
-] : []
+]
 
 const timeline = __DEV_MOCK_FALLBACK__ ? [
   { title: '工单释放', time: '14:05', meta: 'MO20260606012 / 拆分 Lot / route=RTE_G6_V08', type: 'green' },
@@ -147,6 +147,8 @@ const lotQueue = ref(__DEV_MOCK_FALLBACK__ ? fallbackLotQueue : [])
 const selectedLotNo = ref('')
 const selectedEquipmentOverride = ref('')
 const loadingLots = ref(false)
+const loadingTrackInChecks = ref(false)
+const trackInCheckResult = ref(null)
 const executionFilters = reactive({
   keyword: '',
   step: '',
@@ -177,6 +179,19 @@ const selectedLot = computed(() =>
   || displayLotQueue.value[0])
 const currentStepLabel = computed(() => selectedLot.value?.step || executionFilters.step || '全部')
 const selectedEquipmentCode = computed(() => selectedEquipmentOverride.value || equipmentByStep[selectedLot.value?.step] || 'COATER_01')
+const checks = computed(() => {
+  const remoteChecks = trackInCheckResult.value?.checks
+  return Array.isArray(remoteChecks) && remoteChecks.length ? remoteChecks : (__DEV_MOCK_FALLBACK__ ? fallbackChecks : [])
+})
+const trackInCheckBadgeText = computed(() => {
+  const result = trackInCheckResult.value
+  if (!result) return __DEV_MOCK_FALLBACK__ ? '开发校验' : '待校验'
+  return `${result.passedCount || 0}/${result.total || 0} 通过`
+})
+const trackInCheckBadgeType = computed(() => {
+  if (!trackInCheckResult.value) return 'blue'
+  return trackInCheckResult.value.trackInReady ? 'green' : 'red'
+})
 const canTrackIn = computed(() => hasButton('lot:track-in'))
 const canTrackOut = computed(() => hasButton('lot:track-out'))
 const canHold = computed(() => hasButton('lot:hold'))
@@ -246,12 +261,46 @@ async function loadLots() {
       if (!lotQueue.value.some(lot => lot.no === selectedLotNo.value)) {
         selectedLotNo.value = displayLotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))?.no || displayLotQueue.value[0]?.no || lotQueue.value[0]?.no || ''
       }
+      await loadTrackInChecks()
     }
   } catch (error) {
     warnDevFallback('执行队列接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) lotQueue.value = fallbackLotQueue
   } finally {
     loadingLots.value = false
+  }
+}
+
+async function loadTrackInChecks() {
+  const lot = selectedLot.value
+  if (!lot || !['READY', 'REWORK'].includes(lot.status)) {
+    trackInCheckResult.value = null
+    return null
+  }
+  loadingTrackInChecks.value = true
+  try {
+    const result = await getTrackInChecks(lot.no, {
+      stepCode: lot.step,
+      equipmentCode: selectedEquipmentCode.value,
+      operator: 'op1007'
+    })
+    trackInCheckResult.value = result
+    return result
+  } catch (error) {
+    warnDevFallback('Track In 预校验接口不可用', error)
+    if (__DEV_MOCK_FALLBACK__) {
+      trackInCheckResult.value = {
+        checks: fallbackChecks,
+        passedCount: fallbackChecks.filter(item => item.type === 'green' || item.type === 'blue').length,
+        total: fallbackChecks.length,
+        trackInReady: true
+      }
+    } else {
+      trackInCheckResult.value = null
+    }
+    return trackInCheckResult.value
+  } finally {
+    loadingTrackInChecks.value = false
   }
 }
 
@@ -266,6 +315,11 @@ async function trackInSelectedLot() {
     return
   }
   try {
+    const checkResult = await loadTrackInChecks()
+    if (!checkResult?.trackInReady) {
+      ElMessage.warning('Track In 预校验未通过')
+      return
+    }
     await trackInLot(lot.no, {
       stepCode: lot.step,
       equipmentCode: selectedEquipmentCode.value,
@@ -371,6 +425,10 @@ function downloadText(filename, content) {
 function uniqueValues(values) {
   return [...new Set(values.filter(Boolean))]
 }
+
+watch([selectedLotNo, selectedEquipmentCode], () => {
+  loadTrackInChecks()
+})
 
 onMounted(loadLots)
 </script>

@@ -111,6 +111,7 @@ const requiredApiExports = [
   ['getOrderReleaseChecks', '/v1/orders/${orderNo}/release-checks'],
   ['releaseOrder', '/v1/orders/${orderNo}/release'],
   ['getLots', '/v1/lots'],
+  ['getTrackInChecks', '/v1/lots/${lotNo}/track-in-checks'],
   ['trackInLot', '/v1/lots/${lotNo}/track-in'],
   ['trackOutLot', '/v1/lots/${lotNo}/track-out'],
   ['holdLot', '/v1/lots/${lotNo}/hold'],
@@ -299,7 +300,7 @@ const pageContracts = [
   ['views/master/index.vue', ['getSites', 'getProductionLines', 'getShifts', 'getBoms', 'getBomChangeRequests', 'getRecipes', 'publishRecipe', 'publishBomChange'], ['recipe:publish', 'bom:change']],
   ['views/lot/index.vue', ['getLotList'], ['lot:track-in', 'lot:track-out', 'lot:hold', 'lot:release', 'lot:rework', 'lot:scrap']],
   ['views/recipe/index.vue', ['getRecipeList', 'getRecipeDetail', 'publishRecipe'], ['recipe:publish']],
-  ['views/execution/index.vue', ['getLots', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
+  ['views/execution/index.vue', ['getLots', 'getTrackInChecks', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
   ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
@@ -373,6 +374,9 @@ check('page:views/recipe/index.vue:workbench-style', hasAll(recipeView, ['page-h
 check('page:views/recipe/index.vue:v1-api-import', recipeView.includes("@/api/recipe") && !recipeView.includes("@/api/pilot"), 'Recipe page must use dedicated v1 recipe API wrapper')
 check('page:views/recipe/index.vue:publish-action', hasAll(recipeView, ['handlePublish', 'publishRecipe', "hasButton('recipe:publish')"]), 'Recipe page must expose permission-gated publish action')
 check('page:views/execution/index.vue:track-in-rework-status', executionView.includes("['READY', 'REWORK'].includes(lot.status)"), 'Execution page Track In action must allow rework lots')
+check('page:views/execution/index.vue:track-in-checks-api-driven', hasAll(executionView, ['getTrackInChecks', 'loadTrackInChecks', 'trackInCheckResult', 'trackInCheckBadgeText', 'trackInReady']), 'Execution Track In validation matrix must be driven by /lots/{lotNo}/track-in-checks')
+check('page:views/execution/index.vue:track-in-checks-block-track-in', hasAll(executionView, ['checkResult?.trackInReady', 'Track In 预校验未通过']), 'Execution Track In action must block when backend validation checks fail')
+check('page:views/execution/index.vue:no-static-track-in-check-badge', !executionView.includes('8 项校验') && !executionView.includes('8项校验'), 'Execution page must not hard-code Track In validation count')
 
 check('package:verify-script', packageJson.scripts?.['verify:frontend-contract'] === 'node scripts/verify-frontend-contract.mjs')
 

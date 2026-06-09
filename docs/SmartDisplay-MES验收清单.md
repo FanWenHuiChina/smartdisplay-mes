@@ -21,10 +21,11 @@
 | 组织/产线/班次主数据 | 基地、产线、班次有正式表、种子数据和 `/api/v1/master/**` 查询接口 | 已落地 |
 | ERP模拟工单导入 | 支持 `/api/v1/adapters/erp/orders` 下发工单、批量查重、1000 条模拟导入、成功/失败审计和角色权限控制 | 已落地，工单页已提供 Adapter 批次、样例工单和审计动作回执 |
 | 工单释放 | 工单释放前必须通过状态、产品编码、Route首站、生效BOM、设备能力、Recipe覆盖、Lot拆分和权限审计预校验；通过后生成 Lot 并写审计 | 已落地，新增 `/api/v1/orders/{orderNo}/release-checks`，工单页释放校验已改为接口驱动 |
-| Route 防跳站 | Track In 必须匹配 Route 下一站 | 已落地 |
-| Recipe 校验 | Track In 校验产品+工序+设备生效 Recipe | 已落地 |
-| 班次校验 | Track In 校验 Lot 产线当前时间处于 ACTIVE 班次窗口 | 已落地 |
-| 物料齐套 | Track In 校验 BOM 关键物料并锁定批次 | 已落地 |
+| Track In预校验 | Track In 前必须返回 Lot状态、Route下一站、设备状态、设备能力、Recipe、Hold、班次、物料齐套、操作权限和审计留痕矩阵，失败项阻断进站 | 已落地，新增 `/api/v1/lots/{lotNo}/track-in-checks`，执行页校验链已改为接口驱动，正式 Track In 复用同一套阻断逻辑 |
+| Route 防跳站 | Track In 必须匹配 Route 下一站 | 已落地，已纳入 Track In 预校验矩阵 |
+| Recipe 校验 | Track In 校验产品+工序+设备生效 Recipe | 已落地，已纳入 Track In 预校验矩阵 |
+| 班次校验 | Track In 校验 Lot 产线当前时间处于 ACTIVE 班次窗口 | 已落地，已纳入 Track In 预校验矩阵 |
+| 物料齐套 | Track In 校验 BOM 关键物料并锁定批次 | 已落地，已纳入 Track In 预校验矩阵 |
 | BOM变更审批 | 支持变更草稿、审批通过/驳回、发布生效、旧版本失效和审计留痕 | 已落地 |
 | BOM/ECO跨部门会签 | BOM变更提交后生成 ECO 包快照、风险等级、会签角色和 SLA；PE/QE/计划员/设备角色可会签，通过前禁止发布，驳回后阻断发布 | 已落地，V1.39 已验证 3 角色会签后发布 |
 | 替代料策略 | Track In 按 substitute_group 和 substitute_priority 自动选择可用主料/替代料 | 已落地 |
@@ -69,11 +70,11 @@
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.41` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，387 项检查；已覆盖工单释放预校验 API 接线和禁止静态 `7/8 通过` |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，392 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-142348.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-181400.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
 | Flyway | `db/migration/V1.1-V1.41` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.41 已通过静态验收 |
