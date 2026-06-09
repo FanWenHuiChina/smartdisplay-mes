@@ -190,6 +190,54 @@ async function main() {
     return 'recipe workbench detail drawer visible'
   })
 
+  await runStep('Lot 管理页通过 UI 执行 Rework 处置', async () => {
+    const reworkLotNo = await createHeldLot(`MORWK${timestamp.replace(/\D/g, '')}`, 'browser e2e rework hold')
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await setFieldValueByLabel('Lot 批次', reworkLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(reworkLotNo)}') && document.body.innerText.includes('已 Hold')`, 10000)
+    await clickTableRowByText(reworkLotNo)
+    await clickButtonByText('返工')
+    await waitForExpression(`document.body.innerText.includes('Rework Lot') && document.body.innerText.includes('Confirm Rework')`, 10000)
+    await waitForExpression(`document.body.innerText.includes('RTE_G6_AMOLED65_V08') || document.body.innerText.includes('RTE_G6')`, 10000)
+    await setFormItemValueByLabel('Reason', `browser e2e rework ${timestamp}`)
+    await setFormItemValueByLabel('Operator', username)
+    await clickButtonByText('Confirm Rework')
+    const reworkState = await waitForSpecificLotState(reworkLotNo, `status === 'REWORK' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(reworkLotNo)}') && text.includes('REWORK') && text.includes('正常')
+    })`, 15000)
+    await assertLayoutClean('lot-rework')
+    return `lot=${reworkLotNo}, status=${reworkState.status}, step=${reworkState.currentStepCode}`
+  })
+
+  await runStep('Lot 管理页通过 UI 执行 Scrap 二次确认处置', async () => {
+    const scrapLotNo = await createHeldLot(`MOSCP${timestamp.replace(/\D/g, '')}`, 'browser e2e scrap hold')
+    const confirmText = `SCRAP:${scrapLotNo}`
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await setFieldValueByLabel('Lot 批次', scrapLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(scrapLotNo)}') && document.body.innerText.includes('已 Hold')`, 10000)
+    await clickTableRowByText(scrapLotNo)
+    await clickButtonByText('报废')
+    await waitForExpression(`document.body.innerText.includes('Scrap Lot') && document.body.innerText.includes('Confirm Scrap')`, 10000)
+    await setFormItemValueByLabel('Reason', `browser e2e scrap ${timestamp}`)
+    await setFormItemValueByLabel('Approver', username)
+    await setFormItemValueByLabel('Operator', username)
+    await setInputByPlaceholder(confirmText, confirmText)
+    await clickButtonByText('Confirm Scrap')
+    const scrapState = await waitForSpecificLotState(scrapLotNo, `status === 'SCRAP' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(scrapLotNo)}') && text.includes('SCRAP') && text.includes('正常')
+    })`, 15000)
+    await assertLayoutClean('lot-scrap')
+    return `lot=${scrapLotNo}, status=${scrapState.status}`
+  })
+
   await runStep('生产执行页面通过 UI 完成 Track In/Out', async () => {
     assert(e2eLotNo, '缺少 E2E Lot，无法执行 Track In/Out')
     await clickByText('生产执行')
@@ -365,7 +413,7 @@ async function main() {
   })
 
   await runStep('追溯页面完成 Lot 查询', async () => {
-    const lotNo = await evaluate(`(async () => {
+    const lotNo = e2eLotNo || await evaluate(`(async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/v1/lots?current=1&size=1', {
         headers: { Authorization: 'Bearer ' + token }
@@ -655,6 +703,73 @@ async function waitForLotState(condition, timeoutMs = 10000) {
     await delay(200)
   }
   throw new Error(`等待 Lot 状态超时: ${condition}, last=${JSON.stringify(lastState)}`)
+}
+
+async function waitForSpecificLotState(lotNo, condition, timeoutMs = 10000) {
+  const started = Date.now()
+  let lastState = null
+  while (Date.now() - started < timeoutMs) {
+    lastState = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/lots?current=1&size=10&lotNo=' + encodeURIComponent('${escapeJs(lotNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.records[0] || null
+    })()`)
+    if (lastState) {
+      const matched = Function('state', `with (state) { return ${condition}; }`)(lastState)
+      if (matched) return lastState
+    }
+    await delay(200)
+  }
+  throw new Error(`等待 Lot 状态超时: ${lotNo}, ${condition}, last=${JSON.stringify(lastState)}`)
+}
+
+async function createHeldLot(orderNo, holdReason) {
+  return evaluate(`(async () => {
+    const token = localStorage.getItem('token')
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+    const postJson = async (path, body) => {
+      const response = await fetch('/api/v1' + path, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      })
+      const json = await response.json()
+      if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+      return json.data
+    }
+    await postJson('/orders', {
+      orderNo: '${escapeJs(orderNo)}',
+      productCode: 'AMOLED_65',
+      productName: 'AMOLED 6.5寸柔性屏',
+      plannedQty: 60,
+      priority: 8,
+      lineCode: 'LINE_01'
+    })
+    await postJson('/orders/${escapeJs(orderNo)}/release', {
+      releaseBy: '${escapeJs(username)}'
+    })
+    const lotPrefix = '${escapeJs(orderNo)}'.replace('MO', 'LOT')
+    let lotNo = ''
+    for (let index = 0; index < 20; index += 1) {
+      const response = await fetch('/api/v1/lots?current=1&size=20&lotNo=' + encodeURIComponent(lotPrefix), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      lotNo = json.data.records[0]?.lotNo || ''
+      if (lotNo) break
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    if (!lotNo) throw new Error('released lot not found: ' + lotPrefix)
+    await postJson('/lots/' + encodeURIComponent(lotNo) + '/hold', {
+      holdReason: '${escapeJs(holdReason)}',
+      holdType: 'QUALITY',
+      holdBy: '${escapeJs(username)}'
+    })
+    return lotNo
+  })()`)
 }
 
 async function bodyText() {
