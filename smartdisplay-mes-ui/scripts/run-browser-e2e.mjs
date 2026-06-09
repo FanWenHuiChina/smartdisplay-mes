@@ -139,6 +139,37 @@ async function main() {
     return `order=${e2eOrderNo} released, lot=${e2eLotNo}`
   })
 
+  await runStep('Lot 管理二级工作台显示真实队列和流转入口', async () => {
+    assert(e2eLotNo, '缺少 E2E Lot，无法验证 Lot 管理页')
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await assertLayoutClean('lot')
+    assert(await textExists('Lot 队列'), 'Lot 管理页缺少 Lot 队列')
+    assert(await textExists('Track In'), 'Lot 管理页缺少 Track In 入口')
+    assert(await textExists('Track Out'), 'Lot 管理页缺少 Track Out 入口')
+    assert(await textExists('Rework'), 'Lot 管理页缺少 Rework 入口')
+    assert(await textExists('Scrap'), 'Lot 管理页缺少 Scrap 入口')
+    await setFieldValueByLabel('Lot 批次', e2eLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
+    await clickTableRowByText(e2eLotNo)
+    return `lot workbench visible, lot=${e2eLotNo}`
+  })
+
+  await runStep('Recipe 管理二级工作台显示版本池和参数详情', async () => {
+    await navigate(`${baseUrl}/recipe`)
+    await waitForExpression(`location.pathname === '/recipe' && document.body.innerText.includes('Recipe 管理 / 参数版本与发布校验')`)
+    await assertLayoutClean('recipe')
+    assert(await textExists('Recipe 版本池'), 'Recipe 管理页缺少版本池')
+    assert(await textExists('参数详情'), 'Recipe 管理页缺少参数详情入口')
+    assert(await textExists('发布版本'), 'Recipe 管理页缺少发布入口')
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => (row.innerText || '').includes('ACTIVE') || (row.innerText || '').includes('DRAFT'))`, 10000)
+    await clickButtonByText('参数详情')
+    await waitForExpression(`document.body.innerText.includes('参数上下限') && document.body.innerText.includes('执行约束')`, 10000)
+    await assertLayoutClean('recipe-detail')
+    return 'recipe workbench detail drawer visible'
+  })
+
   await runStep('生产执行页面通过 UI 完成 Track In/Out', async () => {
     assert(e2eLotNo, '缺少 E2E Lot，无法执行 Track In/Out')
     await clickByText('生产执行')

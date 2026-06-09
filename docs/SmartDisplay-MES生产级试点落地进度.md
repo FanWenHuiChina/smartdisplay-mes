@@ -74,9 +74,9 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产 mock fallback 禁用约束，共 302 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产 mock fallback 禁用约束，共 381 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，12 步覆盖登录、导航权限、工单创建/释放并生成 Lot、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260608-161858.md`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，14 步覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-105325.md`。
 - 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 191, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
@@ -705,3 +705,10 @@
 - 已验证：后端全量 `mvn.cmd -s D:\workspace\mes\.m2\settings.xml test` 通过 213 项；前端契约通过 328 项；生产构建通过；生产包扫描 `Production bundle clean: 12 JS assets checked`。
 - Docker 已重建并运行到 Flyway `v1.43`；接口探活显示 `LOCAL_RAG_HYBRID / HYBRID_LOCAL` 为激活 SOP_QA 配置，`HYBRID_LOCAL` 索引任务完成 7 个切片，RAG 问答返回 `evidenceLevel=HIGH`、`evidenceCount=3`、首条引用 `keywordScore=21.0`、`vectorScore=0.6483`。
 - 浏览器 E2E 已通过 12 步，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260608-183556.md/json`。
+
+## 2026-06-09 增量：Lot/Recipe 二级工作台浏览器 E2E 覆盖
+
+- `smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 从 12 步扩展为 14 步，新增 Lot 管理和 Recipe 管理两个二级工作台运行级验收。
+- Lot 管理 E2E 会直接访问 `/lot`，校验 Lot 队列、Track In、Track Out、Rework、Scrap 入口，并使用本轮释放出的 `LOTE2E*` Lot 查询真实记录，防止页面退回重定向或静态空壳。
+- Recipe 管理 E2E 会直接访问 `/recipe`，校验 Recipe 版本池、参数详情、发布入口，并打开详情抽屉确认参数上下限和执行约束可见，防止 Recipe 页退回旧 Pilot API 或纯列表展示。
+- 已验证 `npm.cmd run verify:frontend-contract` 通过 381 项检查；`npm.cmd run build` 通过；`npm.cmd run verify:production-bundle` 通过，扫描 14 个 JS 产物；`npm.cmd run e2e:browser` 通过 14 步，Console/Network 错误数为 0，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260609-105325.md/json`。

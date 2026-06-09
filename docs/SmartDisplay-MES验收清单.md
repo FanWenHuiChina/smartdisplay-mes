@@ -69,11 +69,11 @@
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.41` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，302 项检查 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，381 项检查 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单释放、Lot 过站、QMS/WMS Adapter 页面操作、质量证据、物料库位任务、追溯、AI 报告和系统审计入口 | 已通过 `npm.cmd run e2e:browser`，12 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260608-161858.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单释放、Lot 管理、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、质量证据、物料库位任务、追溯、AI 报告和系统审计入口 | 已通过 `npm.cmd run e2e:browser`，14 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-105325.md` |
 | Flyway | `db/migration/V1.1-V1.41` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.41 已通过静态验收 |
 | 真实数据库 API 闭环 | 在 Docker Compose PostgreSQL 上完成登录、工单创建/释放、Lot Track In/Out、NG 自动 Hold、Release、追溯、看板、AI 报告和审计落库校验 | 已通过 `tools\run-real-db-api-flow.ps1`，报告 `SmartDisplay-MES-real-db-api-flow-20260608-060901.md` |
@@ -191,7 +191,16 @@
 | --- | --- | --- |
 | QMS Adapter 页面级 E2E | 浏览器脚本必须从质量页填写 QMS 表单、点击“提交 QMS 上报”，并校验检验项真实落库 | 已通过，`QMS_E2E_*` 检验项落库 |
 | WMS Adapter 页面级 E2E | 浏览器脚本必须从物料页点击“Adapter 齐套”和“Adapter 事务”，并校验新入库批次真实落库 | 已通过，`WMSE2E*` 批次落库 |
-| E2E 稳定性 | Track In 后等待后端状态和页面行状态都刷新为 `PROCESSING` 后再执行 Track Out | 已落地，12 步 E2E 通过 |
+| E2E 稳定性 | Track In 后等待后端状态和页面行状态都刷新为 `PROCESSING` 后再执行 Track Out | 已落地，并随当前 14 步 E2E 继续通过 |
+
+## 2026-06-09 补充验收：Lot/Recipe 二级工作台浏览器 E2E
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| Lot 管理页运行级覆盖 | 浏览器脚本必须直接访问 `/lot`，校验 Lot 队列、Track In/Out、Rework、Scrap 入口，并按本轮释放 Lot 查询到真实记录 | 已通过，`LOTE2E*` Lot 可在 Lot 管理页查到 |
+| Recipe 管理页运行级覆盖 | 浏览器脚本必须直接访问 `/recipe`，校验 Recipe 版本池、参数详情、发布入口，并打开参数详情抽屉看到参数上下限和执行约束 | 已通过，Recipe 详情抽屉可见 |
+| E2E 覆盖范围 | Lot/Recipe 二级页面不得只依赖静态契约或路由检查，必须纳入真实浏览器回归 | 已落地，14 步 E2E 通过 |
+
 ## 2026-06-08 补充验收：多入口追溯搜索
 
 | 验收项 | 标准 | 当前状态 |
