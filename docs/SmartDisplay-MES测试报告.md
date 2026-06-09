@@ -34,7 +34,7 @@
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
-| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 17 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-124454.md` |
+| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 18 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、设备页 EAP 参数上报和网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-125257.md` |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.41` 共 41 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
 | 性能冒烟脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-smoke.ps1` | 通过 | 脚本支持阈值参数、Markdown/JSON 报告输出和失败退出码 |
@@ -179,9 +179,20 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，381 项检查 |
 | Docker 重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过，后端、前端、PostgreSQL 均启动 |
 | Docker 权限探活 | 经 `http://127.0.0.1:8888/api` 登录 EE/操作员并调用越权释放 | 通过，EE 菜单包含 `quality`；操作员为 `SELF_SHIFT` 且越权释放返回 `403` |
-| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过，17 步，最新报告 `SmartDisplay-MES-browser-e2e-20260609-124454.md` |
+| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过，18 步，最新报告 `SmartDisplay-MES-browser-e2e-20260609-125257.md` |
 
 覆盖点：操作员登录后仅拥有 `dashboard/execution/trace` 菜单和 `lot:track-in/lot:track-out` 按钮权限；直接访问 `/order` 会回到首个可访问页面；直接调用 `POST /api/v1/orders/{orderNo}/release` 返回业务码 `403`。
+
+## 2026-06-09 设备页EAP运行级复验
+
+本轮将设备页纳入真实浏览器 E2E 页面级写操作覆盖：从设备工作台提交唯一 EAP 参数编码，并触发 EAP 网关健康检查。
+
+| 验证项 | 命令 | 结果 |
+| --- | --- | --- |
+| 前端契约验证 | `npm.cmd run verify:frontend-contract` | 通过，381 项检查 |
+| 浏览器 E2E | `npm.cmd run e2e:browser` | 通过，18 步，最新报告 `SmartDisplay-MES-browser-e2e-20260609-125257.md` |
+
+覆盖点：设备页必须显示 `EAP 参数上报`、`EAP 网关连接`、`EAP 网关健康检查履历`；页面提交的 `EAP_E2E_*` 参数样本可从 `/api/v1/equipment/parameters` 查询到 `OK` 结果；网关健康检查会生成 `MANUAL` 检查履历。
 
 ## 2026-06-08 V1.40 供应商准入与8D整改复验
 

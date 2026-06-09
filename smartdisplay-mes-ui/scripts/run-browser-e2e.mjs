@@ -412,6 +412,55 @@ async function main() {
     return `${workflowResult.completedTask}: ${workflowResult.created}->${workflowResult.assigned}->${workflowResult.completed}; ${workflowResult.cancelledTask}: CANCELLED`
   })
 
+  await runStep('设备页面通过 UI 上报 EAP 参数并执行网关健康检查', async () => {
+    const eapParamCode = `EAP_E2E_${timestamp.replace(/\D/g, '')}`
+    const healthStartedAt = Date.now()
+    await clickByText('设备与自动化')
+    await waitForExpression(`location.pathname === '/equipment' && document.body.innerText.includes('设备与自动化 / EAP')`)
+    await assertLayoutClean('equipment')
+    assert(await textExists('EAP 参数上报'), '设备页缺少 EAP 参数上报工作区')
+    assert(await textExists('EAP 网关连接'), '设备页缺少 EAP 网关连接工作区')
+    assert(await textExists('EAP 网关健康检查履历'), '设备页缺少网关健康检查履历')
+
+    await waitForExpression(`(() => {
+      const card = Array.from(document.querySelectorAll('.mes-card')).find(item => (item.innerText || '').includes('EAP 参数上报'))
+      return Boolean(card?.querySelector('select')?.value)
+    })()`, 10000)
+    await setFieldValueInCard('EAP 参数上报', 'Lot', e2eLotNo)
+    await setFieldValueInCard('EAP 参数上报', '工序', 'COATING')
+    await setFieldValueInCard('EAP 参数上报', 'Recipe', 'RCP_COAT_001')
+    await setFieldValueInCard('EAP 参数上报', '参数编码', eapParamCode)
+    await setFieldValueInCard('EAP 参数上报', '测量值', '150.1')
+    await setFieldValueInCard('EAP 参数上报', '下限', '145')
+    await setFieldValueInCard('EAP 参数上报', '上限', '155')
+    await setFieldValueInCard('EAP 参数上报', '单位', 'C')
+    await clickButtonInCard('EAP 参数上报', '模拟 EAP 上报')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/equipment/parameters', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(item => item.paramCode === '${escapeJs(eapParamCode)}' && item.result === 'OK')
+    })()`, 15000)
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(eapParamCode)}') && document.body.innerText.includes('OK')`, 15000)
+
+    await clickButtonInCard('EAP 网关连接', '健康检查')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/equipment/gateway-health-checks', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(item => {
+        const checkedAt = new Date(item.checkedTime || item.checkTime || item.createdTime || 0).getTime()
+        return item.checkType === 'MANUAL' && checkedAt >= ${healthStartedAt}
+      })
+    })()`, 15000)
+    await assertLayoutClean('equipment-eap')
+    return `parameter=${eapParamCode}, gateway health MANUAL recorded`
+  })
+
   await runStep('追溯页面完成 Lot 查询', async () => {
     const lotNo = e2eLotNo || await evaluate(`(async () => {
       const token = localStorage.getItem('token')
@@ -589,6 +638,30 @@ async function setFieldValueByLabel(labelText, value) {
   assert(ok, `未找到可输入字段: ${labelText}`)
 }
 
+async function setFieldValueInCard(cardTitle, labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const field = Array.from(card?.querySelectorAll('.mes-field') || []).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const input = el.querySelector('input, textarea')
+      return label === ${JSON.stringify(labelText)} && input && visible(input) && !input.disabled
+    })
+    const input = field?.querySelector('input, textarea')
+    if (!input) return false
+    input.focus()
+    input.value = ${JSON.stringify(value)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可输入字段: ${labelText}`)
+}
+
 async function setFormItemValueByLabel(labelText, value) {
   const ok = await evaluate(`(() => {
     const visible = (el) => {
@@ -665,6 +738,24 @@ async function clickButtonByText(text) {
     return true
   })()`)
   assert(ok, `未找到可点击按钮: ${text}`)
+}
+
+async function clickButtonInCard(cardTitle, buttonText) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const target = Array.from(card?.querySelectorAll('button,[role="button"]') || []).find(el => {
+      return visible(el) && !el.disabled && (el.innerText || el.textContent || '').trim().includes(${JSON.stringify(buttonText)})
+    })
+    if (!target) return false
+    target.click()
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可点击按钮: ${buttonText}`)
 }
 
 async function clickMessageBoxConfirm() {
