@@ -332,6 +332,7 @@ check('page:views/master/index.vue:bom-change-attachment-count', masterView.incl
 
 const orderView = read('src/views/order/index.vue')
 check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['importErpOrders', 'submitErpImport', 'erpImportResult']), 'Order page must expose ERP adapter import and show the latest import result')
+check('page:views/order/index.vue:erp-import-audit-receipt', hasAll(orderView, ['erpImportCards', 'erpSampleOrders', 'ERP_ORDER_IMPORT']), 'Order page must show ERP adapter import batch, sample orders and audit action')
 check('page:views/order/index.vue:query-filters', hasAll(orderView, ['orderFilters', 'v-model.trim="orderFilters.keyword"', 'params.status = orderFilters.value.status', 'displayOrders']), 'Order page must wire query filters to API status and visible rows')
 check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
 check('page:views/order/index.vue:no-unwired-buttons', unwiredButtons(orderView).length === 0, `unwired buttons: ${unwiredButtons(orderView).join(', ')}`)

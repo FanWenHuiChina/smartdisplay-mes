@@ -95,31 +95,37 @@ async function main() {
     return 'overview dashboard visible'
   })
 
-  await runStep('计划与工单页面可导航并显示释放入口', async () => {
-    e2eOrderNo = `MOE2E${timestamp.replace(/\D/g, '')}`
-    await evaluate(`(async () => {
-      const token = localStorage.getItem('token')
-      const response = await fetch('/api/v1/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({
-          orderNo: '${escapeJs(e2eOrderNo)}',
-          productCode: 'AMOLED_65',
-          productName: 'AMOLED 6.5寸柔性屏',
-          plannedQty: 100,
-          priority: 9,
-          lineCode: 'LINE_01'
-        })
-      })
-      const json = await response.json()
-      if (json.code !== 200) throw new Error(json.message)
-      return json.data.orderNo
-    })()`)
+  await runStep('计划与工单页面通过 UI 下发 ERP 工单并释放', async () => {
     await clickByText('计划与工单')
     await waitForExpression(`location.pathname === '/order' && document.body.innerText.includes('计划与工单 / 工单释放')`)
     await assertLayoutClean('order')
-    assert(await textExists(e2eOrderNo), `计划与工单页面未显示 E2E 工单: ${e2eOrderNo}`)
+    assert(await textExists('下发 ERP 工单'), '计划与工单页面未显示 ERP 下发入口')
     assert(await textExists('释放工单'), '计划与工单页面未显示释放工单入口')
+    await setFieldValueByLabel('ERP 数量', '1')
+    await setFieldValueByLabel('计划数', '100')
+    await clickButtonByText('下发 ERP 工单')
+    await waitForExpression(`document.body.innerText.includes('Adapter 批次') && document.body.innerText.includes('ERP_ORDER_IMPORT')`, 15000)
+    e2eOrderNo = await evaluate(`(() => {
+      const text = document.body.innerText || ''
+      return (text.match(/MOUI\\d{14}-0001/) || [])[0] || ''
+    })()`)
+    assert(e2eOrderNo, 'ERP UI 下发后未显示样例工单号')
+    const erpBatchNo = await evaluate(`(() => {
+      const text = document.body.innerText || ''
+      return (text.match(/ERP-UI-\\d{14}/) || [])[0] || ''
+    })()`)
+    assert(erpBatchNo, 'ERP UI 下发后未显示批次号')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/system/audit-logs?bizNo=' + encodeURIComponent('${escapeJs(erpBatchNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(log => log.action === 'ERP_ORDER_IMPORT')
+    })()`, 15000)
+    await setFieldValueByLabel('工单 / 产品', e2eOrderNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eOrderNo)}')`, 10000)
     await clickByText('释放工单')
     await waitForExpression(`(async () => {
       const token = localStorage.getItem('token')
@@ -139,7 +145,7 @@ async function main() {
       return json.data.records[0]?.lotNo || ''
     })()`)
     assert(e2eLotNo, '工单释放后未查询到生成的 E2E Lot')
-    return `order=${e2eOrderNo} released, lot=${e2eLotNo}`
+    return `batch=${erpBatchNo}, order=${e2eOrderNo} released, lot=${e2eLotNo}`
   })
 
   await runStep('Lot 管理二级工作台显示真实队列和流转入口', async () => {

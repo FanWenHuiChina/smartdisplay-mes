@@ -19,7 +19,7 @@
 | 核心执行审计差异快照 | 工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 审计快照包含 before、after、changedFields 和 request | 已落地 |
 | 数据范围 SQL | 按 ALL/LINE/SELF_SHIFT/SELF 生成安全 SQL 条件，工单、Lot、质量、异常、物料消耗、载具等列表按域过滤 | 已落地，组织/产线/班次主数据已补 |
 | 组织/产线/班次主数据 | 基地、产线、班次有正式表、种子数据和 `/api/v1/master/**` 查询接口 | 已落地 |
-| ERP模拟工单导入 | 支持 `/api/v1/adapters/erp/orders` 下发工单、批量查重、1000 条模拟导入、成功/失败审计和角色权限控制 | 已落地 |
+| ERP模拟工单导入 | 支持 `/api/v1/adapters/erp/orders` 下发工单、批量查重、1000 条模拟导入、成功/失败审计和角色权限控制 | 已落地，工单页已提供 Adapter 批次、样例工单和审计动作回执 |
 | 工单释放 | 工单释放后生成 Lot 并写审计 | 已落地 |
 | Route 防跳站 | Track In 必须匹配 Route 下一站 | 已落地 |
 | Recipe 校验 | Track In 校验产品+工序+设备生效 Recipe | 已落地 |
@@ -69,11 +69,11 @@
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.41` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，382 项检查 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，383 项检查 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-135457.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-142348.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
 | Flyway | `db/migration/V1.1-V1.41` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.41 已通过静态验收 |
@@ -214,7 +214,7 @@
 | 操作员菜单收敛 | 操作员只显示生产总览、生产执行和追溯入口，不显示计划工单和系统管理入口 | 已落地，浏览器 E2E 覆盖 |
 | 操作员越权拒绝 | 操作员直接访问 `/order` 应被路由守卫重定向，直接调用工单释放接口应返回 403 | 已落地，浏览器 E2E 覆盖 |
 | Docker 运行态 | 当前 Docker 容器应使用本轮权限代码，登录和越权拒绝可经前端 Nginx 反代验证 | 已通过：EE 菜单含 `quality`，操作员越权释放返回 `403` |
-| 回归验证 | 权限口径、前端契约和真实浏览器用例均需通过 | 已通过：RBAC 单测 12 项、前端契约 382 项、浏览器 E2E 19 步 |
+| 回归验证 | 权限口径、前端契约和真实浏览器用例均需通过 | 已通过：RBAC 单测 12 项、前端契约 383 项、浏览器 E2E 19 步 |
 
 ## 2026-06-09 补充验收：设备页 EAP 运行级闭环
 
@@ -232,6 +232,15 @@
 | 失败审计映射 | 到期复审生成接口失败时必须映射为可查询的失败审计动作 | 已落地，映射 `SUPPLIER_QUALIFICATION_REVIEW_GENERATE` |
 | 前端入口 | 物料页供应商准入复审卡片提供权限控制的“生成到期复审”入口 | 已落地，受 `material:supplier-manage` 控制 |
 | 浏览器 E2E | 页面点击生成到期复审后必须能在系统审计中查到批处理审计 | 已通过，浏览器 E2E 19 步 |
+
+## 2026-06-09 补充验收：工单页 ERP Adapter UI 闭环
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| ERP 下发页面回执 | 工单页点击“下发 ERP 工单”后必须展示 Adapter 批次、接收/创建/跳过/失败数量、样例工单和 `ERP_ORDER_IMPORT` 审计动作 | 已落地 |
+| ERP 下发审计查询 | 浏览器 E2E 必须按页面返回批次号查询系统审计，确认 `ERP_ORDER_IMPORT` 已写入 | 已通过 |
+| ERP 下发后释放 | 浏览器 E2E 必须释放页面下发的样例工单，并查询到生成的 Lot | 已通过 |
+| 前端契约 | 工单页 ERP 导入回执由 `verify:frontend-contract` 自动检查，防止页面退回只显示静态按钮 | 已通过，383 项检查 |
 
 ## 2026-06-08 补充验收：多入口追溯搜索
 

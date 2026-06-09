@@ -110,9 +110,23 @@
               {{ importing ? '下发中' : '下发 ERP 工单' }}
             </button>
           </div>
-          <div v-if="erpImportResult" class="check-cell blue section-gap">
-            <strong>最近下发</strong>
-            <span>{{ erpImportSummary }}</span>
+          <div v-if="erpImportResult" class="section-gap">
+            <div class="matrix two">
+              <div v-for="item in erpImportCards" :key="item.title" class="check-cell" :class="item.type">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.text }}</span>
+              </div>
+            </div>
+            <table v-if="erpSampleOrders.length" class="mes-table section-gap">
+              <thead><tr><th>样例工单</th><th>批次</th><th>审计动作</th></tr></thead>
+              <tbody>
+                <tr v-for="orderNo in erpSampleOrders" :key="orderNo">
+                  <td>{{ orderNo }}</td>
+                  <td>{{ erpImportResult.batchNo || '-' }}</td>
+                  <td><span class="status-tag green">{{ erpAuditAction }}</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="toolbar">
             <button v-if="canReleaseOrder" class="mes-btn primary" :disabled="releasing" @click="releaseFirstOrder">
@@ -218,6 +232,21 @@ const erpImportSummary = computed(() => {
     ? `，样例 ${result.sampleOrderNos.slice(0, 3).join(' / ')}`
     : ''
   return `${result.batchNo || 'ERP批次'}：接收 ${result.receivedCount || 0}，创建 ${result.createdCount || 0}，跳过 ${result.skippedCount || 0}${sample}`
+})
+const erpAuditAction = 'ERP_ORDER_IMPORT'
+const erpSampleOrders = computed(() => {
+  const sample = erpImportResult.value?.sampleOrderNos
+  return Array.isArray(sample) ? sample.slice(0, 5) : []
+})
+const erpImportCards = computed(() => {
+  if (!erpImportResult.value) return []
+  const result = erpImportResult.value
+  return [
+    { title: 'Adapter 批次', text: result.batchNo || '-', type: 'blue' },
+    { title: '接收 / 创建', text: `${result.receivedCount || 0} / ${result.createdCount || 0}`, type: Number(result.createdCount || 0) > 0 ? 'green' : 'amber' },
+    { title: '跳过 / 失败', text: `${result.skippedCount || 0} / ${result.failedCount || 0}`, type: Number(result.failedCount || 0) > 0 ? 'red' : 'green' },
+    { title: '审计留痕', text: `${erpAuditAction} / ${result.status || 'COMPLETED'}`, type: 'green' }
+  ]
 })
 
 const statusMap = {

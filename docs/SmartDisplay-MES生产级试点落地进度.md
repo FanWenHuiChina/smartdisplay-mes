@@ -62,7 +62,7 @@
 - 登录页已切换到 `/api/v1/auth/login`，展示管理员、计划员、操作员、质量工程师、工艺工程师、设备工程师 6 类试点账号。
 - 关键页面已从纯静态改为“接口优先 + 开发 fallback”：
   - 生产总览：接入 `/v1/dashboard/overview`。
-  - 工单页面：接入 `/v1/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`。
+  - 工单页面：接入 `/v1/orders`、`/v1/adapters/erp/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`，并展示 ERP Adapter 批次、样例工单和审计动作回执。
   - 生产执行：接入 `/v1/lots`、Track In、Track Out、Hold。
   - 质量管理：接入 `/v1/quality/inspections`、`/v1/quality/exceptions`、`/v1/quality/exceptions/{eventNo}/mrb-records`、`/v1/quality/mrb-approvals`、`/v1/quality/mrb-approvals/refresh-sla`、`/v1/dashboard/yield`。
   - 物料与载具：接入 `/v1/material/batches`、`/v1/material/consumptions`、`/v1/material/inventory-transactions`、`/v1/material/incoming-inspections`、`/v1/material/location-tasks`、`/v1/material/suppliers`、`/v1/material/suppliers/trends`、`/v1/material/suppliers/qualification-reviews`、WMS 入库/冻结/解冻/退料/盘点、库位上架/整批移库/盘点任务、来料 IQC/COA、供应商准入/复审/8D和 `/v1/carriers`。
@@ -74,9 +74,9 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势和供应商到期复审生成接口、生产 mock fallback 禁用约束，共 382 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执和生产 mock fallback 禁用约束，共 383 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-142348.md`。
 - 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 216, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
@@ -128,7 +128,14 @@
 - `MaterialService` 新增 `generateDueSupplierQualificationReviewTasks`，按 `nextAuditDue <= now + windowDays` 扫描供应商，跳过已有 `OPEN/PERIODIC` 复审任务的供应商，自动创建周期复审任务。
 - 新增接口 `POST /api/v1/material/suppliers/qualification-reviews/generate-due`，前端物料页“供应商准入复审”卡片提供“生成到期复审”入口，沿用 `material:supplier-manage` 权限。
 - 新增失败审计映射 `SUPPLIER_QUALIFICATION_REVIEW_GENERATE`，成功批处理也会写入 `sys_audit_log`，便于审计页面和浏览器 E2E 查询。
-- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,AuditFailureResolverTest" test` 通过 76 项；`npm.cmd run verify:frontend-contract` 通过 382 项；`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过；Docker 已重建；`npm.cmd run e2e:browser` 通过 19 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md/json`。
+- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,AuditFailureResolverTest" test` 通过 76 项；本轮后续工单页 ERP Adapter UI 闭环将前端契约提升到 383 项，浏览器 E2E 最新报告为 `docs/SmartDisplay-MES-browser-e2e-20260609-142348.md/json`。
+
+## 2026-06-09 增量：工单页 ERP Adapter UI 闭环
+
+- 工单页 ERP 下发结果从单行提示升级为结构化回执：展示 Adapter 批次、接收/创建、跳过/失败、`ERP_ORDER_IMPORT` 审计动作和样例工单列表。
+- 浏览器 E2E 的首个业务步骤不再绕过 UI 直接创建工单，改为从页面点击“下发 ERP 工单”，按批次查询系统审计确认 `ERP_ORDER_IMPORT` 已落库，再筛选并释放该样例工单生成 Lot。
+- 前端契约脚本新增工单页 ERP 导入审计回执检查，防止后续页面退回只有按钮但没有批次/审计证据。
+- 已验证 `node --check smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 通过；`npm.cmd run verify:frontend-contract` 通过 383 项；`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过；Docker 已重建；`npm.cmd run e2e:browser` 通过 19 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260609-142348.md/json`。
 
 ## 2026-06-08 增量：核心执行审计差异快照
 - `PilotMesService` 已为工单创建、工单释放、Track In、Track Out、Hold、Release、Rework 和 Scrap 生成结构化审计快照，统一写入 `sys_audit_log.request_snapshot`。
@@ -746,4 +753,4 @@
 - `run-browser-e2e.mjs` 新增设备页面运行级用例：从管理员会话进入设备与自动化页面，校验 `EAP 参数上报`、`EAP 网关连接`、`EAP 网关健康检查履历` 三个工作区。
 - 用例通过页面表单提交唯一参数编码 `EAP_E2E_*`，并通过 `/api/v1/equipment/parameters` 校验参数样本落库且结果为 `OK`。
 - 用例通过页面按钮触发 EAP 网关健康检查，并通过 `/api/v1/equipment/gateway-health-checks` 校验新增 `MANUAL` 检查履历。
-- 已验证 `npm.cmd run verify:frontend-contract` 通过 382 项；`npm.cmd run e2e:browser` 通过 19 步，Console/Network 错误数为 0，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md/json`。
+- 已验证 `npm.cmd run verify:frontend-contract` 通过 383 项；`npm.cmd run e2e:browser` 通过 19 步，Console/Network 错误数为 0，最新报告写入 `docs/SmartDisplay-MES-browser-e2e-20260609-142348.md/json`。
