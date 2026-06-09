@@ -11,8 +11,8 @@
 | 验收项 | 标准 | 当前状态 |
 | --- | --- | --- |
 | JWT 登录 | 6类角色可登录，未登录接口被拒绝 | 已落地 |
-| 角色写权限 | 计划员释放工单、操作员过站、质量/工艺/设备角色按域写权限控制 | 已落地 |
-| 前端菜单/按钮权限 | 菜单按角色裁剪，关键写按钮按按钮权限隐藏并兜底拦截 | 已落地 |
+| 角色写权限 | 计划员释放工单、操作员过站、质量/工艺/设备角色按域写权限控制 | 已落地，浏览器 E2E 已覆盖操作员越权释放工单返回 403 |
+| 前端菜单/按钮权限 | 菜单按角色裁剪，关键写按钮按按钮权限隐藏并兜底拦截 | 已落地，后端登录权限快照与前端权限矩阵已统一 PE/EE 质量菜单口径 |
 | 权限变更审计闭环 | 权限变更单保存前后快照，支持提交、审批通过/驳回、审计留痕、运行期权限快照应用、启动恢复和手动重载 | 已落地 |
 | 审计请求上下文 | 关键审计记录自动保存请求方法、URI、客户端IP和User-Agent | 已落地 |
 | 关键写接口失败审计 | 业务异常、参数校验异常和系统异常按关键写接口动作写入 `result=FAIL` 审计记录 | 已落地 |
@@ -73,7 +73,7 @@
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、质量证据、物料库位任务、追溯、AI 报告和系统审计入口 | 已通过 `npm.cmd run e2e:browser`，16 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-122947.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、QMS/WMS Adapter 页面操作、质量证据、物料库位任务、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，17 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-124454.md` |
 | Flyway | `db/migration/V1.1-V1.41` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.41 已通过静态验收 |
 | 真实数据库 API 闭环 | 在 Docker Compose PostgreSQL 上完成登录、工单创建/释放、Lot Track In/Out、NG 自动 Hold、Release、追溯、看板、AI 报告和审计落库校验 | 已通过 `tools\run-real-db-api-flow.ps1`，报告 `SmartDisplay-MES-real-db-api-flow-20260608-060901.md` |
@@ -202,7 +202,17 @@
 | Lot 管理页 Rework | 浏览器脚本必须创建独立 Hold Lot，从 Lot 管理页打开 Rework 弹窗，提交返工原因和操作人，等待 Lot 进入 `REWORK/holdFlag=0` 并保留返工起始工序 | 已通过，`LOTRWK*` Lot 进入 `REWORK` |
 | Lot 管理页 Scrap | 浏览器脚本必须创建独立 Hold Lot，从 Lot 管理页打开 Scrap 弹窗，填写原因、审批人、操作人，并输入 `SCRAP:{lotNo}` 二次确认，等待 Lot 进入 `SCRAP/holdFlag=0` | 已通过，`LOTSCP*` Lot 进入 `SCRAP` |
 | Recipe 管理页运行级覆盖 | 浏览器脚本必须直接访问 `/recipe`，校验 Recipe 版本池、参数详情、发布入口，并打开参数详情抽屉看到参数上下限和执行约束 | 已通过，Recipe 详情抽屉可见 |
-| E2E 覆盖范围 | Lot/Recipe 二级页面不得只依赖静态契约或路由检查，必须纳入真实浏览器回归 | 已落地，16 步 E2E 通过 |
+| E2E 覆盖范围 | Lot/Recipe 二级页面不得只依赖静态契约或路由检查，必须纳入真实浏览器回归 | 已落地，并随当前 17 步 E2E 继续通过 |
+
+## 2026-06-09 补充验收：RBAC权限口径与操作员越权
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| PE/EE 菜单口径 | 后端登录返回的权限快照必须与前端权限矩阵一致，工艺/设备工程师可看到与自身处置相关的质量协同页面 | 已落地，`RolePermissionServiceTest` 覆盖 |
+| 操作员菜单收敛 | 操作员只显示生产总览、生产执行和追溯入口，不显示计划工单和系统管理入口 | 已落地，浏览器 E2E 覆盖 |
+| 操作员越权拒绝 | 操作员直接访问 `/order` 应被路由守卫重定向，直接调用工单释放接口应返回 403 | 已落地，浏览器 E2E 覆盖 |
+| Docker 运行态 | 当前 Docker 容器应使用本轮权限代码，登录和越权拒绝可经前端 Nginx 反代验证 | 已通过：EE 菜单含 `quality`，操作员越权释放返回 `403` |
+| 回归验证 | 权限口径、前端契约和真实浏览器用例均需通过 | 已通过：RBAC 单测 12 项、前端契约 381 项、浏览器 E2E 17 步 |
 
 ## 2026-06-08 补充验收：多入口追溯搜索
 

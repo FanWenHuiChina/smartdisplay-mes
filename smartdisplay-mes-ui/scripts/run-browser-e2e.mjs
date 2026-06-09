@@ -448,6 +448,58 @@ async function main() {
     return 'system audit view visible'
   })
 
+  await runStep('操作员角色收敛菜单并拒绝越权工单释放', async () => {
+    await evaluate('localStorage.clear()')
+    await navigate(`${baseUrl}/login`)
+    await waitForText('SmartDisplay MES')
+    await setInputByPlaceholder('用户名', 'operator')
+    await setInputByPlaceholder('密码', password)
+    await clickByText('登录')
+    await waitForExpression(`location.pathname === '/overview' && document.body.innerText.includes('生产总览')`)
+    const auth = await evaluate(`(() => {
+      const permissions = JSON.parse(localStorage.getItem('permissions') || '{}')
+      const topTabs = Array.from(document.querySelectorAll('.mes-tab')).map(item => (item.innerText || '').trim())
+      const sideLinks = Array.from(document.querySelectorAll('.side-link')).map(item => ({
+        text: (item.innerText || '').trim(),
+        href: item.getAttribute('href') || ''
+      }))
+      return {
+        token: localStorage.getItem('token'),
+        role: localStorage.getItem('role'),
+        menus: permissions.menus || [],
+        buttons: permissions.buttons || [],
+        dataScope: permissions.dataScope,
+        topTabs,
+        sideLinks
+      }
+    })()`)
+    assert(auth.role === 'OPERATOR', `操作员登录角色异常: ${auth.role}`)
+    assert(auth.menus.includes('execution') && auth.menus.includes('trace'), '操作员缺少执行或追溯菜单')
+    assert(!auth.menus.includes('order') && !auth.menus.includes('system'), '操作员不应拥有工单或系统菜单')
+    assert(auth.buttons.length === 2 && auth.buttons.includes('lot:track-in') && auth.buttons.includes('lot:track-out'), '操作员按钮权限应只包含 Track In/Out')
+    assert(auth.dataScope === 'SELF_SHIFT', `操作员数据范围应为 SELF_SHIFT，实际为 ${auth.dataScope}`)
+    assert(!auth.topTabs.some(text => text.includes('计划与工单') || text.includes('系统管理')), '操作员顶部导航不应显示计划或系统入口')
+    assert(!auth.sideLinks.some(item => item.href === '/order' || item.href === '/system'), '操作员侧边树不应显示计划或系统入口')
+
+    await navigate(`${baseUrl}/order`)
+    await waitForExpression(`location.pathname === '/overview'`, 5000)
+
+    const denied = await evaluate(`(async () => {
+      const response = await fetch('/api/v1/orders/MO_FORBIDDEN_E2E/release', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token')
+        },
+        body: JSON.stringify({ releaseBy: 'operator' })
+      })
+      return response.json()
+    })()`)
+    assert(denied.code === 403, `操作员越权释放工单未被拒绝: ${JSON.stringify(denied)}`)
+    await assertLayoutClean('operator-rbac')
+    return `role=${auth.role}, menus=${auth.menus.join(',')}, forbiddenCode=${denied.code}`
+  })
+
   const status = consoleErrors.length || networkErrors.length ? 'FAIL' : 'PASS'
   if (status === 'FAIL') {
     steps.push({

@@ -289,8 +289,8 @@ public class RolePermissionService {
             case "PLANNER" -> List.of("dashboard", "order", "trace");
             case "OPERATOR" -> List.of("dashboard", "execution", "trace");
             case "QE" -> List.of("dashboard", "quality", "material", "trace", "ai");
-            case "PE" -> List.of("dashboard", "master", "recipe", "ai");
-            case "EE" -> List.of("dashboard", "equipment", "trace", "ai");
+            case "PE" -> List.of("dashboard", "master", "recipe", "quality", "ai");
+            case "EE" -> List.of("dashboard", "equipment", "quality", "trace", "ai");
             default -> List.of("dashboard", "execution");
         };
     }

@@ -148,10 +148,14 @@ class RolePermissionServiceTest {
         assertThat(operatorPermissions.get("dataScope")).isEqualTo("SELF_SHIFT");
 
         var pePermissions = service.permissions("pe");
+        assertThat((Iterable<String>) pePermissions.get("menus"))
+                .contains("master", "recipe", "quality", "ai");
         assertThat((Iterable<String>) pePermissions.get("buttons"))
                 .contains("quality:mrb-approve", "quality:mrb-escalate", "recipe:publish", "bom:change", "bom:eco-approve");
 
         var eePermissions = service.permissions("ee");
+        assertThat((Iterable<String>) eePermissions.get("menus"))
+                .contains("equipment", "quality", "trace", "ai");
         assertThat((Iterable<String>) eePermissions.get("buttons"))
                 .contains("equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway");
     }
