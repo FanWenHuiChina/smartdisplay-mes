@@ -1,5 +1,8 @@
 package com.visionox.mes.pilot.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.visionox.mes.ai.service.AiKbIndexService;
 import com.visionox.mes.ai.service.AiKnowledgeService;
@@ -29,6 +32,7 @@ import com.visionox.mes.order.entity.ProductionOrder;
 import com.visionox.mes.order.mapper.ProductionOrderMapper;
 import com.visionox.mes.order.service.ErpOrderAdapterService;
 import com.visionox.mes.quality.service.QualityService;
+import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.route.entity.Route;
@@ -37,6 +41,7 @@ import com.visionox.mes.route.service.RouteService;
 import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -322,6 +327,26 @@ class PilotMesServiceTest {
 
         verify(rolePermissionService).dataScopeCondition(any(), any(), eq(""), eq("line_code"), isNull(), isNull());
         verify(lotMapper).selectPage(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void pageRecipesShouldApplyProductStepEquipmentAndStatusFilters() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Recipe.class);
+        when(recipeMapper.selectPage(any(), any())).thenReturn(new Page<>(1, 20));
+
+        pilotMesService.pageRecipes(1, 20, "AMOLED_65", "COATING", "COATER_01", "ACTIVE");
+
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(recipeMapper).selectPage(any(), wrapperCaptor.capture());
+        LambdaQueryWrapper<Recipe> wrapper = wrapperCaptor.getValue();
+        assertThat(wrapper.getSqlSegment())
+                .contains("product_code")
+                .contains("step_code")
+                .contains("equipment_code")
+                .contains("status");
+        assertThat(wrapper.getParamNameValuePairs().values())
+                .contains("AMOLED_65", "COATING", "COATER_01", "ACTIVE");
     }
 
     @Test

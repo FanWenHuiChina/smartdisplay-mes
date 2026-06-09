@@ -63,6 +63,8 @@ const router = read('src/router/index.js')
 const request = read('src/api/request.js')
 const authApi = read('src/api/auth.js')
 const pilotApi = read('src/api/pilot.js')
+const lotApi = read('src/api/lot.js')
+const recipeApi = read('src/api/recipe.js')
 const permissions = read('src/utils/permissions.js')
 const devFallbackUtil = read('src/utils/devFallback.js')
 const viteConfig = read('vite.config.js')
@@ -85,9 +87,11 @@ check('router:login-route', router.includes("path: '/login'"))
 for (const route of requiredRoutes) {
   check(`router:${route}`, router.includes(`path: '${route}'`))
 }
-for (const redirect of ['dashboard', 'lot', 'recipe']) {
-  check(`router:${redirect}-redirect`, router.includes(`path: '${redirect}'`) && router.includes('redirect:'))
-}
+check('router:dashboard-redirect', router.includes("path: 'dashboard'") && router.includes("redirect: '/overview'"))
+check('router:lot-page-route', hasAll(router, ["path: 'lot'", "name: 'LotManagement'", "../views/lot/index.vue"]))
+check('router:recipe-page-route', hasAll(router, ["path: 'recipe'", "name: 'RecipeManagement'", "../views/recipe/index.vue"]))
+check('router:lot-not-redirect', !router.includes("path: 'lot',\n        redirect:"))
+check('router:recipe-not-redirect', !router.includes("path: 'recipe',\n        redirect:"))
 check('router:auth-guard', hasAll(router, ['beforeEach', "localStorage.getItem('token')", 'hasMenu', 'firstAccessiblePath']))
 check('router:preview-permission', hasAll(router, ['preview', 'setPreviewPermissions']))
 
@@ -220,6 +224,31 @@ for (const [name, endpoint] of requiredApiExports) {
   check(`api:${name}`, hasExport(pilotApi, name, endpoint), endpoint)
 }
 
+const requiredLotApiExports = [
+  ['getLotList', '/v1/lots'],
+  ['trackIn', '/v1/lots/${lotNo}/track-in'],
+  ['trackOut', '/v1/lots/${lotNo}/track-out'],
+  ['holdLot', '/v1/lots/${lotNo}/hold'],
+  ['releaseLot', '/v1/lots/${lotNo}/release'],
+  ['reworkLot', '/v1/lots/${lotNo}/rework'],
+  ['scrapLot', '/v1/lots/${lotNo}/scrap']
+]
+
+for (const [name, endpoint] of requiredLotApiExports) {
+  check(`api:lot:${name}`, hasExport(lotApi, name, endpoint), endpoint)
+}
+
+const requiredRecipeApiExports = [
+  ['getRecipeList', '/v1/recipes'],
+  ['getRecipeDetail', '/v1/recipes/${id}'],
+  ['searchRecipe', '/v1/recipes/search'],
+  ['publishRecipe', '/v1/recipes/${id}/publish']
+]
+
+for (const [name, endpoint] of requiredRecipeApiExports) {
+  check(`api:recipe:${name}`, hasExport(recipeApi, name, endpoint), endpoint)
+}
+
 const requiredRoles = ['ADMIN', 'PLANNER', 'OPERATOR', 'QE', 'PE', 'EE']
 for (const role of requiredRoles) {
   check(`rbac:role:${role}`, permissions.includes(`${role}:`) || permissions.includes(`${role}`))
@@ -267,6 +296,8 @@ const pageContracts = [
   ['views/overview/index.vue', ['getOverview'], []],
   ['views/order/index.vue', ['getOrders', 'getLots', 'importErpOrders', 'releaseOrder'], ['order:create', 'order:release']],
   ['views/master/index.vue', ['getSites', 'getProductionLines', 'getShifts', 'getBoms', 'getBomChangeRequests', 'getRecipes', 'publishRecipe', 'publishBomChange'], ['recipe:publish', 'bom:change']],
+  ['views/lot/index.vue', ['getLotList'], ['lot:track-in', 'lot:track-out', 'lot:hold', 'lot:release', 'lot:rework', 'lot:scrap']],
+  ['views/recipe/index.vue', ['getRecipeList', 'getRecipeDetail', 'publishRecipe'], ['recipe:publish']],
   ['views/execution/index.vue', ['getLots', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
   ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
@@ -329,8 +360,13 @@ check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['compar
 check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
 
 const lotView = read('src/views/lot/index.vue')
+const recipeView = read('src/views/recipe/index.vue')
 const executionView = read('src/views/execution/index.vue')
+check('page:views/lot/index.vue:workbench-style', hasAll(lotView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Lot page must use current light workbench components')
 check('page:views/lot/index.vue:track-in-rework-status', lotView.includes("['READY', 'REWORK'].includes(row.status)"), 'Lot page Track In action must allow rework lots')
+check('page:views/recipe/index.vue:workbench-style', hasAll(recipeView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Recipe page must use current light workbench components')
+check('page:views/recipe/index.vue:v1-api-import', recipeView.includes("@/api/recipe") && !recipeView.includes("@/api/pilot"), 'Recipe page must use dedicated v1 recipe API wrapper')
+check('page:views/recipe/index.vue:publish-action', hasAll(recipeView, ['handlePublish', 'publishRecipe', "hasButton('recipe:publish')"]), 'Recipe page must expose permission-gated publish action')
 check('page:views/execution/index.vue:track-in-rework-status', executionView.includes("['READY', 'REWORK'].includes(lot.status)"), 'Execution page Track In action must allow rework lots')
 
 check('package:verify-script', packageJson.scripts?.['verify:frontend-contract'] === 'node scripts/verify-frontend-contract.mjs')
