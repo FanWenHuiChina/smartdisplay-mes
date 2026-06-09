@@ -364,6 +364,7 @@ const systemView = read('src/views/system/index.vue')
 check('page:views/system/index.vue:summary-driven-roles', hasAll(systemView, ['getSystemSummary', 'systemSummary', 'permissionSnapshots', 'mapRolePermission']), 'System role matrix must be driven by /system/summary permissions')
 check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
 check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
+check('page:views/system/index.vue:audit-snapshot-review', hasAll(systemView, ['requestSnapshot', 'selectedAuditLog', 'auditSnapshotSections', 'showAuditSnapshot', 'formatSnapshotBlock']), 'System audit logs must expose structured request snapshots for review')
 
 const lotView = read('src/views/lot/index.vue')
 const recipeView = read('src/views/recipe/index.vue')

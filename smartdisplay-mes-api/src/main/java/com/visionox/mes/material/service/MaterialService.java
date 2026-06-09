@@ -1,5 +1,6 @@
 package com.visionox.mes.material.service;
 
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.visionox.mes.auth.security.AuthContext;
 import com.visionox.mes.auth.security.RolePermissionService;
@@ -58,6 +59,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -1093,6 +1095,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许领取: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String assignee = text(request, "assignedTo", text(request, "operator", AuthContext.username()));
         if (assignee.isBlank()) {
             throw new BusinessException("库位任务领取人不能为空");
@@ -1105,7 +1108,8 @@ public class MaterialService {
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
         audit("MATERIAL_LOCATION_TASK_ASSIGN", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
-                "领取库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), assignee);
+                "领取库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), assignee,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }
 
@@ -1115,6 +1119,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许完成: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String operator = text(request, "operator", text(request, "executor", AuthContext.username()));
         if (operator.isBlank()) {
             operator = valueOr(task.getAssignedTo(), AuthContext.username());
@@ -1145,7 +1150,7 @@ public class MaterialService {
         audit("MATERIAL_LOCATION_TASK_COMPLETE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "完成库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
                         + ", actualQty=" + nvl(task.getActualQty()).stripTrailingZeros().toPlainString(),
-                operator);
+                operator, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return locationTaskResult(task, batch);
     }
 
@@ -1155,6 +1160,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许取消: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String operator = text(request, "operator", AuthContext.username());
         String cancelReason = text(request, "cancelReason", text(request, "reason", "WMS task cancelled"));
         String targetStatus = normalizeLocationTaskCancelStatus(text(request, "status",
@@ -1168,7 +1174,8 @@ public class MaterialService {
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
         audit("MATERIAL_LOCATION_TASK_CANCEL", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
-                targetStatus + " 库位任务: " + cancelReason, operator);
+                targetStatus + " 库位任务: " + cancelReason, operator,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }
 
@@ -3445,11 +3452,37 @@ public class MaterialService {
     }
 
     private void audit(String action, String bizNo, String bizType, String description, String operator) {
+        audit(action, bizNo, bizType, description, operator, null);
+    }
+
+    private void audit(String action, String bizNo, String bizType, String description, String operator, String requestSnapshot) {
         try {
-            auditLogService.record(action, bizNo, bizType, description, operator, "material-service", null);
+            auditLogService.record(action, bizNo, bizType, description, operator, "material-service", requestSnapshot);
         } catch (Exception e) {
             log.warn("物料审计日志写入失败，已降级不阻断主流程: action={}, bizNo={}, reason={}", action, bizNo, e.getMessage());
         }
+    }
+
+    private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("before", before == null ? Map.of() : before);
+        snapshot.put("after", after == null ? Map.of() : after);
+        snapshot.put("changedFields", changedFields(before, after));
+        snapshot.put("request", request == null ? Map.of() : request);
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private List<String> changedFields(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> safeBefore = before == null ? Map.of() : before;
+        Map<String, Object> safeAfter = after == null ? Map.of() : after;
+        return safeAfter.keySet().stream()
+                .filter(key -> !Objects.equals(safeBefore.get(key), safeAfter.get(key)))
+                .sorted()
+                .toList();
+    }
+
+    private Map<String, Object> safeRequest(Map<String, Object> request) {
+        return request == null ? Map.of() : new LinkedHashMap<>(request);
     }
 
     private String requiredText(Map<String, Object> request, String key) {

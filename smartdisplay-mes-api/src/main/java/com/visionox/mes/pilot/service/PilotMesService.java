@@ -2431,7 +2431,8 @@ public class PilotMesService {
                 "object", valueOr(log.getBizNo(), "-"),
                 "action", valueOr(log.getAction(), "-"),
                 "result", valueOr(log.getResult(), "-"),
-                "source", valueOr(log.getSource(), "-")
+                "source", valueOr(log.getSource(), "-"),
+                "requestSnapshot", valueOr(log.getRequestSnapshot(), "")
         );
     }
 

@@ -39,6 +39,7 @@ import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.route.entity.Route;
 import com.visionox.mes.route.entity.RouteStep;
 import com.visionox.mes.route.service.RouteService;
+import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -184,6 +185,33 @@ class PilotMesServiceTest {
 
         assertThat(result).isEqualTo(response);
         verify(erpOrderAdapterService).importOrders(request, "system");
+    }
+
+    @Test
+    void auditLogsShouldExposeRequestSnapshotForUiReview() {
+        AuditLog log = new AuditLog();
+        log.setAction("MATERIAL_LOCATION_TASK_COMPLETE");
+        log.setBizNo("MLT-001");
+        log.setOperator("wms1001");
+        log.setResult("SUCCESS");
+        log.setSource("material-service");
+        log.setCreatedTime(LocalDateTime.of(2026, 6, 9, 21, 46, 39));
+        log.setRequestSnapshot("{\"before\":{\"status\":\"ASSIGNED\"},\"after\":{\"status\":\"DONE\"},\"changedFields\":[\"status\"],\"request\":{\"operator\":\"wms1001\"}}");
+        when(auditLogService.list("MLT-001", 50)).thenReturn(List.of(log));
+
+        List<Map<String, Object>> rows = pilotMesService.auditLogs("MLT-001");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("object", "MLT-001")
+                .containsEntry("action", "MATERIAL_LOCATION_TASK_COMPLETE")
+                .containsEntry("result", "SUCCESS")
+                .containsEntry("source", "material-service");
+        assertThat(rows.get(0).get("requestSnapshot").toString())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"changedFields\"")
+                .contains("\"operator\":\"wms1001\"");
     }
 
     @Test

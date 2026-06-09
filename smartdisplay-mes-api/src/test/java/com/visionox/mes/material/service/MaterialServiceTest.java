@@ -570,7 +570,18 @@ class MaterialServiceTest {
         verify(materialLocationMapper).updateById(target);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
         verify(materialLocationTaskMapper, times(2)).updateById(task);
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> completeSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), completeSnapshotCaptor.capture());
+        assertThat(completeSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"status\":\"DONE\"")
+                .contains("\"actualQty\":0")
+                .contains("\"actualQty\":100")
+                .contains("\"request\":{\"operator\":\"wms1001\"}")
+                .contains("\"changedFields\"");
     }
 
     @Test
@@ -674,8 +685,29 @@ class MaterialServiceTest {
         assertThat(task.getCancelReason()).isEqualTo("目标库位临时锁定");
         assertThat(cancelled.get("task")).isInstanceOf(Map.class);
         verify(materialLocationTaskMapper, times(2)).updateById(task);
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_ASSIGN"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1002"), eq("material-service"), any());
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CANCEL"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> assignSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_ASSIGN"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1002"), eq("material-service"), assignSnapshotCaptor.capture());
+        assertThat(assignSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"assignedTo\":\"wms1002\"")
+                .contains("\"request\":{\"assignedTo\":\"wms1002\"}")
+                .contains("\"changedFields\"");
+
+        ArgumentCaptor<String> cancelSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CANCEL"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), cancelSnapshotCaptor.capture());
+        assertThat(cancelSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"status\":\"CANCELLED\"")
+                .contains("\"cancelledBy\":\"wms1001\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
     }
 
     @Test

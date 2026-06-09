@@ -199,7 +199,7 @@
           </div>
           <table class="mes-table">
             <thead>
-              <tr><th>时间</th><th>用户</th><th>对象</th><th>操作</th><th>结果</th><th>来源</th></tr>
+              <tr><th>时间</th><th>用户</th><th>对象</th><th>操作</th><th>结果</th><th>来源</th><th>快照</th></tr>
             </thead>
             <tbody>
               <tr v-for="log in filteredAuditLogs" :key="log.key">
@@ -209,11 +209,28 @@
                 <td>{{ log.action }}</td>
                 <td><span class="status-tag" :class="log.type">{{ log.result }}</span></td>
                 <td>{{ log.source }}</td>
+                <td>
+                  <button class="mes-btn tiny" :disabled="!log.hasSnapshot" @click="showAuditSnapshot(log)">
+                    {{ log.hasSnapshot ? '查看' : '无' }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
           <div v-if="!filteredAuditLogs.length" class="audit-empty">
             暂无匹配审计日志
+          </div>
+          <div v-if="selectedAuditLog" class="audit-snapshot-panel">
+            <div class="audit-snapshot__head">
+              <strong>{{ selectedAuditLog.object }} / {{ selectedAuditLog.action }}</strong>
+              <button class="mes-btn tiny" @click="selectedAuditLog = null">收起</button>
+            </div>
+            <div class="audit-snapshot__grid">
+              <div v-for="section in auditSnapshotSections" :key="section.key" class="snapshot-block">
+                <b>{{ section.label }}</b>
+                <pre>{{ section.value }}</pre>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -272,6 +289,7 @@ const permissionChanges = ref([])
 const loadingPermissionChanges = ref(false)
 const loadingPermissionReload = ref(false)
 const selectedPermissionChange = ref(null)
+const selectedAuditLog = ref(null)
 const systemUsers = ref([])
 const systemSummary = ref(null)
 const ruleActionLoading = ref('')
@@ -394,6 +412,7 @@ function mapAuditLog(log, index = 0) {
   const object = log.object || log.bizNo || '-'
   const action = log.action || '-'
   const result = log.result || '成功'
+  const requestSnapshot = log.requestSnapshot || ''
   return {
     key: `${time}-${object}-${action}-${index}`,
     time,
@@ -402,8 +421,29 @@ function mapAuditLog(log, index = 0) {
     action,
     result,
     type: resultType(result),
-    source: log.source || '-'
+    source: log.source || '-',
+    requestSnapshot,
+    hasSnapshot: Boolean(requestSnapshot && requestSnapshot !== '{}')
   }
+}
+
+const auditSnapshotSections = computed(() => {
+  if (!selectedAuditLog.value?.requestSnapshot) return []
+  const snapshot = parseSnapshot(selectedAuditLog.value.requestSnapshot)
+  return [
+    { key: 'before', label: '变更前', value: formatSnapshotBlock(snapshot.before) },
+    { key: 'after', label: '变更后', value: formatSnapshotBlock(snapshot.after) },
+    { key: 'changedFields', label: '变更字段', value: formatSnapshotBlock(snapshot.changedFields) },
+    { key: 'request', label: '请求参数', value: formatSnapshotBlock(snapshot.request) }
+  ]
+})
+
+function showAuditSnapshot(log) {
+  if (!log.hasSnapshot) {
+    ElMessage.info('该审计记录没有结构化快照')
+    return
+  }
+  selectedAuditLog.value = log
 }
 
 function actionMatches(action = '', type = '') {
@@ -446,8 +486,8 @@ function exportAuditLogs() {
   }
 
   const rows = [
-    ['时间', '用户', '对象', '操作', '结果', '来源'],
-    ...filteredAuditLogs.value.map(log => [log.time, log.user, log.object, log.action, log.result, log.source])
+    ['时间', '用户', '对象', '操作', '结果', '来源', '快照'],
+    ...filteredAuditLogs.value.map(log => [log.time, log.user, log.object, log.action, log.result, log.source, log.requestSnapshot])
   ]
   const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
@@ -584,7 +624,7 @@ function parseSnapshot(value) {
   try {
     return JSON.parse(value)
   } catch (error) {
-    console.warn('权限快照解析失败', error)
+    console.warn('快照解析失败', error)
     return {}
   }
 }
@@ -609,6 +649,16 @@ function formatSnapshotValue(value) {
     return '-'
   }
   return String(value)
+}
+
+function formatSnapshotBlock(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  return JSON.stringify(value, null, 2)
 }
 
 function splitPermissionCodes(value = '') {
@@ -820,6 +870,55 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.audit-snapshot-panel {
+  margin-top: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  background: #fff;
+  padding: 10px;
+}
+
+.audit-snapshot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.audit-snapshot__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.snapshot-block {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.74);
+  padding: 8px;
+}
+
+.snapshot-block b {
+  display: block;
+  padding-bottom: 6px;
+  color: var(--mes-text);
+  font-size: 12px;
+}
+
+.snapshot-block pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: var(--mes-sub);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .permission-change-panel {
   margin-top: 12px;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
@@ -869,6 +968,10 @@ onMounted(() => {
 
 @media (max-width: 860px) {
   .audit-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-snapshot__grid {
     grid-template-columns: 1fr;
   }
 }

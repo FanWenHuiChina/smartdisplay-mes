@@ -32,7 +32,7 @@
 | 替代料验证报告附件 | BOM 变更提交/审批可保存验证报告附件元数据，BOM 变更列表返回附件数量和附件明细 | 已落地，首版附件元数据 |
 | WMS库存事务 | 支持入库、冻结、解冻、退料、盘点、事务履历、审计和批次行锁 | 已落地 |
 | WMS库位策略 | 支持库位主数据、存储类型、物料类别、容量、环境窗口、优先级、锁定状态；入库校验库位状态/容量/类别/单位并更新占用 | 已落地，首版策略 |
-| WMS库位任务 | 支持上架、整批移库、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消分步状态流；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED` |
+| WMS库位任务 | 支持上架、整批移库、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消分步状态流；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED`；2026-06-09 已补齐领取/完成/取消审计 `before/after/changedFields/request` 快照 |
 | 来料IQC/COA | 支持供应商批次来料判定、COA编号、附件元数据、批次质量状态联动和审计 | 已落地 |
 | 供应商绩效评分/趋势 | 基于物料批次、来料IQC与8D记录聚合批次数、PASS/HOLD/NG、通过率、风险批次、评分、风险等级和最近6个月月度趋势，并提供物料页只读看板 | 已落地，首版聚合评分和趋势 |
 | 供应商准入/8D整改 | 支持供应商主数据、准入状态评估、8D整改单创建/关闭、IQC NG/HOLD 自动开8D、供应商风险降级、审计与前端处置工作区 | 已落地，V1.40 已通过后端/前端/Flyway 验收 |
@@ -70,11 +70,11 @@
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.41` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，392 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，393 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、系统审计快照查看入口和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-181400.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260609-224839.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
 | Flyway | `db/migration/V1.1-V1.41` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.41 已通过静态验收 |

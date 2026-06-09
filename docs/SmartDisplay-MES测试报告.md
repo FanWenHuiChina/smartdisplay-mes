@@ -18,25 +18,26 @@
 
 | 验证项 | 命令 | 结果 | 说明 |
 | --- | --- | --- | --- |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 219, Failures: 0, Errors: 0, Skipped: 0` |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 220, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.31 AI定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKnowledgeServiceTest,AiModelConfigServiceTest,AiRecordServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 20, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.32 AI留痕查询回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiRecordServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.33 知识库索引任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKbIndexServiceTest,AiKnowledgeServiceTest,RolePermissionServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 31, Failures: 0, Errors: 0, Skipped: 0` |
 | ERP导入与性能脚本回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=ErpOrderAdapterServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 50, Failures: 0, Errors: 0, Skipped: 0` |
 | MRB纪要版本管理回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 45, Failures: 0, Errors: 0, Skipped: 0` |
 | MRB会签SLA升级回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 47, Failures: 0, Errors: 0, Skipped: 0` |
-| 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 43, Failures: 0, Errors: 0, Skipped: 0`；覆盖供应商到期复审生成 |
+| 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 43, Failures: 0, Errors: 0, Skipped: 0`；覆盖供应商到期复审生成和 WMS 库位任务领取/完成/取消审计快照 |
+| WMS库位任务审计可见性回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 71, Failures: 0, Errors: 0, Skipped: 0`；覆盖库位任务结构化快照落库和 `/system/audit-logs` 返回 `requestSnapshot` |
 | 工单释放预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=PilotMesServiceTest test` | 通过 | `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`；覆盖释放前 Route/BOM/设备/Recipe/Lot 拆分校验和缺少生效 BOM 阻断 |
 | Track In预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=TrackInServiceTest test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；覆盖无副作用校验矩阵、设备能力失败阻断、正式 Track In 写接口复用同一套阻断逻辑 |
 | 核心执行审计差异快照回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`；验证审计快照包含 `before/after/changedFields/request`，并覆盖 Rework Route/起始工序校验、Scrap 二次确认和 Recipe 筛选 |
 | RBAC权限口径回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；验证 PE/EE 质量菜单口径、操作员 Track In/Out 写权限和跨域写操作拒绝 |
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
-| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 392 项检查 |
+| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计快照查看入口、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 393 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
-| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 19 步通过；覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报和网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-181400.md` |
+| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 19 步通过；覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报和网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-224839.md` |
 | CI 浏览器 E2E 门禁 | `.github/workflows/ci.yml` 的 `Docker browser E2E` job | 已接入 | 在 `ubuntu-latest` 中启动 Docker Compose 三服务，等待前端和后端代理就绪后运行 `node scripts/run-browser-e2e.mjs`，并上传浏览器 E2E 报告 |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.41` 共 41 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
@@ -60,12 +61,12 @@
 - 权限变更申请、审批、运行期权限快照、启动恢复、手动重载和审计。
 - 审计请求上下文：请求方法、URI、客户端IP、User-Agent 自动落库；覆盖代理IP解析、字段截断和 ThreadLocal 清理。
 - 关键写接口失败审计：覆盖失败路径动作解析、`result=FAIL` 写入、异常处理器触发和非关键读请求忽略。
-- 核心执行审计差异快照：工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 写入 `before/after/changedFields/request` 结构化快照。
+- 核心执行审计差异快照：工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 写入 `before/after/changedFields/request` 结构化快照；系统审计页可查看接口返回的 `requestSnapshot`。
 - Route 生效工序、防跳站和 Route 驱动 Lot 推进。
 - Recipe 唯一性、创建、发布、停用和生效 Recipe 查询。
 - Track In 状态、Route、设备、Recipe、Hold、班次和物料齐套校验；`GET /api/v1/lots/{lotNo}/track-in-checks` 返回无副作用校验矩阵，正式 Track In 写接口复用同一套阻断逻辑。
 - Track Out 过站记录、质量判定、物料消耗。
-- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务和物料写接口权限。
+- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务、领取/完成/取消审计差异快照和物料写接口权限。
 - 来料 IQC 判定、COA/检验附件元数据留痕、批次质量状态联动、IQC 写接口权限和失败审计映射。
 - 供应商绩效评分与趋势：基于物料批次、来料 IQC 和8D整改记录聚合 PASS/HOLD/NG、通过率、风险批次、评分、月度趋势和风险等级，覆盖高风险排序、超期8D扣分且不额外读取 COA 附件。
 - 供应商准入复审任务：覆盖复审任务创建、重复 OPEN 任务拦截、复审通过/驳回决策、供应商状态回写、前端物料页复审工作区和失败审计映射。
