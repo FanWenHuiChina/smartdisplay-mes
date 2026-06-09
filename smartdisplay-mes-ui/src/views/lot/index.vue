@@ -1,177 +1,150 @@
 <template>
-  <div>
-    <!-- 查询表单 -->
-    <el-card shadow="hover" style="margin-bottom: 20px">
-      <el-form :inline="true" :model="queryForm">
-        <el-form-item label="Lot批次号">
-          <el-input v-model="queryForm.lotNo" placeholder="请输入Lot批次号" clearable style="width: 200px" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="queryForm.status" placeholder="全部状态" clearable style="width: 150px">
-            <el-option label="READY" value="READY" />
-            <el-option label="PROCESSING" value="PROCESSING" />
-            <el-option label="HOLD" value="HOLD" />
-            <el-option label="COMPLETED" value="COMPLETED" />
-            <el-option label="REWORK" value="REWORK" />
-            <el-option label="SCRAP" value="SCRAP" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleQuery" :icon="Search">查询</el-button>
-          <el-button @click="handleReset" :icon="Refresh">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <section>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Lot 管理 / 状态机与流转控制</h1>
+        <p class="page-desc">按 Lot 状态机执行 Track In、Track Out、Hold、Release、Rework 和 Scrap，所有敏感动作进入审计链路。</p>
+      </div>
+      <div class="page-actions">
+        <button class="mes-btn" :disabled="loading" @click="fetchLotList">{{ loading ? '刷新中' : '刷新' }}</button>
+        <button v-if="hasAnyTrackIn" class="mes-btn primary" :disabled="!firstTrackInLot" @click="openTrackIn(firstTrackInLot)">Track In</button>
+        <button v-if="hasAnyTrackOut" class="mes-btn primary" :disabled="!firstProcessingLot" @click="openTrackOut(firstProcessingLot)">Track Out</button>
+        <button v-if="hasAnyHold" class="mes-btn warn" :disabled="!firstHoldableLot" @click="openHold(firstHoldableLot)">Hold</button>
+      </div>
+    </div>
 
-    <!-- Lot列表 -->
-    <el-card shadow="hover">
-      <el-table :data="lotList" v-loading="loading" stripe :row-class-name="tableRowClassName">
-        <el-table-column prop="lotNo" label="Lot批次号" width="140" fixed />
-        <el-table-column prop="productCode" label="产品编码" width="120" />
-        <el-table-column prop="currentStepCode" label="当前工序" width="130" />
-        <el-table-column prop="currentEquipmentCode" label="当前设备" width="130" />
-        <el-table-column prop="status" label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getStatusTagType(row.status)">{{ row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="qty" label="数量" width="80" />
-        <el-table-column prop="holdFlag" label="Hold标志" width="90">
-          <template #default="{ row }">
-            <el-tag v-if="row.holdFlag === 1" type="danger" size="small">Hold</el-tag>
-            <el-tag v-else type="success" size="small">正常</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="560" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="handleTrackIn(row)"
-              :disabled="!canTrackIn(row)"
-              :icon="Right"
+    <div class="mes-grid cols-4">
+      <div v-for="metric in statusMetrics" :key="metric.label" class="mes-card metric-card">
+        <div class="metric-label"><span>{{ metric.label }}</span><span>{{ metric.note }}</span></div>
+        <div class="metric-value">{{ metric.value }}</div>
+        <div class="metric-meta"><span>{{ metric.left }}</span><span>{{ metric.right }}</span></div>
+      </div>
+    </div>
+
+    <div class="mes-card section-gap">
+      <div class="mes-card__head">
+        <div class="mes-card__title">Lot 队列</div>
+        <span class="status-tag blue">{{ pagination.total }} 条</span>
+      </div>
+      <div class="mes-card__body">
+        <div class="mes-filters">
+          <div class="mes-field">
+            <label>Lot 批次</label>
+            <input v-model.trim="queryForm.lotNo" class="mes-input" placeholder="请输入 Lot" @keyup.enter="handleQuery" />
+          </div>
+          <div class="mes-field">
+            <label>产品</label>
+            <input v-model.trim="queryForm.productCode" class="mes-input" placeholder="AMOLED_65" @keyup.enter="handleQuery" />
+          </div>
+          <div class="mes-field">
+            <label>状态</label>
+            <select v-model="queryForm.status" class="mes-select">
+              <option value="">全部状态</option>
+              <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>工序</label>
+            <select v-model="queryForm.stepCode" class="mes-select">
+              <option value="">全部工序</option>
+              <option v-for="step in stepOptions" :key="step" :value="step">{{ step }}</option>
+            </select>
+          </div>
+          <button class="mes-btn primary" :disabled="loading" @click="handleQuery">
+            {{ loading ? '查询中' : '查询' }}
+          </button>
+        </div>
+
+        <table class="mes-table lot-table">
+          <thead>
+            <tr>
+              <th>Lot</th>
+              <th>产品</th>
+              <th>工序</th>
+              <th>设备</th>
+              <th>数量</th>
+              <th>状态</th>
+              <th>Hold</th>
+              <th>下一动作</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="lot in displayLots"
+              :key="lot.lotNo"
+              :class="{ danger: isHeld(lot), selected: selectedLot?.lotNo === lot.lotNo }"
+              @click="selectedLot = lot"
             >
-              Track In
-            </el-button>
-            <el-button
-              type="success"
-              size="small"
-              @click="handleTrackOut(row)"
-              :disabled="!canTrackOut(row)"
-              :icon="Check"
-            >
-              Track Out
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="handleHold(row)"
-              :disabled="!canHold(row)"
-              :icon="WarningFilled"
-            >
-              Hold
-            </el-button>
-            <el-button
-              type="info"
-              size="small"
-              @click="handleRelease(row)"
-              :disabled="!canRelease(row)"
-              :icon="CircleCheck"
-            >
-              Release
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="handleRework(row)"
-              :disabled="!canRework(row)"
-              :icon="RefreshLeft"
-            >
-              Rework
-            </el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleScrap(row)"
-              :disabled="!canScrap(row)"
-              :icon="Delete"
-            >
-              Scrap
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+              <td>{{ lot.lotNo }}</td>
+              <td>{{ lot.productCode || '-' }}</td>
+              <td>{{ lot.currentStepCode || '-' }}</td>
+              <td>{{ lot.currentEquipmentCode || '待分配' }}</td>
+              <td>{{ lot.qty || 0 }}</td>
+              <td><span class="status-tag" :class="statusType(lot.status)">{{ lot.status || '-' }}</span></td>
+              <td>
+                <span class="status-tag" :class="isHeld(lot) ? 'red' : 'green'">
+                  {{ isHeld(lot) ? '已 Hold' : '正常' }}
+                </span>
+              </td>
+              <td>{{ nextActionText(lot) }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="mes-btn tiny primary" :disabled="!canTrackIn(lot)" @click.stop="openTrackIn(lot)">进站</button>
+                  <button class="mes-btn tiny primary" :disabled="!canTrackOut(lot)" @click.stop="openTrackOut(lot)">出站</button>
+                  <button class="mes-btn tiny warn" :disabled="!canHold(lot)" @click.stop="openHold(lot)">Hold</button>
+                  <button class="mes-btn tiny" :disabled="!canRelease(lot)" @click.stop="openRelease(lot)">放行</button>
+                  <button class="mes-btn tiny" :disabled="!canRework(lot)" @click.stop="openRework(lot)">返工</button>
+                  <button class="mes-btn tiny warn" :disabled="!canScrap(lot)" @click.stop="openScrap(lot)">报废</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!displayLots.length">
+              <td colspan="9">没有符合条件的 Lot</td>
+            </tr>
+          </tbody>
+        </table>
 
-      <el-pagination
-        v-model:current-page="pagination.page"
-        v-model:page-size="pagination.size"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        style="margin-top: 20px; justify-content: flex-end"
-        @size-change="fetchLotList"
-        @current-change="fetchLotList"
-      />
-    </el-card>
+        <div class="pager-row">
+          <el-pagination
+            v-model:current-page="pagination.page"
+            v-model:page-size="pagination.size"
+            :total="pagination.total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="fetchLotList"
+            @current-change="fetchLotList"
+          />
+        </div>
+      </div>
+    </div>
 
-    <!-- Track In弹窗 -->
-    <TrackInDialog
-      v-model="trackInVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-
-    <!-- Track Out弹窗 -->
-    <TrackOutDialog
-      v-model="trackOutVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-
-    <!-- Hold弹窗 -->
-    <HoldDialog
-      v-model="holdVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-
-    <!-- Release弹窗 -->
-    <ReleaseDialog
-      v-model="releaseVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-
-    <ReworkDialog
-      v-model="reworkVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-
-    <ScrapDialog
-      v-model="scrapVisible"
-      :lot-data="selectedLot"
-      @success="handleOperationSuccess"
-    />
-  </div>
+    <TrackInDialog v-model="trackInVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+    <TrackOutDialog v-model="trackOutVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+    <HoldDialog v-model="holdVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+    <ReleaseDialog v-model="releaseVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+    <ReworkDialog v-model="reworkVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+    <ScrapDialog v-model="scrapVisible" :lot-data="selectedLot" @success="handleOperationSuccess" />
+  </section>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Right, Check, WarningFilled, CircleCheck, RefreshLeft, Delete } from '@element-plus/icons-vue'
 import { getLotList } from '@/api/lot'
 import { hasButton } from '@/utils/permissions'
-import TrackInDialog from './components/TrackInDialog.vue'
-import TrackOutDialog from './components/TrackOutDialog.vue'
 import HoldDialog from './components/HoldDialog.vue'
 import ReleaseDialog from './components/ReleaseDialog.vue'
 import ReworkDialog from './components/ReworkDialog.vue'
 import ScrapDialog from './components/ScrapDialog.vue'
+import TrackInDialog from './components/TrackInDialog.vue'
+import TrackOutDialog from './components/TrackOutDialog.vue'
+
+const statusOptions = ['CREATED', 'READY', 'PROCESSING', 'HOLD', 'COMPLETED', 'REWORK', 'SCRAP']
 
 const loading = ref(false)
 const lotList = ref([])
-const selectedLot = ref({})
+const selectedLot = ref(null)
 const trackInVisible = ref(false)
 const trackOutVisible = ref(false)
 const holdVisible = ref(false)
@@ -181,7 +154,9 @@ const scrapVisible = ref(false)
 
 const queryForm = reactive({
   lotNo: '',
-  status: ''
+  productCode: '',
+  status: '',
+  stepCode: ''
 })
 
 const pagination = reactive({
@@ -190,130 +165,178 @@ const pagination = reactive({
   total: 0
 })
 
-// 获取Lot列表
-const fetchLotList = async () => {
+const hasAnyTrackIn = computed(() => hasButton('lot:track-in'))
+const hasAnyTrackOut = computed(() => hasButton('lot:track-out'))
+const hasAnyHold = computed(() => hasButton('lot:hold'))
+const stepOptions = computed(() => [...new Set(lotList.value.map(lot => lot.currentStepCode).filter(Boolean))])
+const displayLots = computed(() => {
+  const product = queryForm.productCode.trim().toLowerCase()
+  const step = queryForm.stepCode
+  return lotList.value.filter(lot => {
+    const matchesProduct = !product || String(lot.productCode || '').toLowerCase().includes(product)
+    const matchesStep = !step || lot.currentStepCode === step
+    return matchesProduct && matchesStep
+  })
+})
+
+const firstTrackInLot = computed(() => displayLots.value.find(canTrackIn))
+const firstProcessingLot = computed(() => displayLots.value.find(canTrackOut))
+const firstHoldableLot = computed(() => displayLots.value.find(canHold))
+
+const statusMetrics = computed(() => {
+  const rows = displayLots.value
+  const count = status => rows.filter(lot => lot.status === status).length
+  const held = rows.filter(isHeld).length
+  return [
+    { label: '可进站', value: count('READY') + count('REWORK'), note: 'READY/REWORK', left: '执行入口', right: '8 项校验' },
+    { label: '加工中', value: count('PROCESSING'), note: 'PROCESSING', left: '待出站', right: '参数采集' },
+    { label: 'Hold', value: held, note: '异常控制', left: '需 MRB', right: '禁止进站' },
+    { label: '完成/报废', value: count('COMPLETED') + count('SCRAP'), note: '闭环结果', left: '追溯可查', right: '审计留痕' }
+  ]
+})
+
+async function fetchLotList() {
   loading.value = true
   try {
     const params = {
       current: pagination.page,
-      size: pagination.size,
-      ...queryForm
+      size: pagination.size
     }
+    if (queryForm.lotNo) params.lotNo = queryForm.lotNo
+    if (queryForm.status) params.status = queryForm.status
     const data = await getLotList(params)
-    // 后端返回IPage分页对象
     lotList.value = data?.records || []
     pagination.total = data?.total || 0
+    if (!selectedLot.value || !lotList.value.some(lot => lot.lotNo === selectedLot.value?.lotNo)) {
+      selectedLot.value = displayLots.value[0] || lotList.value[0] || null
+    }
   } catch (error) {
-    console.error('获取Lot列表失败:', error)
+    console.error('获取 Lot 列表失败:', error)
   } finally {
     loading.value = false
   }
 }
 
-// 查询
-const handleQuery = () => {
+function handleQuery() {
   pagination.page = 1
   fetchLotList()
 }
 
-// 重置
-const handleReset = () => {
-  queryForm.lotNo = ''
-  queryForm.status = ''
-  pagination.page = 1
-  fetchLotList()
+function isHeld(lot) {
+  return lot?.status === 'HOLD' || Number(lot?.holdFlag || 0) === 1
 }
 
-// 状态标签类型
-const getStatusTagType = (status) => {
+function statusType(status) {
   const typeMap = {
-    'READY': '',
-    'PROCESSING': 'success',
-    'HOLD': 'danger',
-    'COMPLETED': 'info',
-    'REWORK': 'warning',
-    'SCRAP': 'danger'
+    CREATED: 'gray',
+    READY: 'blue',
+    PROCESSING: 'green',
+    HOLD: 'red',
+    COMPLETED: 'teal',
+    REWORK: 'amber',
+    SCRAP: 'red'
   }
-  return typeMap[status] || ''
+  return typeMap[status] || 'gray'
 }
 
-// 行样式（Hold状态高亮）
-const tableRowClassName = ({ row }) => {
-  return row.status === 'HOLD' ? 'hold-row' : ''
+function nextActionText(lot) {
+  if (canTrackIn(lot)) return 'Track In'
+  if (canTrackOut(lot)) return 'Track Out'
+  if (canRelease(lot)) return 'Release / Rework / Scrap'
+  if (lot?.status === 'COMPLETED') return '已完成'
+  if (lot?.status === 'SCRAP') return '已报废'
+  return '待校验'
 }
 
-// 操作权限判断
-const canTrackIn = (row) => {
-  return hasButton('lot:track-in') && ['READY', 'REWORK'].includes(row.status) && row.holdFlag === 0
+function canTrackIn(row) {
+  if (!row) return false
+  return hasButton('lot:track-in') && ['READY', 'REWORK'].includes(row.status) && !isHeld(row)
 }
 
-const canTrackOut = (row) => {
-  return hasButton('lot:track-out') && row.status === 'PROCESSING'
+function canTrackOut(lot) {
+  return hasButton('lot:track-out') && lot?.status === 'PROCESSING'
 }
 
-const canHold = (row) => {
-  return hasButton('lot:hold') && (row.status === 'READY' || row.status === 'PROCESSING') && row.holdFlag === 0
+function canHold(lot) {
+  return hasButton('lot:hold') && ['READY', 'PROCESSING'].includes(lot?.status) && !isHeld(lot)
 }
 
-const canRelease = (row) => {
-  return hasButton('lot:release') && row.status === 'HOLD' && row.holdFlag === 1
+function canRelease(lot) {
+  return hasButton('lot:release') && isHeld(lot)
 }
 
-const canRework = (row) => {
-  return hasButton('lot:rework') && row.status === 'HOLD' && row.holdFlag === 1
+function canRework(lot) {
+  return hasButton('lot:rework') && isHeld(lot)
 }
 
-const canScrap = (row) => {
-  return hasButton('lot:scrap') && row.status === 'HOLD' && row.holdFlag === 1
+function canScrap(lot) {
+  return hasButton('lot:scrap') && isHeld(lot)
 }
 
-// 操作处理
-const handleTrackIn = (row) => {
-  selectedLot.value = row
-  trackInVisible.value = true
+function requireLot(lot) {
+  if (!lot) {
+    ElMessage.warning('当前没有可操作的 Lot')
+    return false
+  }
+  selectedLot.value = lot
+  return true
 }
 
-const handleTrackOut = (row) => {
-  selectedLot.value = row
-  trackOutVisible.value = true
+function openTrackIn(lot) {
+  if (requireLot(lot)) trackInVisible.value = true
 }
 
-const handleHold = (row) => {
-  selectedLot.value = row
-  holdVisible.value = true
+function openTrackOut(lot) {
+  if (requireLot(lot)) trackOutVisible.value = true
 }
 
-const handleRelease = (row) => {
-  selectedLot.value = row
-  releaseVisible.value = true
+function openHold(lot) {
+  if (requireLot(lot)) holdVisible.value = true
 }
 
-const handleRework = (row) => {
-  selectedLot.value = row
-  reworkVisible.value = true
+function openRelease(lot) {
+  if (requireLot(lot)) releaseVisible.value = true
 }
 
-const handleScrap = (row) => {
-  selectedLot.value = row
-  scrapVisible.value = true
+function openRework(lot) {
+  if (requireLot(lot)) reworkVisible.value = true
 }
 
-// 操作成功回调
-const handleOperationSuccess = () => {
+function openScrap(lot) {
+  if (requireLot(lot)) scrapVisible.value = true
+}
+
+function handleOperationSuccess() {
   fetchLotList()
 }
 
-onMounted(() => {
-  fetchLotList()
-})
+onMounted(fetchLotList)
 </script>
 
 <style scoped>
-:deep(.hold-row) {
-  background-color: #fef0f0 !important;
+.lot-table th:nth-child(9),
+.lot-table td:nth-child(9) {
+  width: 360px;
 }
 
-:deep(.hold-row:hover > td) {
-  background-color: #fde2e2 !important;
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pager-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+.mes-table tbody tr {
+  cursor: pointer;
+}
+
+.mes-table tbody tr.selected td {
+  background: var(--mes-paper-muted);
+  box-shadow: inset 0 1px 0 var(--mes-line-soft), inset 0 -1px 0 var(--mes-line-soft);
 }
 </style>

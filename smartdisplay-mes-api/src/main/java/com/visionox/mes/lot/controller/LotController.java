@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*;
  *
  * 核心功能：
  * - Lot列表查询（分页）
- * - Track In（6层校验）
+ * - Track In（8层校验）
  * - Track Out（记录加工参数）
  * - Hold（异常控制）
  * - Release（放行）
@@ -54,7 +54,7 @@ public class LotController {
     /**
      * Track In - Lot进站
      */
-    @Operation(summary = "Track In", description = "Lot进站，执行6层校验：Lot状态、工序合法性、设备状态、设备能力、Recipe、Hold状态")
+    @Operation(summary = "Track In", description = "Lot进站，执行8层校验：Lot状态、Route下一站、设备状态、设备能力、Recipe、Hold状态、班次窗口、物料齐套")
     @PostMapping("/{lotNo}/track-in")
     public Result<Void> trackIn(@PathVariable String lotNo,
                                  @Validated @RequestBody TrackInRequest request) {

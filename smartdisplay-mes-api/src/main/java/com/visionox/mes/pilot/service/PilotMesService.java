@@ -1329,8 +1329,22 @@ public class PilotMesService {
         return equipmentMapper.selectList(wrapper);
     }
 
-    public Page<Recipe> pageRecipes(long current, long size) {
-        return recipeMapper.selectPage(new Page<>(current, size), new LambdaQueryWrapper<Recipe>().orderByDesc(Recipe::getCreatedTime));
+    public Page<Recipe> pageRecipes(long current, long size, String productCode, String stepCode, String equipmentCode, String status) {
+        LambdaQueryWrapper<Recipe> wrapper = new LambdaQueryWrapper<>();
+        if (hasText(productCode)) {
+            wrapper.eq(Recipe::getProductCode, productCode);
+        }
+        if (hasText(stepCode)) {
+            wrapper.eq(Recipe::getStepCode, stepCode);
+        }
+        if (hasText(equipmentCode)) {
+            wrapper.eq(Recipe::getEquipmentCode, equipmentCode);
+        }
+        if (hasText(status)) {
+            wrapper.eq(Recipe::getStatus, status);
+        }
+        wrapper.orderByDesc(Recipe::getCreatedTime);
+        return recipeMapper.selectPage(new Page<>(current, size), wrapper);
     }
 
     public List<RecipeParam> recipeParams(Long recipeId) {
@@ -2358,6 +2372,10 @@ public class PilotMesService {
 
     private String valueOr(String value, String fallback) {
         return Objects.requireNonNullElse(value, fallback);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String objectText(Object value, String fallback) {

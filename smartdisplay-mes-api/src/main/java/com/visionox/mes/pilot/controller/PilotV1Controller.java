@@ -13,6 +13,7 @@ import com.visionox.mes.masterdata.entity.Site;
 import com.visionox.mes.masterdata.entity.WorkShift;
 import com.visionox.mes.masterdata.service.MasterDataService;
 import com.visionox.mes.pilot.service.PilotMesService;
+import com.visionox.mes.recipe.dto.RecipeDetailVO;
 import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.service.RecipeService;
 import com.visionox.mes.auth.entity.User;
@@ -179,8 +180,24 @@ public class PilotV1Controller {
 
     @GetMapping("/recipes")
     public Result<Page<Recipe>> recipes(@RequestParam(defaultValue = "1") long current,
-                                        @RequestParam(defaultValue = "20") long size) {
-        return Result.success(pilotMesService.pageRecipes(current, size));
+                                        @RequestParam(defaultValue = "20") long size,
+                                        @RequestParam(required = false) String productCode,
+                                        @RequestParam(required = false) String stepCode,
+                                        @RequestParam(required = false) String equipmentCode,
+                                        @RequestParam(required = false) String status) {
+        return Result.success(pilotMesService.pageRecipes(current, size, productCode, stepCode, equipmentCode, status));
+    }
+
+    @GetMapping("/recipes/search")
+    public Result<Recipe> searchRecipe(@RequestParam String productCode,
+                                       @RequestParam String stepCode,
+                                       @RequestParam String equipmentCode) {
+        return Result.success(recipeService.findActiveRecipe(productCode, stepCode, equipmentCode));
+    }
+
+    @GetMapping("/recipes/{id}")
+    public Result<RecipeDetailVO> recipeDetail(@PathVariable Long id) {
+        return Result.success(recipeService.getRecipeDetail(id));
     }
 
     @PostMapping("/recipes/{id}/publish")
