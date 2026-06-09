@@ -958,6 +958,45 @@ class MaterialServiceTest {
     }
 
     @Test
+    void generateDueSupplierQualificationReviewsShouldSkipOpenTaskAndAuditBatch() {
+        Supplier existing = supplier("SUP-OLD", "CONDITIONAL", "MEDIUM");
+        existing.setNextAuditDue(LocalDateTime.now().minusDays(1));
+        Supplier due = supplier("SUP-DUE", "PENDING", "MEDIUM");
+        due.setNextAuditDue(LocalDateTime.now().plusDays(3));
+        MaterialBatch batch = batch("PI_INK_D001", "90", "0", "0", "AVAILABLE");
+        batch.setSupplierCode("SUP-DUE");
+
+        when(supplierMapper.selectList(any())).thenReturn(List.of(existing, due));
+        when(supplierQualificationReviewTaskMapper.selectCount(any())).thenReturn(1L, 0L, 0L);
+        when(batchMapper.selectList(any())).thenReturn(List.of(batch));
+        when(incomingInspectionMapper.selectList(any())).thenReturn(List.of(
+                incomingInspection("MIQC-D001", "PI_INK_D001", "SUP-DUE", "PASS")
+        ));
+        when(supplierCorrectiveActionMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = materialService.generateDueSupplierQualificationReviewTasks(Map.of(
+                "windowDays", 7,
+                "operator", "qe1003"
+        ));
+
+        assertThat(result.get("createdCount")).isEqualTo(1);
+        assertThat(result.get("skippedCount")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> skipped = (List<Map<String, Object>>) result.get("skippedSuppliers");
+        assertThat(skipped.get(0).get("supplierCode")).isEqualTo("SUP-OLD");
+
+        ArgumentCaptor<SupplierQualificationReviewTask> taskCaptor = ArgumentCaptor.forClass(SupplierQualificationReviewTask.class);
+        verify(supplierQualificationReviewTaskMapper).insert(taskCaptor.capture());
+        SupplierQualificationReviewTask task = taskCaptor.getValue();
+        assertThat(task.getSupplierCode()).isEqualTo("SUP-DUE");
+        assertThat(task.getReviewType()).isEqualTo("PERIODIC");
+        assertThat(task.getSourceNo()).isEqualTo("AUTO-DUE:SUP-DUE");
+        assertThat(task.getCreatedBy()).isEqualTo("qe1003");
+        verify(auditLogService).record(eq("SUPPLIER_QUALIFICATION_REVIEW_GENERATE"), eq("BATCH"), eq("SUPPLIER_REVIEW"),
+                any(), eq("qe1003"), eq("material-service"), any());
+    }
+
+    @Test
     void decideSupplierQualificationReviewShouldApplySuggestedStatusAndAudit() {
         SupplierQualificationReviewTask task = reviewTask("SQR-001", "SUP-A", "OPEN");
         Supplier supplier = supplier("SUP-A", "CONDITIONAL", "MEDIUM");

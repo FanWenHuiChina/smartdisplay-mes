@@ -653,6 +653,57 @@ public class MaterialService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> generateDueSupplierQualificationReviewTasks(Map<String, Object> request) {
+        LocalDateTime now = LocalDateTime.now();
+        int windowDays = Math.max(0, Math.min(365, intValue(value(request, "windowDays"), 7)));
+        int limit = Math.max(1, Math.min(200, intValue(value(request, "limit"), 100)));
+        String operator = text(request, "operator", AuthContext.username());
+        LocalDateTime cutoff = now.plusDays(windowDays);
+
+        List<Supplier> candidates = supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .isNotNull(Supplier::getNextAuditDue)
+                .le(Supplier::getNextAuditDue, cutoff)
+                .and(wrapper -> wrapper.isNull(Supplier::getStatus)
+                        .or()
+                        .ne(Supplier::getStatus, "INACTIVE"))
+                .orderByAsc(Supplier::getNextAuditDue)
+                .last("LIMIT " + limit));
+
+        List<Map<String, Object>> created = new ArrayList<>();
+        List<Map<String, Object>> skipped = new ArrayList<>();
+        for (Supplier supplier : candidates) {
+            String key = supplierKey(supplier.getSupplierCode());
+            if (hasOpenSupplierQualificationReview(key, "PERIODIC")) {
+                skipped.add(Map.of(
+                        "supplierCode", key,
+                        "reason", "已存在未关闭周期复审任务"
+                ));
+                continue;
+            }
+            Map<String, Object> reviewRequest = new LinkedHashMap<>();
+            reviewRequest.put("operator", operator);
+            reviewRequest.put("reviewType", "PERIODIC");
+            reviewRequest.put("sourceNo", "AUTO-DUE:" + key);
+            reviewRequest.put("triggerReason", "供应商准入复审到期或即将在 " + windowDays + " 天内到期");
+            reviewRequest.put("dueDays", nextAuditDays(supplier.getQualificationStatus(), supplier.getRiskLevel()));
+            SupplierQualificationReviewTask task = createSupplierQualificationReviewTaskInternal(supplier, reviewRequest, false);
+            created.add(supplierQualificationReviewTaskRow(task));
+        }
+
+        audit("SUPPLIER_QUALIFICATION_REVIEW_GENERATE", "BATCH", "SUPPLIER_REVIEW",
+                "生成到期供应商准入复审 created=" + created.size() + ", skipped=" + skipped.size(),
+                operator);
+        return Map.of(
+                "windowDays", windowDays,
+                "cutoffTime", cutoff,
+                "createdCount", created.size(),
+                "skippedCount", skipped.size(),
+                "createdTasks", created,
+                "skippedSuppliers", skipped
+        );
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> decideSupplierQualificationReviewTask(String taskNo, Map<String, Object> request) {
         SupplierQualificationReviewTask task = supplierQualificationReviewTaskMapper.selectOne(
                 new LambdaQueryWrapper<SupplierQualificationReviewTask>()
@@ -2103,12 +2154,7 @@ public class MaterialService {
                                                                                           boolean recordAudit) {
         String key = supplierKey(supplier.getSupplierCode());
         String reviewType = normalizeReviewType(text(request, "reviewType", "PERIODIC"));
-        Long openExists = supplierQualificationReviewTaskMapper.selectCount(
-                new LambdaQueryWrapper<SupplierQualificationReviewTask>()
-                        .eq(SupplierQualificationReviewTask::getSupplierCode, key)
-                        .eq(SupplierQualificationReviewTask::getReviewType, reviewType)
-                        .eq(SupplierQualificationReviewTask::getReviewStatus, "OPEN"));
-        if (openExists != null && openExists > 0) {
+        if (hasOpenSupplierQualificationReview(key, reviewType)) {
             throw new BusinessException("供应商已存在未关闭准入复审任务: " + key);
         }
 
@@ -2149,6 +2195,15 @@ public class MaterialService {
                     task.getCreatedBy());
         }
         return task;
+    }
+
+    private boolean hasOpenSupplierQualificationReview(String supplierCode, String reviewType) {
+        Long openExists = supplierQualificationReviewTaskMapper.selectCount(
+                new LambdaQueryWrapper<SupplierQualificationReviewTask>()
+                        .eq(SupplierQualificationReviewTask::getSupplierCode, supplierKey(supplierCode))
+                        .eq(SupplierQualificationReviewTask::getReviewType, normalizeReviewType(reviewType))
+                        .eq(SupplierQualificationReviewTask::getReviewStatus, "OPEN"));
+        return openExists != null && openExists > 0;
     }
 
     private SupplierCorrectiveAction createSupplierCorrectiveActionInternal(String supplierCode,

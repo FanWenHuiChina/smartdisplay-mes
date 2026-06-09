@@ -637,9 +637,19 @@
       <div class="mes-card">
         <div class="mes-card__head">
           <div class="mes-card__title">供应商准入复审</div>
-          <span class="status-tag" :class="openSupplierReviewCount > 0 ? 'amber' : 'green'">
-            待办 {{ openSupplierReviewCount }}
-          </span>
+          <div class="task-actions">
+            <span class="status-tag" :class="openSupplierReviewCount > 0 ? 'amber' : 'green'">
+              待办 {{ openSupplierReviewCount }}
+            </span>
+            <button
+              v-if="canSupplierAction"
+              class="mes-btn tiny"
+              :disabled="supplierSubmitting"
+              @click="generateDueSupplierReviews"
+            >
+              生成到期复审
+            </button>
+          </div>
         </div>
         <div class="mes-card__body supplier-panel">
           <table class="mes-table">
@@ -781,6 +791,7 @@ import {
   getMaterialSuppliers,
   getSupplierCorrectiveActions,
   getSupplierQualificationReviews,
+  generateDueSupplierQualificationReviews,
   ingestWmsInventoryTransaction,
   receiveMaterial,
   returnMaterial,
@@ -1782,6 +1793,26 @@ async function createSupplierReview(supplier) {
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '供应商准入复审创建失败')
+  } finally {
+    supplierSubmitting.value = false
+  }
+}
+
+async function generateDueSupplierReviews() {
+  if (!canSupplierAction.value) {
+    ElMessage.warning('当前角色无权生成供应商到期复审')
+    return
+  }
+  try {
+    supplierSubmitting.value = true
+    const result = await generateDueSupplierQualificationReviews({
+      windowDays: 7,
+      operator: localStorage.getItem('username') || 'qe1003'
+    })
+    ElMessage.success(`到期复审生成完成：新增 ${result?.createdCount ?? 0}，跳过 ${result?.skippedCount ?? 0}`)
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '供应商到期复审生成失败')
   } finally {
     supplierSubmitting.value = false
   }

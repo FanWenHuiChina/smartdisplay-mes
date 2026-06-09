@@ -133,6 +133,18 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapSupplierQualificationReviewGenerateDueFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/suppliers/qualification-reviews/generate-due");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("SUPPLIER_QUALIFICATION_REVIEW_GENERATE");
+        assertThat(target.get().bizNo()).isNull();
+        assertThat(target.get().bizType()).isEqualTo("SUPPLIER_REVIEW");
+    }
+
+    @Test
     void resolveShouldMapBomPublishFailure() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/boms/change-requests/BCR001/publish");
 

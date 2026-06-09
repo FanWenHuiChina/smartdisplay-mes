@@ -569,6 +569,11 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.createMaterialSupplierQualificationReview(supplierCode, request));
     }
 
+    @PostMapping("/material/suppliers/qualification-reviews/generate-due")
+    public Result<Map<String, Object>> generateDueMaterialSupplierQualificationReviews(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.generateDueMaterialSupplierQualificationReviews(request));
+    }
+
     @PostMapping("/material/suppliers/qualification-reviews/{taskNo}/decision")
     public Result<Map<String, Object>> decideMaterialSupplierQualificationReview(@PathVariable String taskNo,
                                                                                 @RequestBody(required = false) Map<String, Object> request) {

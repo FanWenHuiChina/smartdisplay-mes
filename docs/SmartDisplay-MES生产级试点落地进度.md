@@ -74,10 +74,10 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势接口和生产 mock fallback 禁用约束，共 381 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势和供应商到期复审生成接口、生产 mock fallback 禁用约束，共 382 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，18 步覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-130206.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 191, Failures: 0, Errors: 0, Skipped: 0`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 216, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
 - Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。
@@ -94,13 +94,13 @@
 
 - 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 已写入 `before/after/changedFields/request` 结构化差异快照；批量操作差异快照和新增写接口审计映射仍需持续治理。
 - 质量：基础检验、缺陷、异常事件、NG/参数超限自动 Hold、MRB复判、异常关闭、结构化处置结论、MRB履历、会议号、参与人、审批状态、附件元数据、会议纪要正文版本管理、多角色会签待办、按角色/风险/处置动作的审批 SLA、逾期升级策略和关闭前会签校验已落地。
-- 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取、复核和多库位拆批任务。
+- 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取、复核和多库位拆批任务。
 - 设备：设备主数据、能力矩阵、事件队列、EAP 参数采样、参数越限自动设备事件、PM任务、Recipe下发/回读命令履历、事件关闭、OEE拆解、停机原因TopN、设备状态历史、标准/实际节拍采样、标准节拍主数据、EAP 统一适配器、网关连接配置、协议驱动抽象、网关心跳、健康检查和消息履历已落地；仍缺真实 SECS/GEM、OPC UA、厂商 HTTP 驱动真机联调和毫秒级设备状态采集。
 - Route/BOM：Route正式表、生效状态、Track In防跳站、BOM正式表、关键物料齐套明细、BOM变更审批、替代料策略、替代料验证报告附件、ECO 包快照、风险等级、跨部门会签和版本发布审批已落地。
 - 权限：JWT 登录、接口鉴权拦截、角色级写权限、菜单/按钮/数据范围权限能力模型、越权自动化测试、前端菜单裁剪、按钮级隐藏、权限变更申请/审批/审计闭环、启动恢复、手动重载和数据范围 SQL 自动拼接已落地；Lot、质量、异常、物料消耗和载具列表已接入数据范围；组织/产线/班次主数据已补。
 - AI：三类 AI 调用已落 `ai_report_record` 并记录输入快照、Prompt模板版本、模型、输出JSON、模型配置快照和证据质量；`ai_model_config` 已提供试点模型运行配置与外部模型影子配置边界；SOP知识库文档/切片表、种子切片、文件导入、自动切片、关键词引用返回、证据等级、依据不足提示、索引任务履历和 pgvector-ready 边界标记已落地；仍缺真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
 - Flyway：已引入依赖并启用 `classpath:db/migration` 自动迁移；已补迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和生产环境变更审批流程。
-- 测试：Track In校验链（含班次窗口）、Lot状态机、工单释放、ERP 1000 条模拟工单导入、质量异常自动Hold、Release后继续执行、追溯链路、供应商月度评分趋势、供应商准入复审任务、V1.38 库位任务状态流和 V1.39 BOM/ECO 会签状态流已具备服务级/接口级验证；正式测试报告、性能冒烟脚本、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、CI 浏览器 E2E 门禁、CI 手动性能基线门禁、生产 mock fallback 收口、生产包样例标识扫描、一轮容器环境性能实测、三轮稳定性能基线和真实数据库 API 闭环复验已补。
+- 测试：Track In校验链（含班次窗口）、Lot状态机、工单释放、ERP 1000 条模拟工单导入、质量异常自动Hold、Release后继续执行、追溯链路、供应商月度评分趋势、供应商准入复审任务、供应商到期复审生成、V1.38 库位任务状态流和 V1.39 BOM/ECO 会签状态流已具备服务级/接口级验证；正式测试报告、性能冒烟脚本、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、CI 浏览器 E2E 门禁、CI 手动性能基线门禁、生产 mock fallback 收口、生产包样例标识扫描、一轮容器环境性能实测、三轮稳定性能基线和真实数据库 API 闭环复验已补。
 - Docker交付：PostgreSQL、后端、前端三服务 Compose 已整合，根目录 Compose 入口、演示脚本、ER图、业务流程图、验收清单和测试报告已补；2026-06-08 复验已完成三服务容器级启动、前端反代、Swagger、Dashboard、库位任务接口、V1.38 库位任务状态流、V1.39 BOM/ECO 会签状态流和 Flyway V1.39 容器数据库迁移验证。
 
 ## 下一步建议
@@ -109,7 +109,7 @@
 2. 在固定硬件和更接近试点数据规模下持续采集性能趋势，并将手动基线结果纳入交付复验归档。
 3. 继续推进真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动适配、真机联调和毫秒级设备状态采集。
 4. 继续推进真实 pgvector 向量检索、真实外部模型联调、引用召回率评估和 AI 安全评审，形成生产级试点验收报告。
-5. 继续推进供应商门户协同、多库位拆批任务、供应商复审自动提醒和更严格的批量操作差异快照治理。
+5. 继续推进供应商门户协同、多库位拆批任务和更严格的批量操作差异快照治理。
 
 ## 2026-06-09 增量：CI 浏览器 E2E 交付门禁
 
@@ -122,6 +122,13 @@
 - `.github/workflows/ci.yml` 新增 `Manual Docker performance baseline` job，仅在 `workflow_dispatch` 且勾选 `run_performance_baseline` 时运行，避免每次普通提交都执行 1000 条级别导入压测。
 - 该 job 会启动 Docker Compose 三服务，等待前端反代 `/api/v1/auth/login` 返回非 5xx 后执行 `tools/run-pilot-performance-baseline.ps1`。
 - 手动触发参数支持 `performance_rounds`、`performance_samples` 和 `performance_import_count`，性能报告和每轮 smoke 报告会作为 artifact 上传，便于交付复验归档。
+
+## 2026-06-09 增量：供应商到期复审自动提醒
+
+- `MaterialService` 新增 `generateDueSupplierQualificationReviewTasks`，按 `nextAuditDue <= now + windowDays` 扫描供应商，跳过已有 `OPEN/PERIODIC` 复审任务的供应商，自动创建周期复审任务。
+- 新增接口 `POST /api/v1/material/suppliers/qualification-reviews/generate-due`，前端物料页“供应商准入复审”卡片提供“生成到期复审”入口，沿用 `material:supplier-manage` 权限。
+- 新增失败审计映射 `SUPPLIER_QUALIFICATION_REVIEW_GENERATE`，成功批处理也会写入 `sys_audit_log`，便于审计页面和浏览器 E2E 查询。
+- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,AuditFailureResolverTest" test` 通过 76 项；`npm.cmd run verify:frontend-contract` 通过 382 项；`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过；Docker 已重建；`npm.cmd run e2e:browser` 通过 19 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md/json`。
 
 ## 2026-06-08 增量：核心执行审计差异快照
 - `PilotMesService` 已为工单创建、工单释放、Track In、Track Out、Hold、Release、Rework 和 Scrap 生成结构化审计快照，统一写入 `sys_audit_log.request_snapshot`。
@@ -732,11 +739,11 @@
 - 修正后端 `RolePermissionService` 中 PE/EE 默认菜单与前端权限矩阵不一致的问题：工艺工程师保留 `master/recipe/quality/ai`，设备工程师保留 `equipment/quality/trace/ai`，避免登录权限快照和前端路由守卫口径分叉。
 - `RolePermissionServiceTest` 补充 PE/EE 菜单断言，并继续覆盖操作员仅允许 Track In/Out、跨域写操作被拒绝。
 - `run-browser-e2e.mjs` 新增操作员角色用例：通过 UI 登录 `operator`，校验顶部导航和侧边树不显示计划工单/系统管理，直达 `/order` 被重定向回可访问页面，直接调用工单释放接口返回业务码 `403`。
-- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` 通过 12 项；`npm.cmd run verify:frontend-contract` 通过 381 项；`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 已将本轮代码部署到容器；经 `http://127.0.0.1:8888/api` 探活确认 EE 菜单含 `quality`、操作员越权释放返回 `403`；后续设备页 EAP 增量已将 `npm.cmd run e2e:browser` 提升到 18 步。
+- 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` 通过 12 项；`npm.cmd run verify:frontend-contract` 通过 382 项；`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 已将本轮代码部署到容器；经 `http://127.0.0.1:8888/api` 探活确认 EE 菜单含 `quality`、操作员越权释放返回 `403`；后续供应商到期复审增量已将 `npm.cmd run e2e:browser` 提升到 19 步。
 
 ## 2026-06-09 增量：设备页 EAP 运行级 E2E
 
 - `run-browser-e2e.mjs` 新增设备页面运行级用例：从管理员会话进入设备与自动化页面，校验 `EAP 参数上报`、`EAP 网关连接`、`EAP 网关健康检查履历` 三个工作区。
 - 用例通过页面表单提交唯一参数编码 `EAP_E2E_*`，并通过 `/api/v1/equipment/parameters` 校验参数样本落库且结果为 `OK`。
 - 用例通过页面按钮触发 EAP 网关健康检查，并通过 `/api/v1/equipment/gateway-health-checks` 校验新增 `MANUAL` 检查履历。
-- 已验证 `npm.cmd run verify:frontend-contract` 通过 381 项；`npm.cmd run e2e:browser` 通过 18 步，Console/Network 错误数为 0，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260609-130206.md/json`。
+- 已验证 `npm.cmd run verify:frontend-contract` 通过 382 项；`npm.cmd run e2e:browser` 通过 19 步，Console/Network 错误数为 0，报告写入 `docs/SmartDisplay-MES-browser-e2e-20260609-135457.md/json`。

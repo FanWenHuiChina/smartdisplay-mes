@@ -207,6 +207,9 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "material", "suppliers", "*", "qualification-reviews")) {
             return target("SUPPLIER_QUALIFICATION_REVIEW_CREATE", parts[offset + 2], "SUPPLIER");
         }
+        if (matches(parts, offset, "material", "suppliers", "qualification-reviews", "generate-due")) {
+            return target("SUPPLIER_QUALIFICATION_REVIEW_GENERATE", null, "SUPPLIER_REVIEW");
+        }
         if (matches(parts, offset, "material", "suppliers", "qualification-reviews", "*", "decision")) {
             return target("SUPPLIER_QUALIFICATION_REVIEW_DECIDE", parts[offset + 3], "SUPPLIER_REVIEW");
         }

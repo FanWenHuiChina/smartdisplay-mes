@@ -924,6 +924,10 @@ public class PilotMesService {
         return materialService.createSupplierQualificationReviewTask(supplierCode, safeRequest(request));
     }
 
+    public Map<String, Object> generateDueMaterialSupplierQualificationReviews(Map<String, Object> request) {
+        return materialService.generateDueSupplierQualificationReviewTasks(safeRequest(request));
+    }
+
     public Map<String, Object> decideMaterialSupplierQualificationReview(String taskNo, Map<String, Object> request) {
         return materialService.decideSupplierQualificationReviewTask(taskNo, safeRequest(request));
     }

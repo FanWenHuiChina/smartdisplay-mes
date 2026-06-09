@@ -360,6 +360,21 @@ async function main() {
     return `wms adapter readiness and receive batch=${wmsBatchNo}`
   })
 
+  await runStep('物料页面生成供应商到期准入复审并写入审计', async () => {
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('供应商准入复审')`)
+    await clickButtonByText('生成到期复审')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/system/audit-logs?bizNo=BATCH', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(row => row.action === 'SUPPLIER_QUALIFICATION_REVIEW_GENERATE')
+    })()`, 15000)
+    await assertLayoutClean('material-supplier-review')
+    return 'supplier review due generation audited'
+  })
+
   let workflowResult
   await runStep('浏览器会话验证 V1.38 库位任务状态流', async () => {
     workflowResult = await evaluate(`(async () => {
