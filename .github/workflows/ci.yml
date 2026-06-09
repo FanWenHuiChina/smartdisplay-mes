@@ -7,6 +7,25 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      run_performance_baseline:
+        description: Run Docker performance baseline after normal gates
+        required: true
+        default: false
+        type: boolean
+      performance_rounds:
+        description: Performance baseline rounds
+        required: true
+        default: "3"
+      performance_samples:
+        description: API samples per round
+        required: true
+        default: "20"
+      performance_import_count:
+        description: ERP import count per round
+        required: true
+        default: "1000"
 
 concurrency:
   group: smartdisplay-mes-ci-${{ github.ref }}
@@ -137,6 +156,57 @@ jobs:
         with:
           name: browser-e2e-reports
           path: docs/SmartDisplay-MES-browser-e2e-*.*
+          if-no-files-found: ignore
+
+      - name: Stop pilot stack
+        if: always()
+        run: docker compose -f smartdisplay-mes-api/docker-compose.yml down -v
+
+  performance-baseline:
+    name: Manual Docker performance baseline
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_performance_baseline }}
+    needs:
+      - browser-e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start pilot stack
+        run: docker compose -f smartdisplay-mes-api/docker-compose.yml up -d --build
+
+      - name: Wait for API proxy
+        run: |
+          for attempt in {1..90}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888/api/v1/auth/login || true)
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "API proxy is ready with HTTP $code"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f smartdisplay-mes-api/docker-compose.yml logs
+          exit 1
+
+      - name: Run performance baseline
+        shell: pwsh
+        run: >
+          ./tools/run-pilot-performance-baseline.ps1
+          -BaseUrl http://127.0.0.1:8888/api
+          -Username planner
+          -Password 123456
+          -Rounds ${{ inputs.performance_rounds }}
+          -Samples ${{ inputs.performance_samples }}
+          -ImportCount ${{ inputs.performance_import_count }}
+
+      - name: Upload performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline-reports
+          path: |
+            docs/SmartDisplay-MES-performance-baseline-*.*
+            docs/performance-baseline-rounds/**
           if-no-files-found: ignore
 
       - name: Stop pilot stack

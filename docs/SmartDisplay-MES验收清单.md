@@ -84,6 +84,7 @@
 | 测试报告 | 记录单元测试、服务级闭环、构建、迁移、Docker 启动和真实数据库 API 闭环实测结果 | 已新增 `SmartDisplay-MES测试报告.md` |
 | 性能冒烟脚本 | 提供登录、1000 工单导入、核心列表、良率看板、Lot 追溯 P95 采集、阈值判定、Markdown/JSON 报告和失败退出码 | 已通过一轮容器环境实测；订单列表 P95 15.67ms、Lot 列表 P95 13.72ms、良率看板 P95 17.28ms、Lot 追溯 P95 60.08ms |
 | 多轮性能基线 | 基于单轮性能冒烟脚本连续执行多轮采样，汇总 P95、标准差、漂移比例、稳定性告警和 Markdown/JSON 报告 | 已通过 `tools\run-pilot-performance-baseline.ps1`；3 轮各导入 1000 条工单，订单/Lot/良率/追溯最大 P95 分别为 8.59ms、7.32ms、13.25ms、20.01ms，报告 `SmartDisplay-MES-performance-baseline-20260608-061856.md` |
+| CI 手动性能基线 | 交付复验时可在 CI 中启动 Docker Compose 并执行多轮性能基线 | 已接入 `Manual Docker performance baseline` job，通过 `workflow_dispatch` 手动触发，支持 rounds、samples、import count 参数 |
 
 ## 未完成的生产级增强
 
@@ -92,7 +93,7 @@
 - 真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动真机联调和毫秒级设备状态采集。
 - 真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
 - 真实数据库 API 闭环集成验证已补；Flyway 全新库迁移演练、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、生产 mock fallback 收口、生产包样例标识扫描、Docker Compose 容器级启动复验和一轮性能冒烟实测已补。
-- 性能验收已完成一轮冒烟实测和三轮稳定基线；后续仍建议在更接近试点数据规模、固定硬件和 CI 环境下持续采集趋势。
+- 性能验收已完成一轮冒烟实测和三轮稳定基线；CI 已提供手动性能基线门禁，后续仍建议在固定硬件和更接近试点数据规模下持续积累趋势。
 # 2026-06-08 补充验收：Lot 页 Rework/Scrap 前端闭环
 
 | 验收项 | 标准 | 当前状态 |

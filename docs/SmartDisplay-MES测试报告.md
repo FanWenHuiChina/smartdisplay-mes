@@ -42,6 +42,7 @@
 | 性能冒烟实测 | `powershell -ExecutionPolicy Bypass -File tools\run-pilot-performance-smoke.ps1 -BaseUrl http://127.0.0.1:8888/api -Username planner -Password 123456 -ImportCount 1000 -Samples 20` | 通过 | 经前端反代导入 1000 条模拟工单成功；订单列表 P95 15.67ms、Lot 列表 P95 13.72ms、良率看板 P95 17.28ms、Lot 追溯 P95 60.08ms；报告见 `docs/SmartDisplay-MES-performance-smoke-20260608-030053.md` |
 | 多轮性能基线脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-baseline.ps1` | 通过 | 脚本复用单轮冒烟脚本，汇总多轮 P95、标准差、漂移比例、稳定性告警和 Markdown/JSON 报告 |
 | 三轮稳定性能基线 | `powershell -ExecutionPolicy Bypass -File tools\run-pilot-performance-baseline.ps1` | 通过 | 3 轮，每轮导入 1000 条模拟工单、每项 20 次采样；订单列表最大 P95 8.59ms、Lot 列表最大 P95 7.32ms、良率看板最大 P95 13.25ms、Lot 追溯最大 P95 20.01ms，全部为 `STABLE`；报告见 `docs/SmartDisplay-MES-performance-baseline-20260608-061856.md` |
+| CI 手动性能基线门禁 | `.github/workflows/ci.yml` 的 `Manual Docker performance baseline` job | 已接入 | 通过 `workflow_dispatch` 手动触发，启动 Docker Compose 三服务后运行 `tools/run-pilot-performance-baseline.ps1`，支持配置 rounds、samples、import count，并上传 Markdown/JSON 报告 |
 | Docker Compose 配置 | `docker compose config` | 通过 | 根目录 Compose 入口可解析 PostgreSQL、后端、前端服务和网络/卷配置；Docker 客户端有用户级 `config.json` 权限警告，不影响配置解析 |
 | Docker Compose 子目录配置 | `docker compose -f smartdisplay-mes-api\docker-compose.yml config` | 通过 | 兼容旧入口，三服务配置可解析 |
 | Docker Compose 状态 | `docker compose -f smartdisplay-mes-api\docker-compose.yml ps` | 通过 | `smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 监听 `8080`，`smartdisplay-mes-ui` 监听 `8888` |

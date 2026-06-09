@@ -100,13 +100,13 @@
 - 权限：JWT 登录、接口鉴权拦截、角色级写权限、菜单/按钮/数据范围权限能力模型、越权自动化测试、前端菜单裁剪、按钮级隐藏、权限变更申请/审批/审计闭环、启动恢复、手动重载和数据范围 SQL 自动拼接已落地；Lot、质量、异常、物料消耗和载具列表已接入数据范围；组织/产线/班次主数据已补。
 - AI：三类 AI 调用已落 `ai_report_record` 并记录输入快照、Prompt模板版本、模型、输出JSON、模型配置快照和证据质量；`ai_model_config` 已提供试点模型运行配置与外部模型影子配置边界；SOP知识库文档/切片表、种子切片、文件导入、自动切片、关键词引用返回、证据等级、依据不足提示、索引任务履历和 pgvector-ready 边界标记已落地；仍缺真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
 - Flyway：已引入依赖并启用 `classpath:db/migration` 自动迁移；已补迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和生产环境变更审批流程。
-- 测试：Track In校验链（含班次窗口）、Lot状态机、工单释放、ERP 1000 条模拟工单导入、质量异常自动Hold、Release后继续执行、追溯链路、供应商月度评分趋势、供应商准入复审任务、V1.38 库位任务状态流和 V1.39 BOM/ECO 会签状态流已具备服务级/接口级验证；正式测试报告、性能冒烟脚本、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、CI 浏览器 E2E 门禁、生产 mock fallback 收口、生产包样例标识扫描、一轮容器环境性能实测、三轮稳定性能基线和真实数据库 API 闭环复验已补。
+- 测试：Track In校验链（含班次窗口）、Lot状态机、工单释放、ERP 1000 条模拟工单导入、质量异常自动Hold、Release后继续执行、追溯链路、供应商月度评分趋势、供应商准入复审任务、V1.38 库位任务状态流和 V1.39 BOM/ECO 会签状态流已具备服务级/接口级验证；正式测试报告、性能冒烟脚本、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、CI 浏览器 E2E 门禁、CI 手动性能基线门禁、生产 mock fallback 收口、生产包样例标识扫描、一轮容器环境性能实测、三轮稳定性能基线和真实数据库 API 闭环复验已补。
 - Docker交付：PostgreSQL、后端、前端三服务 Compose 已整合，根目录 Compose 入口、演示脚本、ER图、业务流程图、验收清单和测试报告已补；2026-06-08 复验已完成三服务容器级启动、前端反代、Swagger、Dashboard、库位任务接口、V1.38 库位任务状态流、V1.39 BOM/ECO 会签状态流和 Flyway V1.39 容器数据库迁移验证。
 
 ## 下一步建议
 
 1. 在范围扩大时继续补充异常处置、Rework/Scrap 和多角色权限用例，保持真实浏览器 E2E 作为交付门禁。
-2. 将 `tools/run-pilot-performance-baseline.ps1` 接入后续 CI 或交付复验，在固定硬件和更接近试点数据规模下持续采集趋势。
+2. 在固定硬件和更接近试点数据规模下持续采集性能趋势，并将手动基线结果纳入交付复验归档。
 3. 继续推进真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动适配、真机联调和毫秒级设备状态采集。
 4. 继续推进真实 pgvector 向量检索、真实外部模型联调、引用召回率评估和 AI 安全评审，形成生产级试点验收报告。
 5. 继续推进供应商门户协同、多库位拆批任务、供应商复审自动提醒和更严格的批量操作差异快照治理。
@@ -116,6 +116,12 @@
 - `.github/workflows/ci.yml` 新增 `Docker browser E2E` job，在 `ubuntu-latest` 启动 PostgreSQL、后端和前端 Docker Compose 三服务后，运行真实浏览器 E2E。
 - `run-browser-e2e.mjs` 新增 `E2E_APP_TIMEOUT_MS` 启动等待，先确认前端页面和 `/api/v1/auth/login` 后端代理可达，再启动浏览器执行用例。
 - E2E 脚本补充 Linux/macOS Chrome/Chromium 路径，兼容 GitHub Actions runner 和本地 Windows 环境；CI 会上传 `docs/SmartDisplay-MES-browser-e2e-*` 报告作为 artifact。
+
+## 2026-06-09 增量：CI 手动性能基线门禁
+
+- `.github/workflows/ci.yml` 新增 `Manual Docker performance baseline` job，仅在 `workflow_dispatch` 且勾选 `run_performance_baseline` 时运行，避免每次普通提交都执行 1000 条级别导入压测。
+- 该 job 会启动 Docker Compose 三服务，等待前端反代 `/api/v1/auth/login` 返回非 5xx 后执行 `tools/run-pilot-performance-baseline.ps1`。
+- 手动触发参数支持 `performance_rounds`、`performance_samples` 和 `performance_import_count`，性能报告和每轮 smoke 报告会作为 artifact 上传，便于交付复验归档。
 
 ## 2026-06-08 增量：核心执行审计差异快照
 - `PilotMesService` 已为工单创建、工单释放、Track In、Track Out、Hold、Release、Rework 和 Scrap 生成结构化审计快照，统一写入 `sys_audit_log.request_snapshot`。
