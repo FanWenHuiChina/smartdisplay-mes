@@ -539,7 +539,19 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("100");
         assertThat(task.getActualQty()).isEqualByComparingTo("0");
         assertThat(task.getStatus()).isEqualTo("CREATED");
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"MOVE\"")
+                .contains("\"batchNo\":\"PI_INK_B007\"")
+                .contains("\"targetLocation\":\"WMS-A01\"")
+                .contains("\"request\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
     }
 
     @Test
@@ -631,7 +643,19 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("70");
         assertThat(task.getActualQty()).isEqualByComparingTo("68");
         assertThat(task.getStatus()).isEqualTo("CREATED");
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"COUNT\"")
+                .contains("\"batchNo\":\"PI_INK_B009\"")
+                .contains("\"actualQty\":68")
+                .contains("\"request\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
     }
 
     @Test

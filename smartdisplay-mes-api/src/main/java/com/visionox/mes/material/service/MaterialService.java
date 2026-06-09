@@ -1238,7 +1238,7 @@ public class MaterialService {
         audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "创建库位任务: " + taskType + " batch=" + batchNo + ", from=" + sourceLocation + ", to="
                         + targetLocation.getLocationCode() + ", qty=" + moveQty.stripTrailingZeros().toPlainString(),
-                operator);
+                operator, auditSnapshot(null, locationTaskRow(task), safeRequest(request)));
         if (boolValue(request, "executeNow", false)) {
             return completeLocationTask(task.getTaskNo(), request);
         }
@@ -1257,7 +1257,8 @@ public class MaterialService {
                 batch.getLocation(), beforeAvailable, countedAvailable, "CREATED", reason, operator, request);
         audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "创建盘点任务: batch=" + batchNo + ", plannedAvailable="
-                        + beforeAvailable.stripTrailingZeros().toPlainString(), operator);
+                        + beforeAvailable.stripTrailingZeros().toPlainString(), operator,
+                auditSnapshot(null, locationTaskRow(task), safeRequest(request)));
         if (boolValue(request, "executeNow", false)) {
             return completeLocationTask(task.getTaskNo(), request);
         }

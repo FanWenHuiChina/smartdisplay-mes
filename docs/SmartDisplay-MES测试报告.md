@@ -25,7 +25,7 @@
 | ERP导入与性能脚本回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=ErpOrderAdapterServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 50, Failures: 0, Errors: 0, Skipped: 0` |
 | MRB纪要版本管理回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 45, Failures: 0, Errors: 0, Skipped: 0` |
 | MRB会签SLA升级回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 47, Failures: 0, Errors: 0, Skipped: 0` |
-| 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 43, Failures: 0, Errors: 0, Skipped: 0`；覆盖供应商到期复审生成和 WMS 库位任务领取/完成/取消审计快照 |
+| 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 43, Failures: 0, Errors: 0, Skipped: 0`；覆盖供应商到期复审生成和 WMS 库位任务创建/领取/完成/取消审计快照 |
 | WMS库位任务审计可见性回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 71, Failures: 0, Errors: 0, Skipped: 0`；覆盖库位任务结构化快照落库和 `/system/audit-logs` 返回 `requestSnapshot` |
 | 工单释放预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=PilotMesServiceTest test` | 通过 | `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`；覆盖释放前 Route/BOM/设备/Recipe/Lot 拆分校验和缺少生效 BOM 阻断 |
 | Track In预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=TrackInServiceTest test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；覆盖无副作用校验矩阵、设备能力失败阻断、正式 Track In 写接口复用同一套阻断逻辑 |
@@ -66,7 +66,7 @@
 - Recipe 唯一性、创建、发布、停用和生效 Recipe 查询。
 - Track In 状态、Route、设备、Recipe、Hold、班次和物料齐套校验；`GET /api/v1/lots/{lotNo}/track-in-checks` 返回无副作用校验矩阵，正式 Track In 写接口复用同一套阻断逻辑。
 - Track Out 过站记录、质量判定、物料消耗。
-- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务、领取/完成/取消审计差异快照和物料写接口权限。
+- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务、创建/领取/完成/取消审计差异快照和物料写接口权限。
 - 来料 IQC 判定、COA/检验附件元数据留痕、批次质量状态联动、IQC 写接口权限和失败审计映射。
 - 供应商绩效评分与趋势：基于物料批次、来料 IQC 和8D整改记录聚合 PASS/HOLD/NG、通过率、风险批次、评分、月度趋势和风险等级，覆盖高风险排序、超期8D扣分且不额外读取 COA 附件。
 - 供应商准入复审任务：覆盖复审任务创建、重复 OPEN 任务拦截、复审通过/驳回决策、供应商状态回写、前端物料页复审工作区和失败审计映射。

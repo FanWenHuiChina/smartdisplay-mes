@@ -766,8 +766,8 @@
 
 ## 2026-06-09 增量：WMS库位任务结构化审计快照
 
-- `MaterialService` 将库位任务领取、完成、取消审计从纯文本描述升级为结构化快照，统一写入 `before`、`after`、`changedFields` 和 `request`，便于系统审计页回看状态、责任人、数量和取消原因差异。
-- `MATERIAL_LOCATION_TASK_ASSIGN` 覆盖 `CREATED -> ASSIGNED`、领取人和请求参数；`MATERIAL_LOCATION_TASK_COMPLETE` 覆盖 `ASSIGNED/CREATED -> DONE`、实际数量、执行/完成时间；`MATERIAL_LOCATION_TASK_CANCEL` 覆盖 `ASSIGNED/CREATED -> CANCELLED/REJECTED`、取消人和取消原因。
+- `MaterialService` 将库位任务创建、领取、完成、取消审计从纯文本描述升级为结构化快照，统一写入 `before`、`after`、`changedFields` 和 `request`，便于系统审计页回看状态、责任人、数量和取消原因差异。
+- `MATERIAL_LOCATION_TASK_CREATE` 覆盖空白前态到 `CREATED` 的任务快照、批次、库位、数量和请求参数；`MATERIAL_LOCATION_TASK_ASSIGN` 覆盖 `CREATED -> ASSIGNED`、领取人和请求参数；`MATERIAL_LOCATION_TASK_COMPLETE` 覆盖 `ASSIGNED/CREATED -> DONE`、实际数量、执行/完成时间；`MATERIAL_LOCATION_TASK_CANCEL` 覆盖 `ASSIGNED/CREATED -> CANCELLED/REJECTED`、取消人和取消原因。
 - `GET /api/v1/system/audit-logs` 已返回 `requestSnapshot`，系统管理页审计表新增“快照”列和展开面板，可直接查看变更前、变更后、变更字段和请求参数。
 - 旧的物料审计调用保持兼容，未传快照的动作仍按原逻辑写审计；库位任务成功动作和失败审计映射共同形成成功/失败双向留痕。
 - 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,PilotMesServiceTest" test` 通过 71 项；`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 后端全量通过 220 项；`npm.cmd run verify:frontend-contract` 通过 393 项；`npm.cmd run build`、`npm.cmd run verify:production-bundle`、`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 和 `npm.cmd run e2e:browser` 均通过，最新 E2E 报告 `docs/SmartDisplay-MES-browser-e2e-20260609-224839.md/json`。
