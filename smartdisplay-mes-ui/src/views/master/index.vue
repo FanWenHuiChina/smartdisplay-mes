@@ -6,7 +6,7 @@
         <p class="page-desc">主数据决定执行规则，版本、生效状态、审批与追溯快照是商用 MES 的关键。</p>
       </div>
       <div class="page-actions">
-        <button class="mes-btn">版本对比</button>
+        <button class="mes-btn" :disabled="!versionCompareRows.length" @click="compareMasterVersions">版本对比</button>
         <button v-if="canBomChange" class="mes-btn" :disabled="bomActionLoading" @click="createBomChange">ECO 审批</button>
         <button
           v-if="canPublishRecipe"
@@ -14,6 +14,26 @@
           :disabled="recipeActionLoading || !firstPublishableRecipe"
           @click="publishFirstRecipe"
         >发布版本</button>
+      </div>
+    </div>
+
+    <div v-if="showVersionCompare && versionCompareRows.length" class="mes-card section-gap">
+      <div class="mes-card__head">
+        <div class="mes-card__title">版本对比快照</div>
+        <span class="status-tag green">{{ versionCompareRows.length }} 项差异</span>
+      </div>
+      <div class="mes-card__body">
+        <table class="mes-table">
+          <thead><tr><th>对象</th><th>当前版本</th><th>目标版本</th><th>影响</th></tr></thead>
+          <tbody>
+            <tr v-for="row in versionCompareRows" :key="row.object">
+              <td>{{ row.object }}</td>
+              <td>{{ row.current }}</td>
+              <td>{{ row.target }}</td>
+              <td>{{ row.impact }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -199,6 +219,7 @@ const recipes = ref([])
 const bomChangeRequests = ref([])
 const bomActionLoading = ref('')
 const recipeActionLoading = ref('')
+const showVersionCompare = ref(false)
 
 const activeLines = computed(() => lines.value.filter(line => line.status === 'ACTIVE'))
 const activeShifts = computed(() => shifts.value.filter(shift => shift.status === 'ACTIVE'))
@@ -261,6 +282,30 @@ const bomChangeRows = computed(() => {
     approvalSummary: ecoApprovalSummary(item),
     time: formatTime(item.publishedTime || item.reviewedTime || item.requestedTime)
   }))
+})
+const versionCompareRows = computed(() => {
+  const rows = []
+  const bom = activeBom.value
+  const change = firstSubmittedChange.value || firstApprovedChange.value || bomChangeRequests.value[0]
+  if (bom && change) {
+    rows.push({
+      object: `BOM ${bom.productCode || change.productCode || '-'}`,
+      current: `${bom.bomCode || '-'} / ${bom.bomVersion || '-'}`,
+      target: `${change.targetBomCode || change.changeNo || '-'} / ${change.targetVersion || '-'}`,
+      impact: change.reason || change.impactScope || '替代料、齐套校验和消耗追溯'
+    })
+  }
+  const recipe = activeRecipe.value
+  const candidate = firstPublishableRecipe.value
+  if (recipe && candidate) {
+    rows.push({
+      object: `Recipe ${recipe.productCode || candidate.productCode || '-'}`,
+      current: `${recipe.recipeCode || '-'} / ${recipe.version || recipe.recipeVersion || '-'}`,
+      target: `${candidate.recipeCode || '-'} / ${candidate.version || candidate.recipeVersion || '-'}`,
+      impact: `${candidate.stepCode || recipe.stepCode || '工序'} 参数上下限、设备匹配和 Track In 校验`
+    })
+  }
+  return rows
 })
 
 const loadOrgMasterData = async () => {
@@ -397,6 +442,15 @@ async function publishFirstRecipe() {
   } finally {
     recipeActionLoading.value = ''
   }
+}
+
+function compareMasterVersions() {
+  if (!versionCompareRows.value.length) {
+    ElMessage.warning('当前没有可对比的 BOM 或 Recipe 版本')
+    return
+  }
+  showVersionCompare.value = true
+  ElMessage.success(`已生成 ${versionCompareRows.value.length} 项版本对比`)
 }
 
 function nextBomVersion(version) {

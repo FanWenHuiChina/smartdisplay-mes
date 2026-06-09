@@ -6,9 +6,11 @@
         <p class="page-desc">按产线、工段、工序实时查看 WIP、良率、设备稼动、Hold 与瓶颈状态。</p>
       </div>
       <div class="page-actions">
-        <button class="mes-btn">切换产线</button>
-        <button class="mes-btn">导出班报</button>
-        <button class="mes-btn primary">查看异常</button>
+        <button class="mes-btn" :disabled="loadingOverview" @click="refreshLineOverview">
+          {{ loadingOverview ? '刷新中' : '刷新产线' }}
+        </button>
+        <button class="mes-btn" @click="exportShiftReport">导出班报</button>
+        <button class="mes-btn primary" @click="goToQualityExceptions">查看异常</button>
       </div>
     </div>
 
@@ -144,6 +146,8 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getOverview } from '@/api/pilot'
 import { warnDevFallback } from '@/utils/devFallback'
 
@@ -211,6 +215,8 @@ const routeSteps = ref(__DEV_MOCK_FALLBACK__ ? fallbackRouteSteps : [])
 const alerts = ref(__DEV_MOCK_FALLBACK__ ? fallbackAlerts : [])
 const aiSuggestions = ref(__DEV_MOCK_FALLBACK__ ? fallbackAiSuggestions : [])
 const equipmentOee = ref(__DEV_MOCK_FALLBACK__ ? fallbackEquipmentOee : emptyEquipmentOee)
+const loadingOverview = ref(false)
+const router = useRouter()
 
 const days = ref(__DEV_MOCK_FALLBACK__ ? ['05/31', '06/01', '06/02', '06/03', '06/04', '06/05', '06/06'] : [])
 const trendPoints = ref(__DEV_MOCK_FALLBACK__ ? [
@@ -335,7 +341,8 @@ function applyTrend(trend = []) {
   }))
 }
 
-onMounted(async () => {
+async function loadOverview() {
+  loadingOverview.value = true
   try {
     const data = await getOverview()
     metrics.value = Array.isArray(data.metrics) ? data.metrics.map(mapMetric) : (__DEV_MOCK_FALLBACK__ ? fallbackMetrics : [])
@@ -346,8 +353,44 @@ onMounted(async () => {
     applyTrend(data.yieldTrend)
   } catch (error) {
     warnDevFallback('总览接口不可用', error)
+  } finally {
+    loadingOverview.value = false
   }
-})
+}
+
+async function refreshLineOverview() {
+  await loadOverview()
+  ElMessage.success('产线总览已刷新')
+}
+
+function exportShiftReport() {
+  const rows = [
+    ['模块', '指标', '值', '说明1', '说明2'],
+    ...metrics.value.map(item => ['KPI', item.label, item.value, item.left, item.right]),
+    ...routeSteps.value.map(item => ['工序WIP', `${item.code} ${item.name}`, item.status, item.meta, item.tagType]),
+    ...alerts.value.map(item => ['异常', item.title, item.level, item.meta, item.type]),
+    ...downtimeReasons.value.map(item => ['停机', item.reasonName, item.durationMinutes, item.downtimeType, item.eventCount])
+  ]
+  downloadCsv(`shift-report-${Date.now()}.csv`, rows)
+  ElMessage.success('班报已导出')
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function goToQualityExceptions() {
+  router.push('/quality')
+}
+
+onMounted(loadOverview)
 </script>
 
 <style scoped>

@@ -7,7 +7,7 @@
       </div>
       <div class="page-actions">
         <button v-if="canHold" class="mes-btn" @click="holdSelectedLot">批量 Hold</button>
-        <button class="mes-btn">打印流程卡</button>
+        <button class="mes-btn" @click="printFlowCard">打印流程卡</button>
         <button v-if="canTrackIn" class="mes-btn primary" @click="trackInSelectedLot">Track In</button>
         <button v-if="canTrackOut" class="mes-btn primary" @click="trackOutSelectedLot">Track Out</button>
       </div>
@@ -16,21 +16,44 @@
     <div class="mes-card">
       <div class="mes-card__head">
         <div class="mes-card__title">Lot 执行队列</div>
-        <span class="status-tag blue">当前工序 COATING</span>
+        <span class="status-tag blue">当前工序 {{ currentStepLabel }}</span>
       </div>
       <div class="mes-card__body">
         <div class="mes-filters">
-          <div class="mes-field"><label>Lot / SN</label><input class="mes-input" placeholder="请输入 Lot / SN" /></div>
-          <div class="mes-field"><label>工序</label><select class="mes-select"><option>全部工序</option></select></div>
-          <div class="mes-field"><label>状态</label><select class="mes-select"><option>READY / REWORK / PROCESSING / HOLD</option></select></div>
-          <div class="mes-field"><label>设备</label><select class="mes-select"><option>全部设备</option></select></div>
-          <button class="mes-btn primary">查询</button>
+          <div class="mes-field">
+            <label>Lot / SN</label>
+            <input v-model.trim="executionFilters.keyword" class="mes-input" placeholder="请输入 Lot / SN" @keyup.enter="loadLots" />
+          </div>
+          <div class="mes-field">
+            <label>工序</label>
+            <select v-model="executionFilters.step" class="mes-select">
+              <option value="">全部工序</option>
+              <option v-for="step in processStepOptions" :key="step" :value="step">{{ step }}</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>状态</label>
+            <select v-model="executionFilters.status" class="mes-select">
+              <option value="">全部状态</option>
+              <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>设备</label>
+            <select v-model="executionFilters.equipment" class="mes-select">
+              <option value="">全部设备</option>
+              <option v-for="equipment in equipmentOptions" :key="equipment" :value="equipment">{{ equipment }}</option>
+            </select>
+          </div>
+          <button class="mes-btn primary" :disabled="loadingLots" @click="loadLots">
+            {{ loadingLots ? '查询中' : '查询' }}
+          </button>
         </div>
         <table class="mes-table">
           <thead><tr><th>Lot</th><th>产品</th><th>Route</th><th>当前工序</th><th>设备</th><th>状态</th><th>等待</th><th>动作</th></tr></thead>
           <tbody>
             <tr
-              v-for="lot in lotQueue"
+              v-for="lot in displayLotQueue"
               :key="lot.no"
               :class="{ danger: lot.status === 'HOLD', selected: selectedLot?.no === lot.no }"
               @click="selectLot(lot)"
@@ -38,6 +61,9 @@
               <td>{{ lot.no }}</td><td>{{ lot.product }}</td><td>{{ lot.route }}</td><td>{{ lot.step }}</td><td>{{ lot.equipment }}</td>
               <td><span class="status-tag" :class="lot.statusType">{{ lot.status }}</span></td>
               <td>{{ lot.wait }}</td><td><span class="status-tag" :class="lot.actionType">{{ lot.action }}</span></td>
+            </tr>
+            <tr v-if="!displayLotQueue.length">
+              <td colspan="8">没有符合条件的 Lot</td>
             </tr>
           </tbody>
         </table>
@@ -59,7 +85,7 @@
           <div class="toolbar">
             <button v-if="canTrackIn" class="mes-btn primary" @click="trackInSelectedLot">确认 Track In</button>
             <button v-if="canTrackOut" class="mes-btn primary" @click="trackOutSelectedLot">确认 Track Out</button>
-            <button class="mes-btn">切换设备</button>
+            <button class="mes-btn" @click="switchSelectedEquipment">切换设备</button>
             <button v-if="canHold" class="mes-btn warn" @click="holdSelectedLot">Hold 当前 Lot</button>
           </div>
         </div>
@@ -85,7 +111,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLots, holdLot, trackInLot, trackOutLot } from '@/api/pilot'
 import { hasButton } from '@/utils/permissions'
@@ -119,10 +145,38 @@ const timeline = __DEV_MOCK_FALLBACK__ ? [
 
 const lotQueue = ref(__DEV_MOCK_FALLBACK__ ? fallbackLotQueue : [])
 const selectedLotNo = ref('')
+const selectedEquipmentOverride = ref('')
+const loadingLots = ref(false)
+const executionFilters = reactive({
+  keyword: '',
+  step: '',
+  status: '',
+  equipment: ''
+})
+const statusOptions = ['READY', 'REWORK', 'PROCESSING', 'HOLD', 'COMPLETED', 'SCRAP']
+const processStepOptions = computed(() => uniqueValues(lotQueue.value.map(lot => lot.step).filter(Boolean)))
+const equipmentOptions = computed(() => uniqueValues([
+  ...Object.values(equipmentByStep),
+  ...lotQueue.value.map(lot => lot.equipment).filter(item => item && item !== '待分配')
+]))
+const displayLotQueue = computed(() => {
+  const keyword = executionFilters.keyword.trim().toLowerCase()
+  return lotQueue.value.filter(lot => {
+    const matchesKeyword = !keyword
+      || String(lot.no || '').toLowerCase().includes(keyword)
+      || String(lot.product || '').toLowerCase().includes(keyword)
+    const matchesStep = !executionFilters.step || lot.step === executionFilters.step
+    const matchesStatus = !executionFilters.status || lot.status === executionFilters.status
+    const matchesEquipment = !executionFilters.equipment || lot.equipment === executionFilters.equipment
+    return matchesKeyword && matchesStep && matchesStatus && matchesEquipment
+  })
+})
 const selectedLot = computed(() =>
-  lotQueue.value.find(lot => lot.no === selectedLotNo.value)
-  || lotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))
-  || lotQueue.value[0])
+  displayLotQueue.value.find(lot => lot.no === selectedLotNo.value)
+  || displayLotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))
+  || displayLotQueue.value[0])
+const currentStepLabel = computed(() => selectedLot.value?.step || executionFilters.step || '全部')
+const selectedEquipmentCode = computed(() => selectedEquipmentOverride.value || equipmentByStep[selectedLot.value?.step] || 'COATER_01')
 const canTrackIn = computed(() => hasButton('lot:track-in'))
 const canTrackOut = computed(() => hasButton('lot:track-out'))
 const canHold = computed(() => hasButton('lot:hold'))
@@ -175,20 +229,29 @@ function mapLot(lot) {
 
 function selectLot(lot) {
   selectedLotNo.value = lot?.no || ''
+  selectedEquipmentOverride.value = ''
 }
 
 async function loadLots() {
+  loadingLots.value = true
   try {
-    const data = await getLots({ current: 1, size: 20 })
+    const params = { current: 1, size: 20 }
+    if (executionFilters.status) params.status = executionFilters.status
+    if (executionFilters.keyword && executionFilters.keyword.toUpperCase().startsWith('LOT')) {
+      params.lotNo = executionFilters.keyword
+    }
+    const data = await getLots(params)
     if (Array.isArray(data.records)) {
       lotQueue.value = data.records.map(mapLot)
       if (!lotQueue.value.some(lot => lot.no === selectedLotNo.value)) {
-        selectedLotNo.value = lotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))?.no || lotQueue.value[0]?.no || ''
+        selectedLotNo.value = displayLotQueue.value.find(lot => ['READY', 'REWORK'].includes(lot.status))?.no || displayLotQueue.value[0]?.no || lotQueue.value[0]?.no || ''
       }
     }
   } catch (error) {
     warnDevFallback('执行队列接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) lotQueue.value = fallbackLotQueue
+  } finally {
+    loadingLots.value = false
   }
 }
 
@@ -205,7 +268,7 @@ async function trackInSelectedLot() {
   try {
     await trackInLot(lot.no, {
       stepCode: lot.step,
-      equipmentCode: equipmentByStep[lot.step] || 'COATER_01',
+      equipmentCode: selectedEquipmentCode.value,
       operator: 'op1007'
     })
     ElMessage.success(`${lot.no} Track In 成功`)
@@ -254,6 +317,59 @@ async function holdSelectedLot() {
   } catch (error) {
     console.warn('Hold 失败', error)
   }
+}
+
+function switchSelectedEquipment() {
+  const lot = selectedLot.value
+  if (!lot) {
+    ElMessage.warning('请先选择 Lot')
+    return
+  }
+  const candidates = uniqueValues([
+    equipmentByStep[lot.step],
+    ...equipmentOptions.value
+  ].filter(Boolean))
+  const current = selectedEquipmentOverride.value || lot.equipment
+  const currentIndex = Math.max(0, candidates.indexOf(current))
+  const next = candidates[(currentIndex + 1) % candidates.length] || equipmentByStep[lot.step] || 'COATER_01'
+  selectedEquipmentOverride.value = next
+  lot.equipment = next
+  ElMessage.success(`${lot.no} 已切换到 ${next}`)
+}
+
+function printFlowCard() {
+  const lot = selectedLot.value
+  if (!lot) {
+    ElMessage.warning('当前没有可打印的 Lot')
+    return
+  }
+  const lines = [
+    `电子流程卡 ${lot.no}`,
+    `产品：${lot.product}`,
+    `Route：${lot.route}`,
+    `当前工序：${lot.step}`,
+    `设备：${lot.equipment}`,
+    `状态：${lot.status}`,
+    '',
+    '履历：',
+    ...timeline.map(item => `${item.time} ${item.title} ${item.meta}`)
+  ]
+  downloadText(`flow-card-${lot.no}.txt`, lines.join('\n'))
+  ElMessage.success('电子流程卡已生成')
+}
+
+function downloadText(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))]
 }
 
 onMounted(loadLots)

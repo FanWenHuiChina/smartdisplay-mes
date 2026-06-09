@@ -6,8 +6,8 @@
         <p class="page-desc">按 Lot、SN、工单、设备、物料批次或缺陷代码定位影响范围，并展开首个 Lot 的生产证据链。</p>
       </div>
       <div class="page-actions">
-        <button class="mes-btn">反向追溯</button>
-        <button class="mes-btn">导出证据链</button>
+        <button class="mes-btn" :disabled="loading || !traceInfo.length" @click="reverseTrace">反向追溯</button>
+        <button class="mes-btn" :disabled="!traceInfo.length" @click="exportEvidenceChain">导出证据链</button>
         <button class="mes-btn primary" @click="loadTrace">刷新追溯</button>
       </div>
     </div>
@@ -104,6 +104,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { searchTrace } from '@/api/pilot'
 import { warnDevFallback } from '@/utils/devFallback'
 
@@ -152,6 +153,7 @@ const timeline = ref(__DEV_MOCK_FALLBACK__ ? fallbackTimeline : [])
 const evidences = ref(__DEV_MOCK_FALLBACK__ ? fallbackEvidences : [])
 const matches = ref([])
 const summaryCards = ref([])
+const lastTraceEnvelope = ref(null)
 
 const resolvedTypeLabel = computed(() => typeLabels[resolvedType.value] || resolvedType.value || '追溯')
 
@@ -177,6 +179,7 @@ function listText(values, fallback = '-') {
 }
 
 function applyTraceEnvelope(envelope) {
+  lastTraceEnvelope.value = envelope
   const query = envelope.query || {}
   const trace = envelope.trace || envelope
   const lot = trace.lot || {}
@@ -248,6 +251,57 @@ function applyTraceEnvelope(envelope) {
   ]
 }
 
+async function reverseTrace() {
+  const envelope = lastTraceEnvelope.value || {}
+  const trace = envelope.trace || envelope
+  const dimensions = envelope.relatedDimensions || {}
+  const lot = trace.lot || {}
+  const material = (trace.materialConsumptions || [])[0] || {}
+  const candidates = [
+    { type: 'EQUIPMENT', keyword: firstValue(dimensions.equipmentCodes) || lot.currentEquipmentCode },
+    { type: 'MATERIAL_BATCH', keyword: firstValue(dimensions.materialBatchNos) || material.batchNo },
+    { type: 'DEFECT_CODE', keyword: firstValue(dimensions.defectCodes) },
+    { type: 'LOT', keyword: firstValue((envelope.matches || []).map(item => item.lotNo)) || lot.lotNo }
+  ]
+  const next = candidates.find(item => item.keyword && item.keyword !== traceQuery.value)
+  if (!next) {
+    ElMessage.warning('当前证据链没有可反向展开的设备、物料或缺陷维度')
+    return
+  }
+  traceType.value = next.type
+  traceQuery.value = next.keyword
+  await loadTrace()
+  ElMessage.success(`已切换到${typeLabels[next.type] || next.type}反向追溯`)
+}
+
+function exportEvidenceChain() {
+  const rows = [
+    ['类型', '名称', '值', '说明'],
+    ...traceInfo.value.map(item => ['追溯对象', item.label, item.value, item.tag ? item.tagType : '']),
+    ...summaryCards.value.map(item => ['影响范围', item.title, item.value, item.meta]),
+    ...matches.value.map(item => ['命中Lot', item.lotNo, item.status || '-', `${item.matchField || '-'}=${item.evidence || '-'}`]),
+    ...timeline.value.map(item => ['时间线', item.title, item.time, item.meta]),
+    ...evidences.value.map(item => ['证据', item.title, item.status, item.meta])
+  ]
+  downloadCsv(`trace-evidence-${Date.now()}.csv`, rows)
+  ElMessage.success('证据链已导出')
+}
+
+function firstValue(values) {
+  return Array.isArray(values) && values.length ? values[0] : ''
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 async function loadTrace() {
   const keyword = String(traceQuery.value || '').trim()
   if (!keyword) {
@@ -256,6 +310,7 @@ async function loadTrace() {
     evidences.value = []
     matches.value = []
     summaryCards.value = []
+    lastTraceEnvelope.value = null
     return
   }
   loading.value = true

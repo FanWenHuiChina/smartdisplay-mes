@@ -6,7 +6,7 @@
         <p class="page-desc">AI 定位为业务辅助：基于 MES 数据和 SOP 检索生成结构化分析，不自动执行生产动作。</p>
       </div>
       <div class="page-actions">
-        <button class="mes-btn">选择日期</button>
+        <button class="mes-btn" @click="selectReportDate">日期 {{ reportDateLabel }}</button>
         <button class="mes-btn" @click="loadAiModelConfigs">模型配置</button>
         <button class="mes-btn" @click="loadKnowledgeDocuments">知识库</button>
         <button class="mes-btn" @click="loadKnowledgeIndexJobs">索引履历</button>
@@ -255,6 +255,7 @@ import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
 const fpy = ref(__DEV_MOCK_FALLBACK__ ? '96.82%' : '-')
+const reportDate = ref(new Date().toISOString().slice(0, 10))
 
 const bars = ref(__DEV_MOCK_FALLBACK__ ? [
   { label: 'CLEAN', height: '72%', type: 'green' },
@@ -314,6 +315,7 @@ const canImportKb = computed(() => hasButton('ai:kb-import'))
 const canIndexKb = computed(() => hasButton('ai:kb-index'))
 const activeModelConfigs = computed(() => aiModelConfigs.value.filter(config => config.status === 'ACTIVE' && config.enabled !== 0))
 const activeYieldConfig = computed(() => aiModelConfigs.value.find(config => config.useCase === 'YIELD_DAILY') || {})
+const reportDateLabel = computed(() => reportDate.value.slice(5))
 const documentForm = ref(__DEV_MOCK_FALLBACK__ ? {
   documentName: '涂胶膜厚异常处置SOP',
   documentType: 'SOP',
@@ -475,13 +477,26 @@ async function generateYieldReport() {
     return
   }
   try {
-    const report = await createYieldReport({ lineCode: 'G6-FLEX-LINE-01', reportDate: new Date().toISOString().slice(0, 10) })
+    const report = await createYieldReport({ lineCode: 'G6-FLEX-LINE-01', reportDate: reportDate.value })
     applyReport(report)
     await loadAiReportRecords()
     ElMessage.success('AI 良率日报已生成')
   } catch (error) {
     console.warn('AI 良率日报生成失败', error)
   }
+}
+
+function selectReportDate() {
+  const current = new Date(`${reportDate.value}T00:00:00`)
+  current.setDate(current.getDate() - 1)
+  const earliest = new Date()
+  earliest.setDate(earliest.getDate() - 7)
+  if (current < earliest) {
+    reportDate.value = new Date().toISOString().slice(0, 10)
+  } else {
+    reportDate.value = current.toISOString().slice(0, 10)
+  }
+  ElMessage.success(`AI 报告日期已切换为 ${reportDate.value}`)
 }
 
 async function askSop() {

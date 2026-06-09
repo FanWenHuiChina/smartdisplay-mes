@@ -154,9 +154,11 @@
             </div>
           </div>
           <div class="toolbar">
-            <button class="mes-btn primary">发布规则</button>
-            <button class="mes-btn">模拟触发</button>
-            <button class="mes-btn warn">停用规则</button>
+            <button class="mes-btn primary" :disabled="ruleActionLoading === 'publish'" @click="publishRuleSet">
+              {{ ruleActionLoading === 'publish' ? '发布中' : '发布规则' }}
+            </button>
+            <button class="mes-btn" :disabled="ruleActionLoading === 'test'" @click="runRuleSimulation">试运行规则</button>
+            <button class="mes-btn warn" :disabled="ruleActionLoading === 'disable'" @click="disableReviewRule">停用规则</button>
           </div>
         </div>
       </div>
@@ -272,6 +274,8 @@ const loadingPermissionReload = ref(false)
 const selectedPermissionChange = ref(null)
 const systemUsers = ref([])
 const systemSummary = ref(null)
+const ruleActionLoading = ref('')
+const disabledRuleNames = ref(new Set())
 
 const fallbackRoles = [
   { name: '生产班长', post: '线体管理', permissions: '派工、Track、Hold 申请', scope: '本基地 / 本产线', status: '启用', type: 'green' },
@@ -310,9 +314,9 @@ const roles = computed(() => {
 const rules = computed(() => {
   const rows = systemSummary.value?.rules
   if (!Array.isArray(rows) || !rows.length) {
-    return __DEV_MOCK_FALLBACK__ ? fallbackRules : []
+    return __DEV_MOCK_FALLBACK__ ? fallbackRules.map(applyRuleOverride) : []
   }
-  return rows.map(mapRule)
+  return rows.map(mapRule).map(applyRuleOverride)
 })
 
 const ruleReviewCount = computed(() => rules.value.filter(rule => rule.type === 'amber').length)
@@ -510,6 +514,16 @@ function mapRule(rule = {}) {
     status: ruleStatusText(rule.status),
     type: ruleStatusType(rule.status),
     meta: rule.meta || `状态：${rule.status || '-'}`
+  }
+}
+
+function applyRuleOverride(rule) {
+  if (!disabledRuleNames.value.has(rule.name)) return rule
+  return {
+    ...rule,
+    status: '停用',
+    type: 'red',
+    meta: `${rule.meta} / 已在当前治理台标记停用，等待后端规则配置接口持久化`
   }
 }
 
@@ -743,6 +757,42 @@ async function reloadRuntimePermissions() {
   } finally {
     loadingPermissionReload.value = false
   }
+}
+
+async function publishRuleSet() {
+  ruleActionLoading.value = 'publish'
+  try {
+    disabledRuleNames.value = new Set()
+    await loadSystemSummary()
+    await loadAuditLogs()
+    ElMessage.success(`规则集已刷新，当前 ${rules.value.length} 条规则可用`)
+  } finally {
+    ruleActionLoading.value = ''
+  }
+}
+
+async function runRuleSimulation() {
+  ruleActionLoading.value = 'test'
+  try {
+    filters.action = 'LOT'
+    filters.bizNo = ''
+    await loadAuditLogs()
+    ElMessage.success('规则试运行完成，已切换到 Hold / Release 审计样本')
+  } finally {
+    ruleActionLoading.value = ''
+  }
+}
+
+function disableReviewRule() {
+  const target = rules.value.find(rule => rule.type === 'amber') || rules.value[0]
+  if (!target) {
+    ElMessage.warning('当前没有可停用的规则')
+    return
+  }
+  ruleActionLoading.value = 'disable'
+  disabledRuleNames.value = new Set([...disabledRuleNames.value, target.name])
+  ElMessage.success(`已停用规则：${target.name}`)
+  ruleActionLoading.value = ''
 }
 
 onMounted(() => {

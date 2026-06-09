@@ -8,8 +8,8 @@
       <div class="page-actions">
         <button v-if="canEscalateAction" class="mes-btn" :disabled="actionLoading === 'mrb-sla'" @click="handleRefreshSla">刷新 SLA</button>
         <button class="mes-btn" @click="loadQualityData">刷新</button>
-        <button v-if="canMrbAction" class="mes-btn">MRB 会议</button>
-        <button v-if="canMrbAction" class="mes-btn primary">创建复判单</button>
+        <button v-if="canMrbAction" class="mes-btn" @click="openMrbMeeting">MRB 会议</button>
+        <button v-if="canMrbAction" class="mes-btn primary" :disabled="actionLoading === 'mrb-draft'" @click="createMrbReviewDraft">创建复判单</button>
       </div>
     </div>
 
@@ -630,6 +630,46 @@ async function handleRefreshSla() {
     ElMessage.success(`SLA刷新完成，升级 ${result?.escalatedCount || 0} 项`)
     await loadQualityData()
     await loadMrbApprovals(selectedEventNo.value)
+  } finally {
+    actionLoading.value = ''
+  }
+}
+
+async function openMrbMeeting() {
+  const target = mrbItems.value.find(item => item.status !== 'CLOSED') || mrbItems.value[0]
+  if (!target) {
+    ElMessage.warning('当前没有可进入 MRB 会议的异常')
+    return
+  }
+  mrbForm.meetingNo = target.eventNo.replace(/^EX/i, 'MRB')
+  selectedEventNo.value = target.eventNo
+  await loadMrbRecords(target.eventNo)
+  await loadMrbApprovals(target.eventNo)
+  ElMessage.success(`已载入 ${target.eventNo} 的 MRB 会议上下文`)
+}
+
+async function createMrbReviewDraft() {
+  if (!canReviewAction.value) {
+    ElMessage.warning('当前角色无权创建 MRB 复判单')
+    return
+  }
+  const target = mrbItems.value.find(item => item.eventNo === selectedEventNo.value)
+    || mrbItems.value.find(item => item.status !== 'CLOSED')
+  if (!target) {
+    ElMessage.warning('当前没有可创建复判单的异常')
+    return
+  }
+  try {
+    actionLoading.value = 'mrb-draft'
+    selectedEventNo.value = target.eventNo
+    await reviewQualityException(target.eventNo, {
+      ...mrbPayload('CONTINUE_HOLD', '创建MRB复判单，保持Hold并等待跨部门会签'),
+      reviewer: localStorage.getItem('username') || 'qe'
+    })
+    ElMessage.success('MRB复判单已创建')
+    await loadQualityData()
+    await loadMrbRecords(target.eventNo)
+    await loadMrbApprovals(target.eventNo)
   } finally {
     actionLoading.value = ''
   }

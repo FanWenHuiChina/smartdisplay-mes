@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,6 +15,16 @@ function read(relativePath) {
     return ''
   }
   return readFileSync(file, 'utf8')
+}
+
+function listVueFiles(relativeDir) {
+  const dir = join(projectRoot, relativeDir)
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const child = `${relativeDir}/${entry.name}`
+    if (entry.isDirectory()) return listVueFiles(child)
+    return child.endsWith('.vue') ? [child] : []
+  })
 }
 
 function check(name, condition, detail = '') {
@@ -294,6 +304,12 @@ check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['impor
 check('page:views/order/index.vue:query-filters', hasAll(orderView, ['orderFilters', 'v-model.trim="orderFilters.keyword"', 'params.status = orderFilters.value.status', 'displayOrders']), 'Order page must wire query filters to API status and visible rows')
 check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
 check('page:views/order/index.vue:no-unwired-buttons', unwiredButtons(orderView).length === 0, `unwired buttons: ${unwiredButtons(orderView).join(', ')}`)
+
+for (const relativePath of listVueFiles('src/views')) {
+  const source = read(relativePath)
+  const buttons = unwiredButtons(source)
+  check(`page:${relativePath.replace(/^src\//, '')}:no-unwired-buttons`, buttons.length === 0, `unwired buttons: ${buttons.join(', ')}`)
+}
 
 const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
