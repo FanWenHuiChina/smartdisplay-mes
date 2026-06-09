@@ -33,7 +33,7 @@
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
-| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 14 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-105325.md` |
+| 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 14 步通过；覆盖登录、导航权限、工单创建/释放并生成 Lot、Lot 管理二级工作台 Hold/Release、Recipe 管理二级工作台与参数详情、UI Track In/Out、QMS Adapter 上报、WMS Adapter 齐套/入库事务、质量 MRB/缺陷证据、物料 V1.38 库位任务操作台和状态流、追溯查询、AI 报告生成留痕、系统审计入口；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-122002.md` |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.41` 共 41 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
 | 性能冒烟脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-smoke.ps1` | 通过 | 脚本支持阈值参数、Markdown/JSON 报告输出和失败退出码 |

@@ -153,7 +153,27 @@ async function main() {
     await clickButtonByText('查询')
     await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
     await clickTableRowByText(e2eLotNo)
-    return `lot workbench visible, lot=${e2eLotNo}`
+    await clickButtonByText('Hold')
+    await waitForExpression(`document.body.innerText.includes('Hold Lot - 暂停流转')`, 5000)
+    await setFormItemValueByLabel('Hold原因', `browser e2e hold ${timestamp}`)
+    await clickButtonByText('确认Hold')
+    await waitForExpression(`document.body.innerText.includes('确认操作')`, 5000)
+    await clickMessageBoxConfirm()
+    const heldState = await waitForLotState(`status === 'HOLD' && Number(holdFlag) === 1`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(e2eLotNo)}') && text.includes('HOLD') && text.includes('已 Hold')
+    })`, 15000)
+    await clickTableRowByText(e2eLotNo)
+    await clickButtonByText('放行')
+    await waitForExpression(`document.body.innerText.includes('Release Lot - 放行')`, 5000)
+    await clickButtonByText('确认Release')
+    const releasedState = await waitForLotState(`status === 'READY' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(e2eLotNo)}') && text.includes('READY') && text.includes('正常')
+    })`, 15000)
+    return `lot=${e2eLotNo}, hold=${heldState.status}, release=${releasedState.status}`
   })
 
   await runStep('Recipe 管理二级工作台显示版本池和参数详情', async () => {
@@ -469,6 +489,29 @@ async function setFieldValueByLabel(labelText, value) {
   assert(ok, `未找到可输入字段: ${labelText}`)
 }
 
+async function setFormItemValueByLabel(labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const field = Array.from(document.querySelectorAll('.el-form-item')).find(el => {
+      const label = (el.querySelector('.el-form-item__label')?.innerText || '').trim()
+      const input = el.querySelector('input, textarea')
+      return label === ${JSON.stringify(labelText)} && input && visible(input) && !input.disabled
+    })
+    const input = field?.querySelector('input, textarea')
+    if (!input) return false
+    input.focus()
+    input.value = ${JSON.stringify(value)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未找到表单字段: ${labelText}`)
+}
+
 async function setSelectValueByLabel(labelText, value) {
   const ok = await evaluate(`(() => {
     const visible = (el) => {
@@ -522,6 +565,24 @@ async function clickButtonByText(text) {
     return true
   })()`)
   assert(ok, `未找到可点击按钮: ${text}`)
+}
+
+async function clickMessageBoxConfirm() {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const messageBox = Array.from(document.querySelectorAll('.el-message-box')).find(visible)
+    const target = Array.from(messageBox?.querySelectorAll('button') || []).find(button => {
+      return visible(button) && (button.innerText || button.textContent || '').trim() === '确认'
+    })
+    if (!target) return false
+    target.click()
+    return true
+  })()`)
+  assert(ok, '未找到二次确认按钮')
 }
 
 async function clickTableRowByText(text) {
