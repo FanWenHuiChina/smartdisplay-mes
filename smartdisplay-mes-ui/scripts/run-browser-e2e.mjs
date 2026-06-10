@@ -305,6 +305,7 @@ async function main() {
   await runStep('质量页面通过 UI 提交 QMS Adapter OK 上报', async () => {
     assert(e2eLotNo, '缺少 E2E Lot，无法执行 QMS Adapter 上报')
     const qmsItemCode = `QMS_E2E_${timestamp.replace(/\D/g, '')}`
+    await setSelectValueByLabel('来源', 'QMS')
     await setFieldValueByLabel('Lot', e2eLotNo)
     await setSelectValueByLabel('检验结果', 'OK')
     await setFieldValueByLabel('检验项', qmsItemCode)
@@ -501,6 +502,87 @@ async function main() {
     })()`, 15000)
     await assertLayoutClean('equipment-eap')
     return `parameter=${eapParamCode}, gateway health MANUAL recorded`
+  })
+
+  await runStep('设备页面通过 UI 留存 EAP 失败消息并打开诊断抽屉', async () => {
+    const failedCorrelationId = `UI-DIAG-${timestamp.replace(/\D/g, '')}`
+    await navigate(`${baseUrl}/equipment`)
+    await waitForExpression(`location.pathname === '/equipment' && document.body.innerText.includes('设备与自动化 / EAP')`)
+    await assertLayoutClean('equipment-eap-diagnostic-before')
+    assert(await textExists('EAP 网关消息履历'), '设备页缺少 EAP 网关消息履历')
+
+    await waitForExpression(`Array.from(document.querySelectorAll('.mes-card')).some(card => {
+      const text = card.innerText || ''
+      return text.includes('EAP 网关消息履历') && text.includes('GW-SECSGEM-SHADOW')
+    })`, 10000)
+    await setSelectValueInCard('EAP 网关消息履历', '网关', 'GW-SECSGEM-SHADOW')
+    await setSelectValueInCard('EAP 网关消息履历', '消息类型', 'STATUS')
+    await setSelectValueInCard('EAP 网关消息履历', '设备', 'EVAP_01')
+    await setSelectValueInCard('EAP 网关消息履历', '状态', 'RUNNING')
+
+    const messageNo = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/adapters/eap/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          gatewayCode: 'GW-SECSGEM-SHADOW',
+          messageType: 'STATUS',
+          correlationId: '${escapeJs(failedCorrelationId)}',
+          payload: {
+            equipmentCode: 'EVAP_01',
+            status: 'RUNNING',
+            operator: '${escapeJs(username)}'
+          },
+          operator: '${escapeJs(username)}',
+          sourceSystem: 'browser-e2e'
+        })
+      })
+      const json = await response.json()
+      if (json.code !== 200) throw new Error(json.message || 'EAP message failed')
+      if (json.data?.accepted !== false) throw new Error('EAP 失败入站未返回 accepted=false')
+      const messageNo = json.data?.message?.messageNo
+      if (!messageNo) throw new Error('EAP 失败入站未返回 messageNo')
+      return messageNo
+    })()`)
+
+    await clickButtonInCard('EAP 网关消息履历', '刷新消息')
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(messageNo)}') && text.includes('FAILED')
+    })`, 15000)
+    await evaluate(`(() => {
+      const row = Array.from(document.querySelectorAll('tbody tr')).find(item => (item.innerText || '').includes('${escapeJs(messageNo)}'))
+      const button = Array.from(row?.querySelectorAll('button') || []).find(item => (item.innerText || '').includes('查看'))
+      if (!button) throw new Error('未找到 EAP 失败消息诊断按钮')
+      button.click()
+      return true
+    })()`)
+    await waitForExpression(`document.body.innerText.includes('EAP 消息诊断')
+      && document.body.innerText.includes('${escapeJs(messageNo)}')
+      && document.body.innerText.includes('PROTOCOL_FRAME')
+      && document.body.innerText.includes('原始入站快照')
+      && document.body.innerText.includes('归一化消息')
+      && document.body.innerText.includes('适配器响应')`, 15000)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const detailResponse = await fetch('/api/v1/equipment/gateway-messages/${escapeJs(messageNo)}', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const detailJson = await detailResponse.json()
+      const detail = detailJson.data || {}
+      const auditResponse = await fetch('/api/v1/system/audit-logs?bizNo=' + encodeURIComponent('${escapeJs(messageNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const auditJson = await auditResponse.json()
+      return detail.processStatus === 'FAILED'
+        && detail.diagnostic?.failureCategory === 'PROTOCOL_FRAME'
+        && Boolean(detail.payloadSnapshot)
+        && Boolean(detail.responseSnapshot)
+        && auditJson.data.some(item => item.action === 'EAP_GATEWAY_MESSAGE_FAILED' && item.result === 'FAIL')
+    })()`, 15000)
+    await assertLayoutClean('equipment-eap-diagnostic')
+    return `message=${messageNo}, category=PROTOCOL_FRAME`
   })
 
   await runStep('追溯页面完成 Lot 查询', async () => {
@@ -702,6 +784,30 @@ async function setFieldValueInCard(cardTitle, labelText, value) {
     return true
   })()`)
   assert(ok, `未在卡片 ${cardTitle} 中找到可输入字段: ${labelText}`)
+}
+
+async function setSelectValueInCard(cardTitle, labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const field = Array.from(card?.querySelectorAll('.mes-field') || []).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const select = el.querySelector('select')
+      return label === ${JSON.stringify(labelText)} && select && visible(select) && !select.disabled
+    })
+    const select = field?.querySelector('select')
+    if (!select) return false
+    select.focus()
+    select.value = ${JSON.stringify(value)}
+    select.dispatchEvent(new Event('input', { bubbles: true }))
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可选择字段: ${labelText}`)
 }
 
 async function setFormItemValueByLabel(labelText, value) {
