@@ -913,3 +913,12 @@
 - 前端物料页库位任务操作台新增“优先级”和“SLA小时”输入，任务表新增 SLA 列，显示 `正常`、`临期`、`逾期`、`已关闭` 和 P 级别，继续沿用浅色 Codex app 工作台风格。
 - 前端契约脚本新增 WMS 库位任务 SLA 检查，覆盖 `priority`、`dueHours`、`slaStatus`、`OVERDUE` 和 `DUE_SOON` 接线，防止后续退回只显示任务状态。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 97 项通过，`npm.cmd run verify:frontend-contract` 418 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.48` 共 48 个迁移文件。
+
+## 2026-06-10 增量：WMS 库位任务复核结果留痕
+
+- 新增 Flyway `V1.49__Add_Material_Location_Task_Review_Result.sql`，为 `material_location_task` 补充 `review_result` 和 `review_conclusion`，并将历史已复核任务回填为 `APPROVED`，保留复核结果索引用于后续异常队列筛选。
+- `POST /api/v1/material/location-tasks/{taskNo}/review` 支持 `APPROVED/REJECTED` 复核结果和复核结论；通过时记录确认结论，驳回时同步写入 `exceptionReason`，但任务执行状态仍保持 `DONE`，不自动修改库存、不隐式冲正。
+- `MATERIAL_LOCATION_TASK_REVIEW` 审计描述和结构化快照新增 `reviewResult`、`reviewConclusion` 与驳回原因，形成“完成任务 -> 复核通过/驳回 -> 后续异常处置”的可审计边界。
+- 前端物料页把原单一“复核”按钮拆成“通过/驳回”，任务表展示 `复核通过`、`复核驳回`、复核人、复核时间和结论文本，继续沿用浅色 Codex app 工作台风格。
+- 前端契约脚本新增 WMS 库位任务复核结果检查，覆盖 `reviewResult`、`reviewConclusion`、通过/驳回按钮接线，防止页面退回只记录复核人和时间。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 98 项通过，`npm.cmd run verify:frontend-contract` 419 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.49` 共 49 个迁移文件。

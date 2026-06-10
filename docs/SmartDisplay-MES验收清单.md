@@ -33,7 +33,7 @@
 | 替代料验证报告附件 | BOM 变更提交/审批可保存验证报告附件元数据，BOM 变更列表返回附件数量和附件明细 | 已落地，首版附件元数据 |
 | WMS库存事务 | 支持入库、冻结、解冻、退料、盘点、事务履历、审计和批次行锁 | 已落地 |
 | WMS库位策略 | 支持库位主数据、存储类型、物料类别、容量、环境窗口、优先级、锁定状态；入库校验库位状态/容量/类别/单位并更新占用 | 已落地，首版策略 |
-| WMS库位任务 | 支持上架、整批移库、拆批、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消、完成后复核分步状态流；支持优先级、SLA 到期时间、逾期待办排序；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED`；2026-06-09 已补齐创建/领取/完成/取消审计 `before/after/changedFields/request` 快照；2026-06-10 已补齐多库位拆批任务、完成后复核闭环和 SLA 待办排序 |
+| WMS库位任务 | 支持上架、整批移库、拆批、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消、完成后复核分步状态流；支持复核通过/驳回、复核结论、异常原因、优先级、SLA 到期时间和逾期待办排序；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED`；2026-06-09 已补齐创建/领取/完成/取消审计 `before/after/changedFields/request` 快照；2026-06-10 已补齐多库位拆批任务、完成后复核闭环、SLA 待办排序和复核结果留痕 |
 | 来料IQC/COA | 支持供应商批次来料判定、COA编号、附件元数据、批次质量状态联动和审计 | 已落地 |
 | 供应商绩效评分/趋势 | 基于物料批次、来料IQC与8D记录聚合批次数、PASS/HOLD/NG、通过率、风险批次、评分、风险等级和最近6个月月度趋势，并提供物料页只读看板 | 已落地，首版聚合评分和趋势 |
 | 供应商准入/8D整改 | 支持供应商主数据、准入状态评估、8D整改单创建/关闭、IQC NG/HOLD 自动开8D、供应商风险降级、审计与前端处置工作区 | 已落地，V1.40 已通过后端/前端/Flyway 验收 |
@@ -72,14 +72,14 @@
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | API文档合同 | Swagger/OpenAPI 必须提供 `/api/v3/api-docs/pilot-v1` 分组，声明 `/api/v1/**`、JWT Bearer、统一响应、分页模型和标准错误响应 | 已落地，`OpenApiConfigTest` 5 项通过；Docker 运行态已验证 `Result/PageResult`、400/401/403/500、登录免 Bearer 和业务接口 Bearer 安全要求 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、WMS 库位任务复核、WMS 库位任务 SLA、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，418 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批、复核和 SLA 任务入口、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、WMS 库位任务复核、WMS 库位任务复核结果、WMS 库位任务 SLA、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，419 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批、复核通过/驳回、复核结论、SLA 任务入口、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
 | 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，20 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260610-182527.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
-| Flyway | `db/migration/V1.1-V1.47` 打包并自动迁移 | 已落地 |
-| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.47` 静态验收通过 |
+| Flyway | `db/migration/V1.1-V1.49` 打包并自动迁移 | 已落地 |
+| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.49` 静态验收通过 |
 | 真实数据库 API 闭环 | 在 Docker Compose PostgreSQL 上完成登录、工单创建/释放、Lot Track In/Out、NG 自动 Hold、Release、追溯、看板、AI 报告和审计落库校验 | 已通过 `tools\run-real-db-api-flow.ps1`，报告 `SmartDisplay-MES-real-db-api-flow-20260608-060901.md` |
 | README | 启动、账号、API 示例、Docker 说明齐全 | 已更新 |
 | 演示脚本 | 5分钟和15分钟脚本 | 已新增 |
@@ -91,7 +91,7 @@
 
 ## 未完成的生产级增强
 
-- 替代料验证报告附件、BOM/ECO跨部门会签、供应商绩效评分/趋势、供应商准入/复审/8D整改、供应商复审自动提醒、库位策略和库位任务已具备首版能力，多库位拆批任务和完成后复核已落地。
+- 替代料验证报告附件、BOM/ECO跨部门会签、供应商绩效评分/趋势、供应商准入/复审/8D整改、供应商复审自动提醒、库位策略和库位任务已具备首版能力，多库位拆批任务和完成后复核通过/驳回留痕已落地。
 - 后续可扩展供应商门户协同，以及 WMS 任务异步队列、抽检复核、驳回复核后的异常处置和库存冲正流程。
 - 真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动真机联调和毫秒级设备状态采集。
 - 真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
@@ -397,3 +397,13 @@
 | 权限边界 | 拆批复用 `material:wms` 权限，默认 QE 不可越权创建/完成库位任务，应用 WMS 权限快照后才允许 | 已落地，`RolePermissionServiceTest` 覆盖 |
 | 前端入口 | 物料页库位任务操作台必须提供“拆批”类型、母批选择、目标库位、拆出数量、子批号输入和任务表子批证据 | 已落地，前端契约覆盖 |
 | 回归验证 | 后端拆批定向、前端契约和前端生产构建必须通过 | 已通过：后端定向 59 项、前端契约 414 项、前端构建通过 |
+
+## 2026-06-10 补充验收：WMS 库位任务复核结果留痕
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 复核结果字段 | `material_location_task` 必须保存 `review_result` 和 `review_conclusion`，历史已复核任务回填为通过 | 已落地，`V1.49__Add_Material_Location_Task_Review_Result.sql` 覆盖 |
+| 通过/驳回语义 | 复核接口必须支持 `APPROVED/REJECTED`，驳回时记录结论和异常原因，但不自动修改已完成库存事务 | 已落地，驳回任务状态保持 `DONE` |
+| 审计快照 | 复核动作必须写 `MATERIAL_LOCATION_TASK_REVIEW`，快照包含复核结果、结论、异常原因和字段差异 | 已落地，`MaterialServiceTest` 覆盖 |
+| 前端入口 | 物料页最近库位任务表必须提供“通过/驳回”两个复核动作，并展示复核结论 | 已落地，前端契约覆盖 |
+| 回归验证 | 后端复核结果定向、前端契约、前端生产构建、生产包扫描和 Flyway 静态验收必须通过 | 已通过：后端定向 98 项、前端契约 419 项、生产包 14 个 JS 产物 clean、Flyway 49 个迁移 |

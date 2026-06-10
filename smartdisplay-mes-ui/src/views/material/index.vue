@@ -476,6 +476,7 @@
                     <div class="task-main">
                       <span>{{ task.assigneeLabel }}</span>
                       <span class="task-review" :class="task.reviewType">{{ task.reviewText }}</span>
+                      <span v-if="task.reviewConclusion">{{ task.reviewConclusion }}</span>
                     </div>
                   </td>
                   <td>{{ task.time }}</td>
@@ -499,11 +500,19 @@
                       </button>
                       <button
                         v-if="canWmsAction && task.canReview"
-                        class="mes-btn tiny"
+                        class="mes-btn tiny primary"
                         :disabled="locationTaskSubmitting"
-                        @click="reviewLocationTask(task)"
+                        @click="reviewLocationTask(task, 'APPROVED')"
                       >
-                        复核
+                        通过
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canReview"
+                        class="mes-btn tiny warn"
+                        :disabled="locationTaskSubmitting"
+                        @click="reviewLocationTask(task, 'REJECTED')"
+                      >
+                        驳回
                       </button>
                       <button
                         v-if="canWmsAction && task.canCancel"
@@ -1368,6 +1377,8 @@ function mapLocationTask(item, index = 0) {
   const reviewer = item.reviewer || ''
   const reviewedTime = item.reviewedTime || ''
   const reviewed = Boolean(reviewer || reviewedTime)
+  const reviewResult = item.reviewResult || (reviewed ? 'APPROVED' : '')
+  const reviewConclusion = item.reviewConclusion || (reviewResult === 'REJECTED' ? item.exceptionReason || '' : '')
   const priority = Number(item.priority ?? defaultLocationTaskPriority(item.taskType))
   const dueTime = item.dueTime || ''
   const slaStatus = item.slaStatus || inferLocationTaskSlaStatus(status, dueTime)
@@ -1393,8 +1404,10 @@ function mapLocationTask(item, index = 0) {
     assigneeLabel: item.assignedTo || item.operator || 'system',
     reviewer,
     reviewedTime,
-    reviewText: reviewed ? `已复核 ${reviewer || '-'}${reviewedTime ? ` / ${formatTime(reviewedTime)}` : ''}` : (status === 'DONE' ? '待复核' : '未完成'),
-    reviewType: reviewed ? 'green' : (status === 'DONE' ? 'amber' : 'gray'),
+    reviewResult,
+    reviewConclusion,
+    reviewText: locationTaskReviewText(status, reviewed, reviewer, reviewedTime, reviewResult),
+    reviewType: locationTaskReviewType(status, reviewed, reviewResult),
     priority,
     priorityText: `P${priority}`,
     dueTime,
@@ -1413,6 +1426,17 @@ function mapLocationTask(item, index = 0) {
 
 function locationTaskLabel(taskType) {
   return locationTaskTypes.find(item => item.value === taskType)?.label || taskType || '任务'
+}
+
+function locationTaskReviewText(status, reviewed, reviewer, reviewedTime, reviewResult) {
+  if (!reviewed) return status === 'DONE' ? '待复核' : '未完成'
+  const resultText = reviewResult === 'REJECTED' ? '复核驳回' : '复核通过'
+  return `${resultText} ${reviewer || '-'}${reviewedTime ? ` / ${formatTime(reviewedTime)}` : ''}`
+}
+
+function locationTaskReviewType(status, reviewed, reviewResult) {
+  if (!reviewed) return status === 'DONE' ? 'amber' : 'gray'
+  return reviewResult === 'REJECTED' ? 'red' : 'green'
 }
 
 function defaultLocationTaskPriority(taskType) {
@@ -1823,16 +1847,23 @@ async function completeLocationTask(task) {
   }
 }
 
-async function reviewLocationTask(task) {
+async function reviewLocationTask(task, reviewResult = 'APPROVED') {
   try {
     locationTaskSubmitting.value = true
     const reviewer = locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    const approved = reviewResult === 'APPROVED'
+    const conclusion = approved
+      ? '库位任务执行记录、数量和库位已复核'
+      : (locationTaskForm.reason || '库位任务复核驳回，需线下确认差异后再做库存冲正')
     await reviewMaterialLocationTask(task.taskNo, {
       reviewer,
       operator: reviewer,
-      reviewConclusion: '库位任务执行记录、数量和库位已复核'
+      reviewResult,
+      decision: reviewResult,
+      reviewConclusion: conclusion,
+      exceptionReason: approved ? undefined : conclusion
     })
-    ElMessage.success('库位任务已复核')
+    ElMessage.success(approved ? '库位任务复核通过' : '库位任务已驳回复核')
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务复核失败')

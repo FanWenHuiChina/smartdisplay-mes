@@ -1194,14 +1194,22 @@ public class MaterialService {
             throw new BusinessException("库位任务复核人不能为空");
         }
         LocalDateTime now = LocalDateTime.now();
+        String reviewResult = normalizeLocationTaskReviewResult(text(request, "reviewResult",
+                text(request, "decision", text(request, "result", "APPROVED"))));
+        String conclusion = text(request, "reviewConclusion", text(request, "conclusion",
+                "APPROVED".equals(reviewResult) ? "库位任务执行记录已复核" : "库位任务复核驳回"));
         task.setReviewer(reviewer);
         task.setReviewedTime(now);
+        task.setReviewResult(reviewResult);
+        task.setReviewConclusion(conclusion);
+        if ("REJECTED".equals(reviewResult)) {
+            task.setExceptionReason(text(request, "exceptionReason", conclusion));
+        }
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
-        String conclusion = text(request, "reviewConclusion", text(request, "conclusion", "库位任务执行记录已复核"));
         audit("MATERIAL_LOCATION_TASK_REVIEW", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "复核库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
-                        + ", conclusion=" + conclusion,
+                        + ", result=" + reviewResult + ", conclusion=" + conclusion,
                 reviewer, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }
@@ -2822,6 +2830,8 @@ public class MaterialService {
         row.put("assignedTime", task.getAssignedTime());
         row.put("reviewer", task.getReviewer());
         row.put("reviewedTime", task.getReviewedTime());
+        row.put("reviewResult", valueOr(task.getReviewResult(), task.getReviewedTime() == null ? "" : "APPROVED"));
+        row.put("reviewConclusion", task.getReviewConclusion());
         row.put("cancelledBy", task.getCancelledBy());
         row.put("cancelledTime", task.getCancelledTime());
         row.put("cancelReason", task.getCancelReason());
@@ -3147,6 +3157,15 @@ public class MaterialService {
             case "CANCEL", "CANCELLED", "取消" -> "CANCELLED";
             case "REJECT", "REJECTED", "驳回" -> "REJECTED";
             default -> throw new BusinessException("库位任务取消状态不支持: " + value);
+        };
+    }
+
+    private String normalizeLocationTaskReviewResult(String value) {
+        String result = valueOr(value, "APPROVED").trim().toUpperCase(Locale.ROOT);
+        return switch (result) {
+            case "APPROVE", "APPROVED", "PASS", "OK", "通过" -> "APPROVED";
+            case "REJECT", "REJECTED", "FAIL", "FAILED", "NG", "驳回" -> "REJECTED";
+            default -> throw new BusinessException("库位任务复核结果不支持: " + value);
         };
     }
 

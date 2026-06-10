@@ -922,6 +922,8 @@ class MaterialServiceTest {
 
         assertThat(task.getReviewer()).isEqualTo("wms-lead");
         assertThat(task.getReviewedTime()).isNotNull();
+        assertThat(task.getReviewResult()).isEqualTo("APPROVED");
+        assertThat(task.getReviewConclusion()).isEqualTo("执行数量、库位和批次一致");
         assertThat(result.get("task")).isInstanceOf(Map.class);
         verify(materialLocationTaskMapper).updateById(task);
         ArgumentCaptor<String> reviewSnapshotCaptor = ArgumentCaptor.forClass(String.class);
@@ -931,7 +933,43 @@ class MaterialServiceTest {
                 .contains("\"before\"")
                 .contains("\"after\"")
                 .contains("\"reviewer\":\"wms-lead\"")
+                .contains("\"reviewResult\":\"APPROVED\"")
                 .contains("\"reviewConclusion\":\"执行数量、库位和批次一致\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void reviewLocationTaskShouldRejectWithConclusionWithoutChangingDoneStatus() {
+        MaterialLocationTask task = locationTask("MLT-REVIEW-REJECT-001", "SPLIT", "PI_INK_B010");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-REJECT-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.reviewLocationTask("MLT-REVIEW-REJECT-001", Map.of(
+                "reviewer", "wms-lead",
+                "reviewResult", "REJECTED",
+                "reviewConclusion", "子批标签与实物批次不一致"
+        ));
+
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(task.getReviewer()).isEqualTo("wms-lead");
+        assertThat(task.getReviewedTime()).isNotNull();
+        assertThat(task.getReviewResult()).isEqualTo("REJECTED");
+        assertThat(task.getReviewConclusion()).isEqualTo("子批标签与实物批次不一致");
+        assertThat(task.getExceptionReason()).isEqualTo("子批标签与实物批次不一致");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("reviewResult", "REJECTED")
+                .containsEntry("reviewConclusion", "子批标签与实物批次不一致")
+                .containsEntry("exceptionReason", "子批标签与实物批次不一致");
+
+        ArgumentCaptor<String> reviewSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), eq("MLT-REVIEW-REJECT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), reviewSnapshotCaptor.capture());
+        assertThat(reviewSnapshotCaptor.getValue())
+                .contains("\"reviewResult\":\"REJECTED\"")
+                .contains("\"reviewConclusion\":\"子批标签与实物批次不一致\"")
+                .contains("\"exceptionReason\":\"子批标签与实物批次不一致\"")
                 .contains("\"changedFields\"");
     }
 

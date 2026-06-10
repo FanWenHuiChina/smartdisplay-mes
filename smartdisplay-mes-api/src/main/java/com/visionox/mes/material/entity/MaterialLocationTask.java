@@ -41,6 +41,8 @@ public class MaterialLocationTask implements Serializable {
     private LocalDateTime assignedTime;
     private String reviewer;
     private LocalDateTime reviewedTime;
+    private String reviewResult;
+    private String reviewConclusion;
     private String cancelledBy;
     private LocalDateTime cancelledTime;
     private String cancelReason;
