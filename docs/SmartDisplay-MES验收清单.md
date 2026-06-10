@@ -75,7 +75,7 @@
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260610-010414.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，20 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260610-182527.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
 | Flyway | `db/migration/V1.1-V1.47` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.47` 静态验收通过 |
@@ -216,7 +216,7 @@
 | 操作员菜单收敛 | 操作员只显示生产总览、生产执行和追溯入口，不显示计划工单和系统管理入口 | 已落地，浏览器 E2E 覆盖 |
 | 操作员越权拒绝 | 操作员直接访问 `/order` 应被路由守卫重定向，直接调用工单释放接口应返回 403 | 已落地，浏览器 E2E 覆盖 |
 | Docker 运行态 | 当前 Docker 容器应使用本轮权限代码，登录和越权拒绝可经前端 Nginx 反代验证 | 已通过：EE 菜单含 `quality`，操作员越权释放返回 `403` |
-| 回归验证 | 权限口径、前端契约和真实浏览器用例均需通过 | 已通过：RBAC 单测 12 项、前端契约 383 项、浏览器 E2E 19 步 |
+| 回归验证 | 权限口径、前端契约和真实浏览器用例均需通过 | 已通过：RBAC 单测 12 项、前端契约 383 项、浏览器 E2E 当前 20 步 |
 
 ## 2026-06-09 补充验收：设备页 EAP 运行级闭环
 
@@ -233,7 +233,7 @@
 | 到期复审生成 | 系统可扫描 `nextAuditDue` 到期窗口内供应商，自动生成周期复审任务，并跳过已有 OPEN 复审的供应商 | 已落地，`MaterialServiceTest` 覆盖创建与跳过 |
 | 失败审计映射 | 到期复审生成接口失败时必须映射为可查询的失败审计动作 | 已落地，映射 `SUPPLIER_QUALIFICATION_REVIEW_GENERATE` |
 | 前端入口 | 物料页供应商准入复审卡片提供权限控制的“生成到期复审”入口 | 已落地，受 `material:supplier-manage` 控制 |
-| 浏览器 E2E | 页面点击生成到期复审后必须能在系统审计中查到批处理审计 | 已通过，浏览器 E2E 19 步 |
+| 浏览器 E2E | 页面点击生成到期复审后必须能在系统审计中查到批处理审计 | 已通过，浏览器 E2E 当前 20 步 |
 
 ## 2026-06-09 补充验收：工单页 ERP Adapter UI 闭环
 
@@ -368,6 +368,6 @@
 | 失败消息不丢失 | EAP 入站失败时必须保留 `equipment_gateway_message` 的 `FAILED` 记录、错误信息和失败响应快照 | 已落地，`EapGatewayServiceTest` 覆盖 |
 | 失败审计 | EAP 入站失败必须写 `EAP_GATEWAY_MESSAGE_FAILED`，审计结果为 `FAIL` | 已落地，单元测试断言 `recordFailure` |
 | 消息详情接口 | `/api/v1/equipment/gateway-messages/{messageNo}` 必须返回原始快照、归一化快照、响应快照和诊断建议 | 已落地，详情测试覆盖 |
-| 前端诊断入口 | 设备页消息履历必须可打开诊断抽屉，展示失败分类、处置建议和三类快照 | 已落地，前端契约 406 项覆盖 |
-| 回归验证 | EAP 定向、前端契约、生产构建和生产包扫描必须通过 | 已通过：EAP 15 项、前端契约 406 项、生产包 14 个 JS 产物 clean |
+| 前端诊断入口 | 设备页消息履历必须可打开诊断抽屉，展示失败分类、处置建议和三类快照 | 已落地，前端契约 406 项和浏览器 E2E 覆盖 |
+| 回归验证 | EAP 定向、前端契约、生产构建、生产包扫描和浏览器 E2E 必须通过 | 已通过：EAP 15 项、前端契约 406 项、生产包 14 个 JS 产物 clean、浏览器 E2E 20 步 |
 | Docker 冒烟 | Docker 运行态必须能提交一条失败 EAP 入站、查询消息详情和失败审计 | 已通过：`EGM-DIAG-20260610181059` 返回 `FAILED/PROTOCOL_FRAME`，审计 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 命中 1 条 |

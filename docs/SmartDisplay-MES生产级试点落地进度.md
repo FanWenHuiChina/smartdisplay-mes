@@ -80,7 +80,7 @@
 - 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 404 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-010414.md`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，20 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报、网关健康检查、EAP 失败消息诊断抽屉、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-182527.md`。
 - 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 241, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
@@ -863,3 +863,11 @@
 - 前端开发 fallback 增加一条 SECS/GEM 帧缺失失败样例，用于离线演示消息详情抽屉；生产包扫描仍保证默认生产构建不携带典型业务样例标识。
 - 已验证：`EapGatewayServiceTest` 15 项通过，后端全量 242 项通过，Flyway 静态验收 47 个迁移通过，前端契约 406 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
 - 已部署到当前 Docker 运行环境：本地 jar/dist 已覆盖后端和前端容器；经前端反代提交缺少 SECS/GEM 帧标识的 `EGM-DIAG-20260610181059`，返回 `accepted=false`、消息状态 `FAILED`、详情诊断 `PROTOCOL_FRAME`，并查到 1 条 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 审计。
+
+## 2026-06-10 增量：EAP 失败诊断浏览器 E2E 覆盖
+
+- `smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 从 19 步扩展为 20 步，新增设备页 EAP 失败消息诊断用例，避免诊断抽屉只停留在静态契约或接口冒烟层。
+- 用例在管理员浏览器会话中切换到 `GW-SECSGEM-SHADOW`，提交缺少 SECS/GEM 帧标识的入站消息，确认返回 `accepted=false`，刷新消息履历后从页面点击“查看”打开诊断抽屉。
+- 浏览器 E2E 同时校验消息详情接口和审计：`processStatus=FAILED`、`diagnostic.failureCategory=PROTOCOL_FRAME`、原始快照/响应快照存在，并命中 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 审计。
+- 修正质量页 E2E 与当前双来源表单的行为偏差：提交 QMS Adapter OK 上报前显式选择 `来源=QMS`，避免默认 `MES 手工录入` 模式导致按钮文案不一致。
+- 已验证：`node --check smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 通过，`npm.cmd run verify:frontend-contract` 406 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`npm.cmd run e2e:browser` 在当前 Docker 前端 `http://127.0.0.1:8888` 通过 20 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260610-182527.md/json`。
