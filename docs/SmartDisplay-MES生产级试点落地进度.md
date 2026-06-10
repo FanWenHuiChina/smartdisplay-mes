@@ -825,3 +825,12 @@
 - 新增 Flyway `V1.46__Enforce_Single_Active_Bom.sql`，迁移时先按 `updated_time/effective_time/created_time + bom_version + id` 保留每个产品最新一条 `ACTIVE`，再创建部分唯一索引 `uk_bom_single_active_product`，数据库侧兜底同产品单一 `ACTIVE`。
 - `init.sql` 已同步补齐 `uk_bom_single_active_product`，保证新库初始化时就具备 BOM 生效唯一性约束。
 - 已验证：Material 定向测试 44 项通过，后端全量 231 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.46`；当前数据库不存在同产品多条 ACTIVE BOM；数据库插入同产品第二条 ACTIVE BOM 被唯一索引拒绝。
+
+## 2026-06-10 增量：后端试点 fallback 生产默认关闭
+
+- `PilotMesService` 新增 `mes.pilot.fallback-enabled` 显式开关，默认值为 `false`；生产运行态不再在正式数据为空或读取失败时静默返回试点样例数据。
+- BOM、Route、设备事件、OEE、物料齐套、载具、质量检验、物料消耗、供应商绩效/趋势、库位策略/任务、异常事件、系统审计、分页审计、异常队列、缺陷 TopN 和 Route 工序读取均已按该开关收口。
+- 生产关闭 fallback 时，正式查询为空返回真实空结果；正式查询失败返回明确业务异常，提示“未启用试点fallback”，避免样例数据掩盖数据库、权限或集成问题。
+- 演示类单测通过 `ReflectionTestUtils` 显式开启 fallback，保留开发演示能力；新增关闭 fallback 的 BOM、设备事件和系统审计断言，防止回退。
+- 已验证：`PilotMesServiceTest` 37 项通过，后端全量测试 236 项通过；后端打包成功并覆盖当前 Docker 后端容器。
+- Docker 冒烟已通过：登录后查询不存在业务对象 `NO_SUCH_AUDIT_OBJECT_20260610` 的 `/api/v1/system/audit-logs` 返回 `data=[]`，不再返回 `Hold Release 审批`、`Recipe 参数变更` 等试点样例审计。

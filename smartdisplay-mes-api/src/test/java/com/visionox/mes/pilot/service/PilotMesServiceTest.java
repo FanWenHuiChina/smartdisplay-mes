@@ -41,6 +41,7 @@ import com.visionox.mes.route.entity.RouteStep;
 import com.visionox.mes.route.service.RouteService;
 import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -48,6 +49,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -144,6 +146,11 @@ class PilotMesServiceTest {
 
     @InjectMocks
     private PilotMesService pilotMesService;
+
+    @BeforeEach
+    void enablePilotFallbackForExistingDemoScenarios() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", true);
+    }
 
     @Test
     void createOrderShouldPersistCreatedOrderAndWriteAudit() {
@@ -292,6 +299,54 @@ class PilotMesServiceTest {
                 .hasMessageContaining("审计时间");
 
         verify(auditLogService, never()).page(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bomsShouldReturnEmptyWhenFormalQueryEmptyAndFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(materialService.boms()).thenReturn(List.of());
+
+        assertThat(pilotMesService.boms()).isEmpty();
+    }
+
+    @Test
+    void bomsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(materialService.boms()).thenThrow(new RuntimeException("db down"));
+
+        assertThatThrownBy(() -> pilotMesService.boms())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("BOM正式数据读取失败")
+                .hasMessageContaining("未启用试点fallback");
+    }
+
+    @Test
+    void auditLogsShouldReturnEmptyWhenFormalQueryEmptyAndFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(auditLogService.list("LOT001", 50)).thenReturn(List.of());
+
+        assertThat(pilotMesService.auditLogs("LOT001")).isEmpty();
+    }
+
+    @Test
+    void auditLogsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(auditLogService.list("LOT001", 50)).thenThrow(new RuntimeException("audit table unavailable"));
+
+        assertThatThrownBy(() -> pilotMesService.auditLogs("LOT001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统审计正式数据读取失败")
+                .hasMessageContaining("未启用试点fallback");
+    }
+
+    @Test
+    void equipmentEventsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(equipmentService.events("EVAP_01", "OPEN")).thenThrow(new RuntimeException("event table unavailable"));
+
+        assertThatThrownBy(() -> pilotMesService.equipmentEvents("EVAP_01", "OPEN"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未启用试点fallback");
     }
 
     @Test

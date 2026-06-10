@@ -502,3 +502,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.45` 迁移到 `1.46 - Enforce Single Active Bom`；数据库记录 `version=1.46, success=t` |
 | 数据库状态检查 | 查询 `pg_indexes` 和重复 `ACTIVE` BOM 分组 | 通过 | `uk_bom_single_active_product` 已存在；当前数据库不存在同产品多条 `ACTIVE` BOM |
 | 数据库约束冒烟 | 在异常捕获块中尝试插入 `AMOLED_65` 第二条 `ACTIVE` BOM | 通过 | PostgreSQL 返回 `duplicate key value violates unique constraint "uk_bom_single_active_product"`，证明数据库侧兜底生效 |
+
+## 2026-06-10 后端试点 fallback 生产默认关闭复验
+
+本轮将 `PilotMesService` 中用于演示的试点样例 fallback 改为显式开关控制：默认配置 `mes.pilot.fallback-enabled=false`，生产运行态不再在正式表查询为空或失败时静默补充样例 BOM、Route、设备事件、物料、质量、异常、审计、看板缺陷 TopN 等数据。演示环境如需降级，可显式将该开关置为 `true`。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端聚合服务定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | 37 项通过；覆盖 fallback 开启的演示路径，以及 fallback 关闭时 BOM、设备事件、系统审计失败拒绝和空结果不补样例 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 236 项通过 |
+| 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` |
+| Docker 运行态部署 | `docker compose -f smartdisplay-mes-api\docker-compose.yml cp ... backend:/app/app.jar` 后重启后端 | 通过 | 后端容器启动成功，Flyway 当前版本 `1.46`，迁移无需更新 |
+| 审计 fallback 冒烟 | 登录后查询 `GET /api/v1/system/audit-logs?bizNo=NO_SUCH_AUDIT_OBJECT_20260610` | 通过 | 返回业务码 `200` 且 `data=[]`，没有返回 `Hold Release 审批`、`Recipe 参数变更` 等试点样例审计 |

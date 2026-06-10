@@ -48,6 +48,12 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
 
+# SmartDisplay MES试点配置
+mes:
+  pilot:
+    # 生产默认不静默返回试点样例数据；演示环境如需降级需显式置为 true
+    fallback-enabled: false
+
 # 服务器配置
 server:
   port: ${SERVER_PORT:8080}

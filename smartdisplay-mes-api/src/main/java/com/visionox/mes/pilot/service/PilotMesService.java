@@ -49,6 +49,7 @@ import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,8 +71,8 @@ import java.util.stream.Collectors;
  * 生产级试点接口聚合服务。
  *
  * <p>当前版本优先打通单基地单产线试点闭环：真实读取已有 Recipe、Lot、
- * 设备、工序、工单、质量和异常表；尚未建表的物料、AI数据先由模拟适配器返回，
- * 后续再替换为正式领域表。</p>
+ * 设备、工序、工单、质量、物料、审计和异常表。演示 fallback 必须显式开启，
+ * 生产默认不静默返回样例数据。</p>
  */
 @Service
 @Slf4j
@@ -113,6 +114,9 @@ public class PilotMesService {
     private final EquipmentService equipmentService;
     private final EapAdapter eapAdapter;
     private final EapGatewayService eapGatewayService;
+
+    @Value("${mes.pilot.fallback-enabled:false}")
+    private boolean pilotFallbackEnabled;
 
     public Map<String, Object> overview() {
         List<Lot> lots = allLots();
@@ -628,13 +632,13 @@ public class PilotMesService {
     public List<Map<String, Object>> boms() {
         try {
             List<Map<String, Object>> rows = materialService.boms();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("BOM正式表读取失败，已降级到试点BOM数据: {}", e.getMessage());
+            return fallbackListOnFailure("BOM", e, fallbackBoms());
         }
-        return fallbackBoms();
+        return fallbackListOnEmpty(fallbackBoms());
     }
 
     public List<Map<String, Object>> bomChangeRequests(String status) {
@@ -664,12 +668,16 @@ public class PilotMesService {
     public List<Map<String, Object>> routes() {
         try {
             List<Map<String, Object>> routes = routeService.activeRouteSummaries();
-            if (!routes.isEmpty()) {
+            if (routes != null && !routes.isEmpty()) {
                 return routes;
             }
         } catch (Exception e) {
-            log.warn("Route正式表读取失败，已降级到试点Route数据: {}", e.getMessage());
+            return fallbackListOnFailure("Route", e, fallbackRoutes());
         }
+        return fallbackListOnEmpty(fallbackRoutes());
+    }
+
+    private List<Map<String, Object>> fallbackRoutes() {
         return List.of(Map.of(
                 "routeCode", "RTE_G6_V08",
                 "productCode", "AMOLED_65",
@@ -692,24 +700,25 @@ public class PilotMesService {
     public List<Map<String, Object>> equipmentEvents() {
         try {
             List<Map<String, Object>> rows = equipmentService.events(null, null);
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("设备事件正式表读取失败，已降级到试点设备事件: {}", e.getMessage());
+            return fallbackListOnFailure("设备事件", e, fallbackEquipmentEvents());
         }
-        return fallbackEquipmentEvents();
+        return fallbackListOnEmpty(fallbackEquipmentEvents());
     }
 
     public List<Map<String, Object>> equipmentEvents(String equipmentCode, String status) {
         try {
-            return equipmentService.events(equipmentCode, status);
+            List<Map<String, Object>> rows = equipmentService.events(equipmentCode, status);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("设备事件正式表读取失败，已降级到试点设备事件: {}", e.getMessage());
-            if ((equipmentCode == null || equipmentCode.isBlank()) && (status == null || status.isBlank())) {
-                return fallbackEquipmentEvents();
-            }
-            return List.of();
+            List<Map<String, Object>> fallbackRows =
+                    (equipmentCode == null || equipmentCode.isBlank()) && (status == null || status.isBlank())
+                            ? fallbackEquipmentEvents()
+                            : List.of();
+            return fallbackListOnFailure("设备事件", e, fallbackRows);
         }
     }
 
@@ -807,8 +816,7 @@ public class PilotMesService {
         try {
             return equipmentService.oeeSummary(lineCode);
         } catch (Exception e) {
-            log.warn("设备OEE正式统计失败，已降级到试点OEE数据: {}", e.getMessage());
-            return fallbackEquipmentOee(lineCode);
+            return fallbackMapOnFailure("设备OEE", e, fallbackEquipmentOee(lineCode));
         }
     }
 
@@ -954,8 +962,11 @@ public class PilotMesService {
             if (batches instanceof List<?> list && !list.isEmpty()) {
                 return data;
             }
+            if (!pilotFallbackEnabled) {
+                return data;
+            }
         } catch (Exception e) {
-            log.warn("物料正式表读取失败，已降级到试点物料数据: {}", e.getMessage());
+            return fallbackMapOnFailure("物料齐套", e, fallbackMaterialReadiness());
         }
         return fallbackMaterialReadiness();
     }
@@ -963,13 +974,13 @@ public class PilotMesService {
     public List<Map<String, Object>> carriers() {
         try {
             List<Map<String, Object>> rows = materialService.carriers();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("载具正式表读取失败，已降级到试点载具数据: {}", e.getMessage());
+            return fallbackListOnFailure("载具", e, fallbackCarriers());
         }
-        return fallbackCarriers();
+        return fallbackListOnEmpty(fallbackCarriers());
     }
 
     public Map<String, Object> bindCarrier(String carrierNo, Map<String, Object> request) {
@@ -1063,21 +1074,21 @@ public class PilotMesService {
     public List<Map<String, Object>> qualityInspections(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return qualityService.inspectionRows(lotNo);
+            List<Map<String, Object>> rows = qualityService.inspectionRows(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("质量正式表读取失败，已降级到试点质量数据: {}", e.getMessage());
+            return fallbackListOnFailure("质量检验", e, fallbackQualityInspections(lotNo));
         }
-        return fallbackQualityInspections(lotNo);
     }
 
     public List<Map<String, Object>> materialConsumptions(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return materialService.materialConsumptions(lotNo);
+            List<Map<String, Object>> rows = materialService.materialConsumptions(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("物料消耗正式表读取失败，已降级到试点消耗数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料消耗", e, fallbackMaterialConsumptions(lotNo));
         }
-        return fallbackMaterialConsumptions(lotNo);
     }
 
     private List<Map<String, Object>> carrierTraceRows(String lotNo) {
@@ -1132,25 +1143,25 @@ public class PilotMesService {
     public List<Map<String, Object>> materialSupplierPerformance() {
         try {
             List<Map<String, Object>> rows = materialService.supplierPerformance();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("供应商绩效评分正式表读取失败，已降级到试点供应商评分数据: {}", e.getMessage());
+            return fallbackListOnFailure("供应商绩效评分", e, fallbackMaterialSupplierPerformance());
         }
-        return fallbackMaterialSupplierPerformance();
+        return fallbackListOnEmpty(fallbackMaterialSupplierPerformance());
     }
 
     public List<Map<String, Object>> materialSupplierTrends(int months) {
         try {
             List<Map<String, Object>> rows = materialService.supplierScoreTrends(months);
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("供应商月度评分趋势正式表读取失败，已降级到试点供应商趋势数据: {}", e.getMessage());
+            return fallbackListOnFailure("供应商月度评分趋势", e, fallbackMaterialSupplierTrends());
         }
-        return fallbackMaterialSupplierTrends();
+        return fallbackListOnEmpty(fallbackMaterialSupplierTrends());
     }
 
     public List<Map<String, Object>> materialSuppliers() {
@@ -1192,25 +1203,25 @@ public class PilotMesService {
     public List<Map<String, Object>> materialLocations() {
         try {
             List<Map<String, Object>> rows = materialService.materialLocations();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("物料库位策略正式表读取失败，已降级到试点库位策略数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料库位策略", e, fallbackMaterialLocations());
         }
-        return fallbackMaterialLocations();
+        return fallbackListOnEmpty(fallbackMaterialLocations());
     }
 
     public List<Map<String, Object>> materialLocationTasks(String status, String batchNo) {
         try {
             List<Map<String, Object>> rows = materialService.materialLocationTasks(status, batchNo);
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("物料库位任务正式表读取失败，已降级到试点库位任务数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料库位任务", e, fallbackMaterialLocationTasks(status, batchNo));
         }
-        return fallbackMaterialLocationTasks(status, batchNo);
+        return fallbackListOnEmpty(fallbackMaterialLocationTasks(status, batchNo));
     }
 
     public Map<String, Object> createMaterialLocationTask(Map<String, Object> request) {
@@ -1236,11 +1247,11 @@ public class PilotMesService {
     public List<Map<String, Object>> qualityExceptions(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return qualityService.exceptionRows(lotNo);
+            List<Map<String, Object>> rows = qualityService.exceptionRows(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("异常事件正式表读取失败，已降级到试点异常数据: {}", e.getMessage());
+            return fallbackListOnFailure("异常事件", e, fallbackExceptionEvents(lotNo));
         }
-        return fallbackExceptionEvents(lotNo);
     }
 
     public List<Map<String, Object>> qualityMrbRecords(String eventNo) {
@@ -1275,6 +1286,32 @@ public class PilotMesService {
         return qualityService.closeException(eventNo, safeRequest(request));
     }
 
+    private List<Map<String, Object>> fallbackListOnEmpty(List<Map<String, Object>> fallbackRows) {
+        return pilotFallbackEnabled ? fallbackRows : List.of();
+    }
+
+    private List<Map<String, Object>> fallbackListOnFailure(String dataName,
+                                                            Exception e,
+                                                            List<Map<String, Object>> fallbackRows) {
+        if (pilotFallbackEnabled) {
+            log.warn("{}正式数据读取失败，已启用试点fallback: {}", dataName, e.getMessage());
+            return fallbackRows;
+        }
+        log.warn("{}正式数据读取失败，未启用试点fallback: {}", dataName, e.getMessage());
+        throw new BusinessException(dataName + "正式数据读取失败，未启用试点fallback");
+    }
+
+    private Map<String, Object> fallbackMapOnFailure(String dataName,
+                                                     Exception e,
+                                                     Map<String, Object> fallbackData) {
+        if (pilotFallbackEnabled) {
+            log.warn("{}正式数据读取失败，已启用试点fallback: {}", dataName, e.getMessage());
+            return fallbackData;
+        }
+        log.warn("{}正式数据读取失败，未启用试点fallback: {}", dataName, e.getMessage());
+        throw new BusinessException(dataName + "正式数据读取失败，未启用试点fallback");
+    }
+
     private List<Map<String, Object>> fallbackQualityInspections(String lotNo) {
         String targetLotNo = valueOr(lotNo, "LOT202406001");
         return List.of(
@@ -1284,11 +1321,14 @@ public class PilotMesService {
     }
 
     public Map<String, Object> dashboardYield() {
-        List<Map<String, Object>> defectTopN = fallbackDefectTopN();
+        List<Map<String, Object>> defectTopN;
         try {
             defectTopN = qualityService.defectTopN(5);
+            if (defectTopN == null) {
+                defectTopN = List.of();
+            }
         } catch (Exception e) {
-            log.warn("缺陷TopN正式表读取失败，已降级到试点看板数据: {}", e.getMessage());
+            defectTopN = fallbackListOnFailure("缺陷TopN", e, fallbackDefectTopN());
         }
         return Map.of(
                 "trend", yieldTrend(),
@@ -1647,13 +1687,13 @@ public class PilotMesService {
     public List<Map<String, Object>> auditLogs(String bizNo) {
         try {
             List<AuditLog> logs = auditLogService.list(bizNo, 50);
-            if (!logs.isEmpty()) {
+            if (logs != null && !logs.isEmpty()) {
                 return logs.stream().map(this::auditRow).collect(Collectors.toList());
             }
-        } catch (Exception ignored) {
-            // 数据库尚未创建 sys_audit_log 时，试点接口继续返回模拟审计，避免阻塞演示链路。
+        } catch (Exception e) {
+            return fallbackListOnFailure("系统审计", e, fallbackAuditLogs(bizNo));
         }
-        return fallbackAuditLogs(bizNo);
+        return fallbackListOnEmpty(fallbackAuditLogs(bizNo));
     }
 
     public Page<Map<String, Object>> pageAuditLogs(Long current,
@@ -1684,7 +1724,11 @@ public class PilotMesService {
             Page<Map<String, Object>> mapped = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
             mapped.setRecords(page.getRecords().stream().map(this::auditRow).collect(Collectors.toList()));
             return mapped;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            if (!pilotFallbackEnabled) {
+                log.warn("系统审计分页正式表读取失败，未启用试点fallback: {}", e.getMessage());
+                throw new BusinessException("系统审计正式数据读取失败，未启用试点fallback");
+            }
             List<Map<String, Object>> fallback = fallbackAuditLogs(bizNo).stream()
                     .filter(row -> auditFallbackMatches(row, action, result, source, operator))
                     .toList();
@@ -2130,6 +2174,9 @@ public class PilotMesService {
     private List<Map<String, Object>> alertQueue() {
         try {
             List<Map<String, Object>> rows = qualityService.exceptionRows(null);
+            if (rows == null) {
+                return List.of();
+            }
             return rows.stream()
                     .limit(5)
                     .map(row -> Map.<String, Object>of(
@@ -2140,8 +2187,11 @@ public class PilotMesService {
                     ))
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.warn("异常队列正式表读取失败，已降级到试点告警队列: {}", e.getMessage());
+            return fallbackListOnFailure("异常队列", e, fallbackAlertQueue());
         }
+    }
+
+    private List<Map<String, Object>> fallbackAlertQueue() {
         return List.of(
                 Map.of("title", "LOT260606-017 涂胶膜厚超限", "level", "P1", "type", "QUALITY", "status", "OPEN"),
                 Map.of("title", "EVAP_01 真空波动", "level", "P2", "type", "EQUIPMENT", "status", "PROCESSING"),
@@ -2479,9 +2529,15 @@ public class PilotMesService {
                 return steps;
             }
         } catch (Exception e) {
-            log.warn("生效Route读取失败，已降级到试点默认路线: product={}, reason={}", productCode, e.getMessage());
+            if (!pilotFallbackEnabled) {
+                log.warn("生效Route正式数据读取失败，未启用试点fallback: product={}, reason={}",
+                        productCode, e.getMessage());
+                throw new BusinessException("生效Route正式数据读取失败，未启用试点fallback");
+            }
+            log.warn("生效Route正式数据读取失败，已启用试点fallback: product={}, reason={}",
+                    productCode, e.getMessage());
         }
-        return DEFAULT_ROUTE;
+        return pilotFallbackEnabled ? DEFAULT_ROUTE : List.of();
     }
 
     private String defaultEquipmentCode(String stepCode) {
