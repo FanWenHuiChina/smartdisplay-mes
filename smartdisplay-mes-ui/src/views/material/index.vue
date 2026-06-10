@@ -355,7 +355,7 @@
 
     <div class="mes-card section-gap">
       <div class="mes-card__head">
-        <div class="mes-card__title">库位任务 / 上架移库盘点</div>
+        <div class="mes-card__title">库位任务 / 上架移库拆批盘点</div>
         <span class="status-tag blue">{{ locationTaskRows.length }} 条</span>
       </div>
       <div class="mes-card__body">
@@ -376,7 +376,7 @@
 
             <div class="wms-form location-task-form">
               <div class="mes-field">
-                <label>目标批次</label>
+                <label>{{ locationTaskForm.taskType === 'SPLIT' ? '母批次' : '目标批次' }}</label>
                 <select v-model="locationTaskForm.batchNo" class="mes-select">
                   <option value="">请选择</option>
                   <option v-for="batch in materialLots" :key="batch.code" :value="batch.code">{{ batch.code }}</option>
@@ -397,8 +397,12 @@
                 </select>
               </div>
               <div class="mes-field">
-                <label>{{ locationTaskForm.taskType === 'COUNT' ? '实盘可用' : '任务数量' }}</label>
-                <input v-model="locationTaskForm.qty" class="mes-input" inputmode="decimal" :placeholder="locationTaskForm.taskType === 'COUNT' ? '必填' : '留空整批'" />
+                <label>{{ locationTaskQtyLabel }}</label>
+                <input v-model="locationTaskForm.qty" class="mes-input" inputmode="decimal" :placeholder="locationTaskQtyPlaceholder" />
+              </div>
+              <div v-if="locationTaskForm.taskType === 'SPLIT'" class="mes-field">
+                <label>子批次号</label>
+                <input v-model.trim="locationTaskForm.childBatchNo" class="mes-input" placeholder="留空自动生成" />
               </div>
               <div class="mes-field wide">
                 <label>原因</label>
@@ -446,6 +450,7 @@
                     <div class="task-main">
                       <strong>{{ task.taskLabel }}</strong>
                       <span>{{ task.taskNo }}</span>
+                      <span v-if="task.childBatchNo">子批 {{ task.childBatchNo }}</span>
                     </div>
                   </td>
                   <td>{{ task.batchNo }}</td>
@@ -918,7 +923,8 @@ const fallbackMaterialLocations = [
 const fallbackLocationTasks = [
   { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' }
+  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
+  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' }
 ]
 
 const wmsActions = [
@@ -932,6 +938,7 @@ const wmsActions = [
 const locationTaskTypes = [
   { value: 'MOVE', label: '移库' },
   { value: 'PUTAWAY', label: '上架' },
+  { value: 'SPLIT', label: '拆批' },
   { value: 'COUNT', label: '盘点' }
 ]
 
@@ -990,6 +997,7 @@ const locationTaskForm = reactive({
   batchNo: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLots[0].batchNo : '',
   targetLocation: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations[0].locationCode : '',
   qty: '',
+  childBatchNo: '',
   reason: '试点库位任务',
   operator: localStorage.getItem('username') || 'admin'
 })
@@ -1036,6 +1044,15 @@ const readinessType = computed(() => {
 })
 const currentActionLabel = computed(() => wmsActions.find(item => item.value === wmsForm.action)?.label || '操作')
 const currentLocationTaskLabel = computed(() => locationTaskTypes.find(item => item.value === locationTaskForm.taskType)?.label || '任务')
+const locationTaskQtyLabel = computed(() => {
+  if (locationTaskForm.taskType === 'COUNT') return '实盘可用'
+  if (locationTaskForm.taskType === 'SPLIT') return '拆出数量'
+  return '任务数量'
+})
+const locationTaskQtyPlaceholder = computed(() => {
+  if (locationTaskForm.taskType === 'COUNT' || locationTaskForm.taskType === 'SPLIT') return '必填'
+  return '留空整批'
+})
 const wmsAdapterResultType = computed(() => {
   const result = wmsAdapterResult.value
   if (!result) return 'blue'
@@ -1064,6 +1081,9 @@ const locationTaskSummary = computed(() => {
   if (!batch) return '未选择批次'
   if (locationTaskForm.taskType === 'COUNT') {
     return `${batch.materialName || batch.materialCode} / 当前可用 ${formatQty(batch.availableQty, batch.unit)} / 当前库位 ${batch.location || '-'}`
+  }
+  if (locationTaskForm.taskType === 'SPLIT') {
+    return `${batch.materialName || batch.materialCode} / 可拆可用 ${formatQty(batch.availableQty, batch.unit)} / 当前库位 ${batch.location || '-'}`
   }
   return `${batch.materialName || batch.materialCode} / 整批在库 ${formatQty(batchPhysicalQty(batch), batch.unit)} / 当前库位 ${batch.location || '-'}`
 })
@@ -1320,6 +1340,7 @@ function mapLocationTask(item, index = 0) {
     taskType: item.taskType || 'MOVE',
     taskLabel: locationTaskLabel(item.taskType),
     batchNo: item.batchNo || '-',
+    childBatchNo: item.childBatchNo || '',
     materialName: item.materialName || item.materialCode || '-',
     sourceLocation: item.sourceLocation || '-',
     targetLocation: item.targetLocation || '-',
@@ -1357,6 +1378,9 @@ function setLocationTaskType(taskType) {
   }
   if (taskType !== 'COUNT' && !locationTaskForm.targetLocation) {
     locationTaskForm.targetLocation = materialLocationRows.value.find(item => item.status === 'ACTIVE')?.locationCode || ''
+  }
+  if (taskType !== 'SPLIT') {
+    locationTaskForm.childBatchNo = ''
   }
 }
 
@@ -1650,6 +1674,13 @@ async function submitLocationTask() {
     }
     if (locationTaskForm.taskType === 'COUNT') {
       payload.actualQty = numberValue(locationTaskForm.qty, '实盘可用数量', true)
+    } else if (locationTaskForm.taskType === 'SPLIT') {
+      if (!locationTaskForm.targetLocation) throw new Error('目标库位不能为空')
+      payload.targetLocation = locationTaskForm.targetLocation
+      payload.plannedQty = numberValue(locationTaskForm.qty, '拆出数量')
+      if (locationTaskForm.childBatchNo) {
+        payload.childBatchNo = locationTaskForm.childBatchNo
+      }
     } else {
       if (!locationTaskForm.targetLocation) throw new Error('目标库位不能为空')
       payload.targetLocation = locationTaskForm.targetLocation
@@ -1660,6 +1691,7 @@ async function submitLocationTask() {
     await createMaterialLocationTask(payload)
     ElMessage.success(`${currentLocationTaskLabel.value}任务已创建`)
     locationTaskForm.qty = ''
+    locationTaskForm.childBatchNo = ''
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务提交失败')
@@ -1692,6 +1724,9 @@ async function completeLocationTask(task) {
     }
     if (task.taskType === 'COUNT' && task.actualQty !== undefined) {
       payload.actualQty = task.actualQty
+    }
+    if (task.taskType === 'SPLIT' && task.childBatchNo) {
+      payload.childBatchNo = task.childBatchNo
     }
     await completeMaterialLocationTask(task.taskNo, payload)
     ElMessage.success('库位任务已完成')

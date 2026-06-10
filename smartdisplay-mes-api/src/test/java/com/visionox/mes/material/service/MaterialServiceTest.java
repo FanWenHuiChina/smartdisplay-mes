@@ -628,6 +628,142 @@ class MaterialServiceTest {
     }
 
     @Test
+    void createSplitLocationTaskShouldCreatePendingTaskAndWriteAudit() {
+        MaterialBatch batch = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        batch.setFrozenQty(new BigDecimal("10"));
+        batch.setLocation("WMS-IN");
+        MaterialLocation target = materialLocation("WMS-A01", "CHEMICAL", "ACTIVE", "300", "20", "kg");
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(batch);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007-S01")).thenReturn(null);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-A01")).thenReturn(target);
+
+        Map<String, Object> result = materialService.createLocationTask(Map.of(
+                "taskType", "SPLIT",
+                "batchNo", "PI_INK_B007",
+                "targetLocation", "WMS-A01",
+                "qty", "25",
+                "childBatchNo", "PI_INK_B007-S01",
+                "operator", "wms1001",
+                "reason", "多库位拆批备料"
+        ));
+
+        assertThat(batch.getAvailableQty()).isEqualByComparingTo("70");
+        assertThat(batch.getTotalQty()).isEqualByComparingTo("100");
+        assertThat(target.getUsedQty()).isEqualByComparingTo("20");
+        assertThat(result.get("task")).isInstanceOf(Map.class);
+        verify(batchMapper, never()).updateById(batch);
+        verify(batchMapper, never()).insert(any(MaterialBatch.class));
+        verify(materialLocationMapper, never()).updateById(target);
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+
+        ArgumentCaptor<MaterialLocationTask> taskCaptor = ArgumentCaptor.forClass(MaterialLocationTask.class);
+        verify(materialLocationTaskMapper).insert(taskCaptor.capture());
+        MaterialLocationTask task = taskCaptor.getValue();
+        assertThat(task.getTaskType()).isEqualTo("SPLIT");
+        assertThat(task.getBatchNo()).isEqualTo("PI_INK_B007");
+        assertThat(task.getSourceLocation()).isEqualTo("WMS-IN");
+        assertThat(task.getTargetLocation()).isEqualTo("WMS-A01");
+        assertThat(task.getPlannedQty()).isEqualByComparingTo("25");
+        assertThat(task.getActualQty()).isEqualByComparingTo("0");
+        assertThat(task.getStatus()).isEqualTo("CREATED");
+        assertThat(task.getRequestSnapshot()).contains("childBatchNo=PI_INK_B007-S01");
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"SPLIT\"")
+                .contains("\"batchNo\":\"PI_INK_B007\"")
+                .contains("\"targetLocation\":\"WMS-A01\"")
+                .contains("\"request\"")
+                .contains("\"childBatchNo\":\"PI_INK_B007-S01\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void completeSplitLocationTaskShouldCreateChildBatchAndWriteTransactions() {
+        MaterialLocationTask task = locationTask("MLT-SPLIT-001", "SPLIT", "PI_INK_B007");
+        task.setStatus("ASSIGNED");
+        task.setPlannedQty(new BigDecimal("25"));
+        task.setActualQty(BigDecimal.ZERO);
+        task.setRequestSnapshot("{taskType=SPLIT, batchNo=PI_INK_B007, childBatchNo=PI_INK_B007-S01, plannedQty=25}");
+        MaterialBatch parent = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        parent.setFrozenQty(new BigDecimal("10"));
+        parent.setLocation("WMS-IN");
+        MaterialLocation source = materialLocation("WMS-IN", "ANY", "ACTIVE", "500", "100", "kg");
+        MaterialLocation target = materialLocation("WMS-A01", "CHEMICAL", "ACTIVE", "300", "20", "kg");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-SPLIT-001")).thenReturn(task);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(parent);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007-S01")).thenReturn(null);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-A01")).thenReturn(target);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-IN")).thenReturn(source);
+
+        Map<String, Object> result = materialService.completeLocationTask("MLT-SPLIT-001", Map.of("operator", "wms1001"));
+
+        assertThat(parent.getAvailableQty()).isEqualByComparingTo("45");
+        assertThat(parent.getTotalQty()).isEqualByComparingTo("75");
+        assertThat(parent.getLocation()).isEqualTo("WMS-IN");
+        assertThat(parent.getStatus()).isEqualTo("AVAILABLE");
+        assertThat(source.getUsedQty()).isEqualByComparingTo("75");
+        assertThat(target.getUsedQty()).isEqualByComparingTo("45");
+        assertThat(task.getActualQty()).isEqualByComparingTo("25");
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(result.get("childBatch")).isInstanceOf(Map.class);
+        assertThat(result.get("parentBatch")).isInstanceOf(Map.class);
+
+        ArgumentCaptor<MaterialBatch> childCaptor = ArgumentCaptor.forClass(MaterialBatch.class);
+        verify(batchMapper).insert(childCaptor.capture());
+        MaterialBatch child = childCaptor.getValue();
+        assertThat(child.getBatchNo()).isEqualTo("PI_INK_B007-S01");
+        assertThat(child.getAvailableQty()).isEqualByComparingTo("25");
+        assertThat(child.getTotalQty()).isEqualByComparingTo("25");
+        assertThat(child.getReservedQty()).isEqualByComparingTo("0");
+        assertThat(child.getFrozenQty()).isEqualByComparingTo("0");
+        assertThat(child.getLocation()).isEqualTo("WMS-A01");
+        assertThat(child.getStatus()).isEqualTo("AVAILABLE");
+
+        verify(batchMapper).updateById(parent);
+        verify(materialLocationMapper).updateById(source);
+        verify(materialLocationMapper).updateById(target);
+        ArgumentCaptor<MaterialInventoryTxn> txnCaptor = ArgumentCaptor.forClass(MaterialInventoryTxn.class);
+        verify(inventoryTxnMapper, times(2)).insert(txnCaptor.capture());
+        assertThat(txnCaptor.getAllValues())
+                .extracting(MaterialInventoryTxn::getTxnType)
+                .containsExactly("SPLIT_OUT", "SPLIT_IN");
+        assertThat(txnCaptor.getAllValues().get(0).getQtyDelta()).isEqualByComparingTo("-25");
+        assertThat(txnCaptor.getAllValues().get(1).getQtyDelta()).isEqualByComparingTo("25");
+        verify(materialLocationTaskMapper, times(2)).updateById(task);
+        verify(auditLogService).record(eq("MATERIAL_SPLIT"), eq("PI_INK_B007"), eq("MATERIAL_BATCH"),
+                any(), eq("wms1001"), eq("material-service"), any());
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-SPLIT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), any());
+    }
+
+    @Test
+    void createSplitLocationTaskShouldRejectReservedOrFrozenOverSplit() {
+        MaterialBatch batch = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        batch.setFrozenQty(new BigDecimal("10"));
+        batch.setLocation("WMS-IN");
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(batch);
+
+        assertThatThrownBy(() -> materialService.createLocationTask(Map.of(
+                "taskType", "SPLIT",
+                "batchNo", "PI_INK_B007",
+                "targetLocation", "WMS-A01",
+                "qty", "80",
+                "operator", "wms1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("母批可用库存不足");
+
+        verify(materialLocationMapper, never()).selectByLocationCodeForUpdate(any());
+        verify(materialLocationTaskMapper, never()).insert(any());
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+    }
+
+    @Test
     void createMoveLocationTaskShouldRejectLockedTargetLocation() {
         MaterialBatch batch = batch("PI_INK_B008", "50", "0", "0", "AVAILABLE");
         batch.setLocation("WMS-IN");

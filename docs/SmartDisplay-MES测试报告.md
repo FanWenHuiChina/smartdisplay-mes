@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、Lot 批量 Hold/Release、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E、`pilot-v1` OpenAPI 分组文档生产化和 Lot 批量 Hold/Release 汇总审计接线；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
+当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、Lot 批量 Hold/Release、WMS 多库位拆批任务、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E、`pilot-v1` OpenAPI 分组文档生产化、Lot 批量 Hold/Release 汇总审计接线和 WMS 多库位拆批任务接线；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
 
 ## 测试环境
 
@@ -28,6 +28,7 @@
 | MRB会签SLA升级回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 47, Failures: 0, Errors: 0, Skipped: 0` |
 | 物料/BOM/供应商趋势/复审回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | `Tests run: 43, Failures: 0, Errors: 0, Skipped: 0`；覆盖供应商到期复审生成和 WMS 库位任务创建/领取/完成/取消审计快照 |
 | WMS库位任务审计可见性回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 71, Failures: 0, Errors: 0, Skipped: 0`；覆盖库位任务结构化快照落库和 `/system/audit-logs` 返回 `requestSnapshot` |
+| WMS多库位拆批任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest" test` | 通过 | `Tests run: 59, Failures: 0, Errors: 0, Skipped: 0`；覆盖拆批任务创建不改库存、完成任务生成子批并写 `SPLIT_OUT/SPLIT_IN`、拆批数量不得超过可用库存、`material:wms` 权限边界 |
 | 系统审计分页筛选回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖审计分页、业务对象、动作分组、结果、来源、操作人、日期范围筛选，请求上下文字段映射和非法日期拒绝 |
 | 工单释放预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=PilotMesServiceTest test` | 通过 | `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`；覆盖释放前 Route/BOM/设备/Recipe/Lot 拆分校验和缺少生效 BOM 阻断 |
 | Track In预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=TrackInServiceTest test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；覆盖无副作用校验矩阵、设备能力失败阻断、正式 Track In 写接口复用同一套阻断逻辑 |
@@ -37,7 +38,7 @@
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | OpenAPI/Swagger合同回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` | 通过 | `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `pilot-v1` 分组、`/api` 服务器路径、JWT Bearer、统一 `Result/PageResult` schema、标准 400/401/403/500 响应和登录接口免 Bearer |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
-| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 413 项检查 |
+| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 414 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
@@ -74,7 +75,7 @@
 - Recipe 唯一性、创建、发布、停用和生效 Recipe 查询。
 - Track In 状态、Route、设备、Recipe、Hold、班次和物料齐套校验；`GET /api/v1/lots/{lotNo}/track-in-checks` 返回无副作用校验矩阵，正式 Track In 写接口复用同一套阻断逻辑。
 - Track Out 过站记录、质量判定、物料消耗。
-- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/盘点任务、创建/领取/完成/取消审计差异快照和物料写接口权限。
+- WMS 入库、冻结、解冻、退料、盘点、库存事务履历、批次行锁、库位状态/容量/类别/单位校验、库位占用更新、库位上架/整批移库/拆批/盘点任务、创建/领取/完成/取消审计差异快照和物料写接口权限。
 - 来料 IQC 判定、COA/检验附件元数据留痕、批次质量状态联动、IQC 写接口权限和失败审计映射。
 - 供应商绩效评分与趋势：基于物料批次、来料 IQC 和8D整改记录聚合 PASS/HOLD/NG、通过率、风险批次、评分、月度趋势和风险等级，覆盖高风险排序、超期8D扣分且不额外读取 COA 附件。
 - 供应商准入复审任务：覆盖复审任务创建、重复 OPEN 任务拦截、复审通过/驳回决策、供应商状态回写、前端物料页复审工作区和失败审计映射。

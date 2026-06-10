@@ -1100,6 +1100,7 @@ public class MaterialService {
         return switch (taskType) {
             case "MOVE", "PUTAWAY" -> createMoveLikeLocationTask(taskType, request);
             case "COUNT" -> createCountLocationTask(request);
+            case "SPLIT" -> createSplitLocationTask(request);
             default -> throw new BusinessException("库位任务类型不支持: " + taskType);
         };
     }
@@ -1144,9 +1145,10 @@ public class MaterialService {
         task.setUpdatedTime(LocalDateTime.now());
         materialLocationTaskMapper.updateById(task);
 
-        MaterialBatch batch = switch (normalizeLocationTaskType(task.getTaskType())) {
-            case "MOVE", "PUTAWAY" -> completeMoveLikeLocationTask(task, request, operator);
-            case "COUNT" -> completeCountLocationTask(task, request, operator);
+        LocationTaskCompletion completion = switch (normalizeLocationTaskType(task.getTaskType())) {
+            case "MOVE", "PUTAWAY" -> new LocationTaskCompletion(completeMoveLikeLocationTask(task, request, operator), Map.of());
+            case "COUNT" -> new LocationTaskCompletion(completeCountLocationTask(task, request, operator), Map.of());
+            case "SPLIT" -> completeSplitLocationTask(task, request, operator);
             default -> throw new BusinessException("库位任务类型不支持: " + task.getTaskType());
         };
 
@@ -1166,7 +1168,7 @@ public class MaterialService {
                 "完成库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
                         + ", actualQty=" + nvl(task.getActualQty()).stripTrailingZeros().toPlainString(),
                 operator, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
-        return locationTaskResult(task, batch);
+        return locationTaskResult(task, completion.batch(), completion.extra());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -1280,6 +1282,43 @@ public class MaterialService {
         return locationTaskResult(task, batch);
     }
 
+    private Map<String, Object> createSplitLocationTask(Map<String, Object> request) {
+        String batchNo = requiredText(request, "batchNo");
+        String targetLocationCode = requiredText(request, "targetLocation");
+        String operator = text(request, "operator", AuthContext.username());
+        String reason = text(request, "reason", defaultLocationTaskReason("SPLIT"));
+        MaterialBatch batch = lockedBatch(batchNo);
+        String sourceLocation = valueOr(batch.getLocation(), "");
+        if (!sourceLocation.isBlank() && sourceLocation.equals(targetLocationCode)) {
+            throw new BusinessException("拆批目标库位不能与母批当前库位相同: " + targetLocationCode);
+        }
+        BigDecimal splitQty = locationSplitQty(request, nvl(batch.getAvailableQty()));
+        ensureAvailableForSplit(batch, splitQty);
+        MaterialLocation targetLocation = materialLocationMapper.selectByLocationCodeForUpdate(targetLocationCode);
+        if (targetLocation == null) {
+            throw new BusinessException("目标库位不存在或未维护: " + targetLocationCode);
+        }
+        validateReceivingLocation(targetLocation, inferMaterialClass(batch.getMaterialCode()), batch.getUnit(), splitQty);
+        String childBatchNo = childBatchNo(request, batchNo);
+        assertChildBatchNoAvailable(childBatchNo, batchNo);
+        Map<String, Object> splitRequest = new LinkedHashMap<>(safeRequest(request));
+        splitRequest.put("childBatchNo", childBatchNo);
+        splitRequest.put("targetBatchNo", childBatchNo);
+        splitRequest.put("plannedQty", splitQty);
+
+        MaterialLocationTask task = createLocationTaskRecord("SPLIT", batch, sourceLocation,
+                targetLocation.getLocationCode(), splitQty, BigDecimal.ZERO, "CREATED", reason, operator, splitRequest);
+        audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "创建拆批任务: parent=" + batchNo + ", from=" + sourceLocation + ", to="
+                        + targetLocation.getLocationCode() + ", child=" + childBatchNo
+                        + ", qty=" + splitQty.stripTrailingZeros().toPlainString(),
+                operator, auditSnapshot(null, locationTaskRow(task), splitRequest));
+        if (boolValue(request, "executeNow", false)) {
+            return completeLocationTask(task.getTaskNo(), splitRequest);
+        }
+        return locationTaskResult(task, batch);
+    }
+
     private MaterialBatch completeMoveLikeLocationTask(MaterialLocationTask task, Map<String, Object> request, String operator) {
         MaterialBatch batch = lockedBatch(task.getBatchNo());
         String currentLocation = valueOr(batch.getLocation(), "");
@@ -1343,6 +1382,80 @@ public class MaterialService {
         task.setTargetLocation(updated.getLocation());
         task.setActualQty(countedAvailable);
         return updated;
+    }
+
+    private LocationTaskCompletion completeSplitLocationTask(MaterialLocationTask task, Map<String, Object> request, String operator) {
+        MaterialBatch parent = lockedBatch(task.getBatchNo());
+        String currentLocation = valueOr(parent.getLocation(), "");
+        String taskSourceLocation = valueOr(task.getSourceLocation(), "");
+        if (!taskSourceLocation.isBlank() && !taskSourceLocation.equals(currentLocation)) {
+            throw new BusinessException("母批当前库位与拆批任务源库位不一致: task="
+                    + taskSourceLocation + ", current=" + currentLocation);
+        }
+        String targetLocationCode = valueOr(task.getTargetLocation(), "");
+        if (targetLocationCode.isBlank()) {
+            targetLocationCode = requiredText(request, "targetLocation");
+        }
+        if (!currentLocation.isBlank() && currentLocation.equals(targetLocationCode)) {
+            throw new BusinessException("拆批目标库位不能与母批当前库位相同: " + targetLocationCode);
+        }
+
+        BigDecimal splitQty = locationSplitQty(request, nvl(task.getPlannedQty()).compareTo(BigDecimal.ZERO) > 0
+                ? nvl(task.getPlannedQty()) : nvl(parent.getAvailableQty()));
+        ensureAvailableForSplit(parent, splitQty);
+        String childBatchNo = childBatchNo(task, request, parent.getBatchNo());
+        assertChildBatchNoAvailable(childBatchNo, parent.getBatchNo());
+
+        MaterialLocation targetLocation = materialLocationMapper.selectByLocationCodeForUpdate(targetLocationCode);
+        if (targetLocation == null) {
+            throw new BusinessException("目标库位不存在或未维护: " + targetLocationCode);
+        }
+        validateReceivingLocation(targetLocation, inferMaterialClass(parent.getMaterialCode()), parent.getUnit(), splitQty);
+
+        BigDecimal parentAvailableBefore = nvl(parent.getAvailableQty());
+        BigDecimal parentFrozenBefore = nvl(parent.getFrozenQty());
+        BigDecimal parentReservedBefore = nvl(parent.getReservedQty());
+        parent.setAvailableQty(parentAvailableBefore.subtract(splitQty));
+        parent.setTotalQty(maxZero(nvl(parent.getTotalQty()).subtract(splitQty)));
+        refreshBatchStatusAfterAvailableChange(parent);
+        touchStock(parent);
+        batchMapper.updateById(parent);
+
+        MaterialBatch child = splitChildBatch(parent, childBatchNo, splitQty, targetLocation.getLocationCode(), operator);
+        batchMapper.insert(child);
+
+        adjustLocationUsage(currentLocation, splitQty.negate());
+        increaseLocationUsage(targetLocation, splitQty);
+
+        Map<String, Object> splitRequest = new LinkedHashMap<>(safeRequest(request));
+        splitRequest.put("parentBatchNo", parent.getBatchNo());
+        splitRequest.put("childBatchNo", child.getBatchNo());
+        insertTxn("SPLIT_OUT", parent, parentAvailableBefore, parent.getAvailableQty(),
+                parentFrozenBefore, parent.getFrozenQty(), parentReservedBefore, parent.getReservedQty(),
+                splitQty.negate(), null, valueOr(task.getReason(), defaultLocationTaskReason("SPLIT")),
+                operator, splitRequest);
+        insertTxn("SPLIT_IN", child, BigDecimal.ZERO, child.getAvailableQty(),
+                BigDecimal.ZERO, child.getFrozenQty(), BigDecimal.ZERO, child.getReservedQty(),
+                splitQty, null, valueOr(task.getReason(), defaultLocationTaskReason("SPLIT")),
+                operator, splitRequest);
+
+        task.setSourceLocation(currentLocation);
+        task.setTargetLocation(targetLocation.getLocationCode());
+        task.setActualQty(splitQty);
+        audit("MATERIAL_SPLIT", parent.getBatchNo(), "MATERIAL_BATCH",
+                "拆批生成子批次=" + child.getBatchNo() + ", qty=" + splitQty.stripTrailingZeros().toPlainString(),
+                operator, JSONUtil.toJsonStr(Map.of(
+                        "parentBatch", batchRow(parent),
+                        "childBatch", batchRow(child),
+                        "task", locationTaskRow(task),
+                        "request", splitRequest
+                )));
+
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("parentBatch", batchRow(parent));
+        extra.put("childBatch", batchRow(child));
+        extra.put("splitQty", splitQty);
+        return new LocationTaskCompletion(child, extra);
     }
 
     public List<Map<String, Object>> inventoryTransactions(String batchNo) {
@@ -2659,6 +2772,7 @@ public class MaterialService {
         row.put("taskNo", task.getTaskNo());
         row.put("taskType", task.getTaskType());
         row.put("batchNo", task.getBatchNo());
+        row.put("childBatchNo", snapshotText(task.getRequestSnapshot(), "childBatchNo"));
         row.put("materialCode", task.getMaterialCode());
         row.put("materialName", task.getMaterialName());
         row.put("sourceLocation", task.getSourceLocation());
@@ -2686,9 +2800,16 @@ public class MaterialService {
     }
 
     private Map<String, Object> locationTaskResult(MaterialLocationTask task, MaterialBatch batch) {
+        return locationTaskResult(task, batch, Map.of());
+    }
+
+    private Map<String, Object> locationTaskResult(MaterialLocationTask task, MaterialBatch batch, Map<String, Object> extra) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("task", locationTaskRow(task));
         result.put("batch", batchRow(batch));
+        if (extra != null && !extra.isEmpty()) {
+            result.putAll(extra);
+        }
         return result;
     }
 
@@ -2733,6 +2854,7 @@ public class MaterialService {
             case "MOVE", "移库" -> "MOVE";
             case "PUTAWAY", "上架" -> "PUTAWAY";
             case "COUNT", "盘点" -> "COUNT";
+            case "SPLIT", "拆批" -> "SPLIT";
             default -> taskType;
         };
     }
@@ -2741,6 +2863,7 @@ public class MaterialService {
         return switch (taskType) {
             case "PUTAWAY" -> "WMS putaway";
             case "COUNT" -> "WMS inventory count task";
+            case "SPLIT" -> "WMS split batch";
             default -> "WMS location move";
         };
     }
@@ -2758,6 +2881,118 @@ public class MaterialService {
             throw new BusinessException("库位任务数量必须大于0");
         }
         return qty;
+    }
+
+    private BigDecimal locationSplitQty(Map<String, Object> request, BigDecimal fallbackQty) {
+        Object raw = firstPresent(request, "actualQty", "plannedQty", "qty", "splitQty");
+        BigDecimal qty = raw == null || String.valueOf(raw).isBlank() ? fallbackQty : decimalValue(raw);
+        if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("拆批数量必须大于0");
+        }
+        return qty;
+    }
+
+    private void ensureAvailableForSplit(MaterialBatch batch, BigDecimal splitQty) {
+        BigDecimal availableQty = nvl(batch.getAvailableQty());
+        if (availableQty.compareTo(splitQty) < 0) {
+            throw new BusinessException("拆批失败，母批可用库存不足: batch=" + batch.getBatchNo()
+                    + ", available=" + availableQty.stripTrailingZeros().toPlainString()
+                    + ", splitQty=" + splitQty.stripTrailingZeros().toPlainString());
+        }
+        if (availableQty.compareTo(splitQty) <= 0) {
+            throw new BusinessException("拆批数量必须小于母批可用库存，避免生成空母批: " + batch.getBatchNo());
+        }
+    }
+
+    private String childBatchNo(Map<String, Object> request, String parentBatchNo) {
+        String childBatchNo = text(request, "childBatchNo", text(request, "targetBatchNo", ""));
+        if (!childBatchNo.isBlank()) {
+            return childBatchNo;
+        }
+        return parentBatchNo + "-S" + NO_TIME.format(LocalDateTime.now());
+    }
+
+    private String childBatchNo(MaterialLocationTask task, Map<String, Object> request, String parentBatchNo) {
+        String requestChildBatchNo = text(request, "childBatchNo", text(request, "targetBatchNo", ""));
+        if (!requestChildBatchNo.isBlank()) {
+            return requestChildBatchNo;
+        }
+        String snapshotChildBatchNo = snapshotText(task.getRequestSnapshot(), "childBatchNo");
+        if (!snapshotChildBatchNo.isBlank()) {
+            return snapshotChildBatchNo;
+        }
+        snapshotChildBatchNo = snapshotText(task.getRequestSnapshot(), "targetBatchNo");
+        if (!snapshotChildBatchNo.isBlank()) {
+            return snapshotChildBatchNo;
+        }
+        return childBatchNo(request, parentBatchNo);
+    }
+
+    private void assertChildBatchNoAvailable(String childBatchNo, String parentBatchNo) {
+        if (childBatchNo == null || childBatchNo.isBlank()) {
+            throw new BusinessException("子批次号不能为空");
+        }
+        if (childBatchNo.equals(parentBatchNo)) {
+            throw new BusinessException("子批次号不能与母批次号相同: " + childBatchNo);
+        }
+        MaterialBatch exists = batchMapper.selectByBatchNoForUpdate(childBatchNo);
+        if (exists != null) {
+            throw new BusinessException("子批次号已存在: " + childBatchNo);
+        }
+    }
+
+    private MaterialBatch splitChildBatch(MaterialBatch parent,
+                                          String childBatchNo,
+                                          BigDecimal qty,
+                                          String targetLocation,
+                                          String operator) {
+        LocalDateTime now = LocalDateTime.now();
+        MaterialBatch child = new MaterialBatch();
+        child.setMaterialCode(parent.getMaterialCode());
+        child.setMaterialName(parent.getMaterialName());
+        child.setBatchNo(childBatchNo);
+        child.setSupplierCode(parent.getSupplierCode());
+        child.setTotalQty(qty);
+        child.setAvailableQty(qty);
+        child.setReservedQty(BigDecimal.ZERO);
+        child.setConsumedQty(BigDecimal.ZERO);
+        child.setFrozenQty(BigDecimal.ZERO);
+        child.setReturnedQty(BigDecimal.ZERO);
+        child.setUnit(parent.getUnit());
+        child.setQualityStatus(parent.getQualityStatus());
+        child.setStatus("PASS".equals(parent.getQualityStatus()) ? "AVAILABLE" : "HOLD");
+        child.setReceivedTime(now);
+        child.setExpireTime(parent.getExpireTime());
+        child.setLocation(targetLocation);
+        child.setFifoSeq(parent.getFifoSeq());
+        child.setStockVersion(1L);
+        child.setCreatedBy(operator);
+        child.setCreatedTime(now);
+        child.setUpdatedTime(now);
+        return child;
+    }
+
+    private void refreshBatchStatusAfterAvailableChange(MaterialBatch batch) {
+        BigDecimal availableQty = nvl(batch.getAvailableQty());
+        if ("PASS".equals(batch.getQualityStatus()) && availableQty.compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("AVAILABLE");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getFrozenQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("FROZEN");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getReservedQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("RESERVED");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getConsumedQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("CONSUMED");
+            return;
+        }
+        if (!"PASS".equals(batch.getQualityStatus())) {
+            batch.setStatus("HOLD");
+        }
     }
 
     private BigDecimal locationCountQty(Map<String, Object> request) {
@@ -3557,6 +3792,39 @@ public class MaterialService {
         return request == null ? Map.of() : new LinkedHashMap<>(request);
     }
 
+    private String snapshotText(String snapshot, String key) {
+        if (snapshot == null || snapshot.isBlank() || key == null || key.isBlank()) {
+            return "";
+        }
+        try {
+            if (JSONUtil.isTypeJSON(snapshot)) {
+                Object value = JSONUtil.parseObj(snapshot).get(key);
+                return value == null || String.valueOf(value).isBlank() ? "" : String.valueOf(value);
+            }
+        } catch (Exception ignored) {
+            // 兼容历史 Map.toString() 快照，解析失败时继续按轻量文本格式读取。
+        }
+        String marker = key + "=";
+        int start = snapshot.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        int valueStart = start + marker.length();
+        int comma = snapshot.indexOf(',', valueStart);
+        int endBrace = snapshot.indexOf('}', valueStart);
+        int valueEnd;
+        if (comma < 0 && endBrace < 0) {
+            valueEnd = snapshot.length();
+        } else if (comma < 0) {
+            valueEnd = endBrace;
+        } else if (endBrace < 0) {
+            valueEnd = comma;
+        } else {
+            valueEnd = Math.min(comma, endBrace);
+        }
+        return snapshot.substring(valueStart, valueEnd).trim();
+    }
+
     private String requiredText(Map<String, Object> request, String key) {
         String value = text(request, key, "");
         if (value.isBlank()) {
@@ -3735,5 +4003,8 @@ public class MaterialService {
     }
 
     private record BomStatusChange(Map<String, Object> before, Map<String, Object> after) {
+    }
+
+    private record LocationTaskCompletion(MaterialBatch batch, Map<String, Object> extra) {
     }
 }

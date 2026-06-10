@@ -30,7 +30,7 @@
 - 新增 `sys_audit_log`，工单创建/释放、Track In/Out、Hold/Release、Rework、Scrap、AI良率日报、AI设备异常分析、AI SOP问答已写入审计；审计记录已自动补充请求方法、URI、客户端IP和User-Agent，并支持关键写接口失败留痕；审计查询支持分页、业务对象、动作分组、结果、来源、操作人和日期范围过滤。
 - 新增 `md_route`、`md_route_step`，Track In 第二层已改为 Route 防跳站强校验。
 - 新增 `quality_inspection`、`quality_defect_record`、`exception_event`，Track Out 会按 Recipe 参数上下限生成质检记录；显式 NG 或关键参数超限会创建异常事件并自动 Hold Lot。
-- 新增 `md_bom`、`md_bom_item`、`md_bom_change_request`、`md_bom_change_attachment`、`md_bom_eco_approval_task`、`md_material_location`、`material_location_task`、`material_batch`、`material_loading`、`material_consumption`、`material_inventory_txn`、`material_incoming_inspection`、`material_coa_attachment`、`material_carrier`、`md_supplier`、`supplier_corrective_action`、`supplier_qualification_review_task`，Track In 已接入关键物料齐套校验与批次锁定，Track Out 已生成物料消耗追溯；BOM 变更已支持替代料验证报告附件元数据、ECO 包快照、风险等级和跨部门会签；WMS 入库会校验库位状态、物料类别、单位和容量，冻结、解冻、退料、盘点会写库存事务履历和审计；库位任务已支持上架、整批移库、盘点任务单；来料 IQC 判定会写检验记录、COA/附件元数据、审计并联动批次质量状态；供应商准入、8D整改、周期复审任务和月度评分趋势已基于批次、IQC 与8D记录聚合。
+- 新增 `md_bom`、`md_bom_item`、`md_bom_change_request`、`md_bom_change_attachment`、`md_bom_eco_approval_task`、`md_material_location`、`material_location_task`、`material_batch`、`material_loading`、`material_consumption`、`material_inventory_txn`、`material_incoming_inspection`、`material_coa_attachment`、`material_carrier`、`md_supplier`、`supplier_corrective_action`、`supplier_qualification_review_task`，Track In 已接入关键物料齐套校验与批次锁定，Track Out 已生成物料消耗追溯；BOM 变更已支持替代料验证报告附件元数据、ECO 包快照、风险等级和跨部门会签；WMS 入库会校验库位状态、物料类别、单位和容量，冻结、解冻、退料、盘点会写库存事务履历和审计；库位任务已支持上架、整批移库、拆批、盘点任务单；来料 IQC 判定会写检验记录、COA/附件元数据、审计并联动批次质量状态；供应商准入、8D整改、周期复审任务和月度评分趋势已基于批次、IQC 与8D记录聚合。
 - 新增 `equipment_event`、`equipment_pm_task`、`equipment_parameter_sample`、`equipment_recipe_command`，设备事件、EAP 参数采样、PM 任务和 Recipe 下发/回读已从静态数据升级为正式表；EAP 参数越限或 Recipe 回读不一致会自动生成设备事件并更新设备状态，设备事件创建、参数上报、PM 完成和 Recipe 下发均写审计。
 - `equipment_event` 已扩展停机原因、计划/非计划、开始/结束时间、持续分钟和影响等级；新增 `/api/v1/equipment/oee` 按近 24 小时聚合设备 OEE、可用率、性能率、质量率、计划/非计划停机和停机原因 TopN；事件关闭会回填结束时间、持续分钟并写 `EQUIPMENT_EVENT_CLOSE` 审计。
 - 新增 `equipment_status_history` 和 `equipment_cycle_sample`，EAP 状态上报、设备状态变化历史、标准节拍/实际节拍采样、良品/产出数量已落正式表；OEE 性能率优先使用节拍样本计算，缺少样本时才回退到设备状态估算。
@@ -68,7 +68,7 @@
   - 工单页面：接入 `/v1/orders`、`/v1/orders/{orderNo}/release-checks`、`/v1/adapters/erp/orders`、`/v1/orders/{orderNo}/release`、`/v1/lots`，并展示 ERP Adapter 批次、样例工单、审计动作回执和接口驱动释放校验。
   - 生产执行：接入 `/v1/lots`、`/v1/lots/{lotNo}/track-in-checks`、Track In、Track Out、Hold，并在点击 Track In 前按接口校验结果阻断不合规进站。
   - 质量管理：接入 `/v1/quality/inspections`、`/v1/quality/exceptions`、`/v1/quality/exceptions/{eventNo}/mrb-records`、`/v1/quality/mrb-approvals`、`/v1/quality/mrb-approvals/refresh-sla`、`/v1/dashboard/yield`。
-  - 物料与载具：接入 `/v1/material/batches`、`/v1/material/consumptions`、`/v1/material/inventory-transactions`、`/v1/material/incoming-inspections`、`/v1/material/location-tasks`、`/v1/material/suppliers`、`/v1/material/suppliers/trends`、`/v1/material/suppliers/qualification-reviews`、WMS 入库/冻结/解冻/退料/盘点、库位上架/整批移库/盘点任务、来料 IQC/COA、供应商准入/复审/8D和 `/v1/carriers`。
+  - 物料与载具：接入 `/v1/material/batches`、`/v1/material/consumptions`、`/v1/material/inventory-transactions`、`/v1/material/incoming-inspections`、`/v1/material/location-tasks`、`/v1/material/suppliers`、`/v1/material/suppliers/trends`、`/v1/material/suppliers/qualification-reviews`、WMS 入库/冻结/解冻/退料/盘点、库位上架/整批移库/拆批/盘点任务、来料 IQC/COA、供应商准入/复审/8D和 `/v1/carriers`。
   - 设备与自动化：接入 `/v1/master/equipments`、`/v1/equipment/events`、`/v1/equipment/events/{eventNo}/close`、`/v1/equipment/oee`、`/v1/equipment/status-history`、`/v1/equipment/status/report`、`/v1/equipment/cycle-samples`、`/v1/equipment/cycle-samples/report`、`/v1/equipment/standard-cycles`、`/v1/equipment/gateways`、`/v1/equipment/gateway-drivers`、`/v1/equipment/gateway-health-checks`、`/v1/equipment/gateway-messages`、`/v1/equipment/parameters`、`/v1/equipment/pm-tasks`、`/v1/equipment/recipe-downloads`、`/v1/adapters/eap/messages`、设备事件创建/关闭、OEE拆解、停机原因TopN、EAP状态上报、节拍采样、标准节拍主数据、网关连接配置、驱动配置、网关心跳、健康检查、消息履历、参数上报、PM完成、Recipe下发/回读和统一EAP消息入口。
   - 追溯分析：接入 `/v1/trace/lots/{lotNo}`。
   - AI页面：接入 `/v1/dashboard/yield`、`/v1/ai/reports/yield`、`/v1/ai/kb/ask`、`/v1/ai/model-configs`、`/v1/ai/report-records`、`/v1/ai/kb/index-jobs`，展示模型模式、检索策略、证据等级、最高证据分、真实报告留痕、知识库索引状态和索引任务履历。
@@ -78,7 +78,7 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 413 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 414 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - OpenAPI/Swagger 合同回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` 通过，`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；Docker 后端覆盖新 jar 并重启后，`GET http://127.0.0.1:8080/api/v3/api-docs/pilot-v1` 已验证 title、server、JWT Bearer、`Result/PageResult` schema、标准错误响应、`/v1/lots` 路径、登录免鉴权和 Lot 列表鉴权均符合预期。
 - 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
@@ -100,7 +100,7 @@
 
 - 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Lot 批量 Hold/Release、Rework/Scrap 已写入结构化快照或批量汇总快照；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出；后续新增批量写接口的差异快照和失败审计映射仍需持续治理。
 - 质量：基础检验、缺陷、异常事件、NG/参数超限自动 Hold、MRB复判、异常关闭、结构化处置结论、MRB履历、会议号、参与人、审批状态、附件元数据、会议纪要正文版本管理、多角色会签待办、按角色/风险/处置动作的审批 SLA、逾期升级策略和关闭前会签校验已落地。
-- 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取、复核和多库位拆批任务。
+- 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/拆批/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取和复核式 WMS 任务流。
 - 设备：设备主数据、能力矩阵、事件队列、EAP 参数采样、参数越限自动设备事件、PM任务、Recipe下发/回读命令履历、事件关闭、OEE拆解、停机原因TopN、设备状态历史、标准/实际节拍采样、标准节拍主数据、EAP 统一适配器、网关连接配置、协议驱动抽象、网关心跳、健康检查和消息履历已落地；仍缺真实 SECS/GEM、OPC UA、厂商 HTTP 驱动真机联调和毫秒级设备状态采集。
 - Route/BOM：Route正式表、生效状态、Track In防跳站、BOM正式表、关键物料齐套明细、BOM变更审批、替代料策略、替代料验证报告附件、ECO 包快照、风险等级、跨部门会签和版本发布审批已落地。
 - 权限：JWT 登录、接口鉴权拦截、角色级写权限、菜单/按钮/数据范围权限能力模型、越权自动化测试、前端菜单裁剪、按钮级隐藏、权限变更申请/审批/审计闭环、启动恢复、手动重载和数据范围 SQL 自动拼接已落地；Lot、质量、异常、物料消耗和载具列表已接入数据范围；组织/产线/班次主数据已补。
@@ -115,7 +115,7 @@
 2. 在固定硬件和更接近试点数据规模下持续采集性能趋势，并将手动基线结果纳入交付复验归档。
 3. 继续推进真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动适配、真机联调和毫秒级设备状态采集。
 4. 继续推进真实 pgvector 向量检索、真实外部模型联调、引用召回率评估和 AI 安全评审，形成生产级试点验收报告。
-5. 继续推进供应商门户协同、多库位拆批任务，以及 Lot 批量处置之外的其他批量写接口差异快照治理。
+5. 继续推进供应商门户协同、异步领取/复核式 WMS 任务流，以及 Lot 批量处置之外的其他批量写接口差异快照治理。
 
 ## 2026-06-09 增量：CI 浏览器 E2E 交付门禁
 
@@ -883,3 +883,14 @@
 - Lot 管理页新增多选列、当前筛选页全选、已选/可 Hold/可放行统计、批量 Hold 和批量放行按钮，以及批量结果回显；操作后刷新真实后端列表。
 - 前端契约脚本新增 `batchHoldLots`、`batchReleaseLots` API 和 Lot 页批量处置接线检查，防止页面退回只支持单 Lot 处置。
 - 已验证：`PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 86 项通过，`npm.cmd run verify:frontend-contract` 413 项通过，`npm.cmd run build` 通过。
+
+## 2026-06-10 增量：WMS 多库位拆批任务
+
+- `MaterialService` 在既有 `material_location_task` 工作流上新增 `SPLIT` 任务类型，不新增表和 URL，继续复用 `POST /api/v1/material/location-tasks`、`assign`、`complete`、`cancel`。
+- 创建拆批任务时只登记任务单和审计，不改变库存；完成任务时从母批可用库存扣减拆出数量，生成子批次，更新源/目标库位占用，并写 `SPLIT_OUT`、`SPLIT_IN` 两条库存事务。
+- 拆批只允许使用母批 `availableQty`，不拆 `reservedQty` 或 `frozenQty`；拆批数量必须小于母批可用库存，子批继承物料编码、名称、供应商、单位、质量状态、有效期和 FIFO 序列。
+- 子批号可由前端指定，也可由后端自动生成；创建任务时会写入任务快照，后续完成任务复用同一子批号，避免创建和执行阶段不一致。
+- 前端物料页“库位任务 / 上架移库拆批盘点”已新增拆批类型、母批选择、目标库位、拆出数量必填、子批号可选输入和任务表子批证据展示；仍沿用浅色 Codex app 工作台风格。
+- RBAC 继续复用 `material:wms` 权限，质量角色默认不能越权创建/完成库位任务，应用权限快照后才允许 WMS 写操作。
+- 前端契约脚本新增拆批任务检查，防止后续页面退回到仅后端支持、前端无入口状态。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest` 定向 59 项通过，`npm.cmd run verify:frontend-contract` 414 项通过，`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。

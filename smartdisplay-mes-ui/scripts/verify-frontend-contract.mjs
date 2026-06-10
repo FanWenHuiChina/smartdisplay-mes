@@ -364,6 +364,9 @@ check('page:views/quality/index.vue:manual-inspection-submit', hasAll(qualityVie
 const traceView = read('src/views/trace/index.vue')
 check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['serialNumbers', 'serialNumberSummary', 'serialNumberCount']), 'Trace page must display production SN binding evidence returned by /trace/search')
 
+const materialView = read('src/views/material/index.vue')
+check('page:views/material/index.vue:wms-split-location-task', hasAll(materialView, ['SPLIT', '拆批', 'childBatchNo', '拆出数量', 'createMaterialLocationTask', 'completeMaterialLocationTask']), 'Material page must expose WMS split batch location task with child batch evidence')
+
 const layoutView = read('src/views/layout/MainLayout.vue')
 check('layout:dashboard-badges-api-driven', hasAll(layoutView, ['getOverview', 'dashboardBadges', 'badgeKey', 'loadNavigationSummary']), 'Layout dashboard badges must be driven by /dashboard/overview')
 check('layout:no-static-dashboard-badges', !["badge: '96'", "badge: '128'", "badge: '7'", "badge: '2'"].some(token => layoutView.includes(token)), 'Layout must not hard-code dashboard KPI badges')
