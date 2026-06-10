@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、Lot 批量 Hold/Release、WMS 多库位拆批任务、WMS 库位任务复核闭环、WMS 库位任务复核通过/驳回结论留痕、WMS 库位任务 SLA 与优先级、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E、`pilot-v1` OpenAPI 分组文档生产化、Lot 批量 Hold/Release 汇总审计接线、WMS 多库位拆批任务接线、WMS 库位任务完成后复核接线、复核通过/驳回结论留痕和 WMS 库位任务 SLA 待办排序；当前迁移静态验收已升级到 `V1.49`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
+当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、Lot 批量 Hold/Release、WMS 多库位拆批任务、WMS 库位任务复核闭环、WMS 库位任务复核通过/驳回结论留痕、WMS 库位任务复核驳回处置、WMS 库位任务 SLA 与优先级、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.50` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E、`pilot-v1` OpenAPI 分组文档生产化、Lot 批量 Hold/Release 汇总审计接线、WMS 多库位拆批任务接线、WMS 库位任务完成后复核接线、复核通过/驳回结论留痕、复核驳回后让步接收/显式调库/升级处置和 WMS 库位任务 SLA 待办排序；当前迁移静态验收已升级到 `V1.50`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
 
 ## 测试环境
 
@@ -31,6 +31,7 @@
 | WMS多库位拆批任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest" test` | 通过 | `Tests run: 59, Failures: 0, Errors: 0, Skipped: 0`；覆盖拆批任务创建不改库存、完成任务生成子批并写 `SPLIT_OUT/SPLIT_IN`、拆批数量不得超过可用库存、`material:wms` 权限边界 |
 | WMS库位任务复核回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 96, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `DONE` 任务复核、非完成/重复复核拒绝、复核审计快照、失败审计映射和 `material:wms` 权限边界 |
 | WMS库位任务复核结果回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 98, Failures: 0, Errors: 0, Skipped: 0`；覆盖复核通过、复核驳回、驳回后状态仍为 `DONE`、结论/异常原因留痕、审计快照和 `material:wms` 权限边界 |
+| WMS库位任务复核驳回处置回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 102, Failures: 0, Errors: 0, Skipped: 0`；覆盖驳回复核待处置、让步接收不改库存、显式调库写 `COUNT` 库存事务、重复/非驳回/缺少实盘数量拒绝、失败审计映射和 `material:wms` 权限边界 |
 | WMS库位任务SLA回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 97, Failures: 0, Errors: 0, Skipped: 0`；覆盖库位任务默认/显式优先级、SLA到期时间、逾期状态输出、任务复核和 `material:wms` 权限边界 |
 | 系统审计分页筛选回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖审计分页、业务对象、动作分组、结果、来源、操作人、日期范围筛选，请求上下文字段映射和非法日期拒绝 |
 | 工单释放预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=PilotMesServiceTest test` | 通过 | `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`；覆盖释放前 Route/BOM/设备/Recipe/Lot 拆分校验和缺少生效 BOM 阻断 |
@@ -41,13 +42,13 @@
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | OpenAPI/Swagger合同回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` | 通过 | `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `pilot-v1` 分组、`/api` 服务器路径、JWT Bearer、统一 `Result/PageResult` schema、标准 400/401/403/500 响应和登录接口免 Bearer |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
-| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、WMS 库位任务复核入口、WMS 库位任务复核结果、WMS 库位任务 SLA、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 419 项检查 |
+| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、WMS 库位任务复核入口、WMS 库位任务复核结果、WMS 库位任务复核驳回处置、WMS 库位任务 SLA、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 420 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
 | 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 20 步通过；覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报、网关健康检查、EAP 失败消息留存与诊断抽屉、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-182527.md` |
 | CI 浏览器 E2E 门禁 | `.github/workflows/ci.yml` 的 `Docker browser E2E` job | 已接入 | 在 `ubuntu-latest` 中启动 Docker Compose 三服务，等待前端和后端代理就绪后运行 `node scripts/run-browser-e2e.mjs`，并上传浏览器 E2E 报告 |
-| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.49` 共 49 个迁移文件 |
+| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.50` 共 50 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
 | 性能冒烟脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-smoke.ps1` | 通过 | 脚本支持阈值参数、Markdown/JSON 报告输出和失败退出码 |
 | 性能冒烟实测 | `powershell -ExecutionPolicy Bypass -File tools\run-pilot-performance-smoke.ps1 -BaseUrl http://127.0.0.1:8888/api -Username planner -Password 123456 -ImportCount 1000 -Samples 20` | 通过 | 经前端反代导入 1000 条模拟工单成功；订单列表 P95 15.67ms、Lot 列表 P95 13.72ms、良率看板 P95 17.28ms、Lot 追溯 P95 60.08ms；报告见 `docs/SmartDisplay-MES-performance-smoke-20260608-030053.md` |
@@ -58,7 +59,7 @@
 | Docker Compose 子目录配置 | `docker compose -f smartdisplay-mes-api\docker-compose.yml config` | 通过 | 兼容旧入口，三服务配置可解析 |
 | Docker Compose 状态 | `docker compose -f smartdisplay-mes-api\docker-compose.yml ps` | 通过 | `smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 监听 `8080`，`smartdisplay-mes-ui` 监听 `8888` |
 | Docker Compose 启动 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | 三服务构建并启动成功，后端启动时执行 Flyway 自动迁移 |
-| Docker Flyway 迁移 | `docker compose -f smartdisplay-mes-api\docker-compose.yml exec -T postgres psql -U postgres -d smartdisplay_mes -c "select version, description, success from flyway_schema_history order by installed_rank desc limit 5;"` | 通过 | 最新迁移为 `1.47 Harden Eap Shadow Protocol Drivers`，`success=t` |
+| Docker Flyway 迁移 | `docker compose -f smartdisplay-mes-api\docker-compose.yml exec -T postgres psql -U postgres -d smartdisplay_mes -c "select version, description, success from flyway_schema_history order by installed_rank desc limit 5;"` | 通过 | 最新迁移为 `1.50 Add Material Location Task Disposition`，`success=t`；后端日志显示从 `1.47` 连续迁移到 `1.48/1.49/1.50` |
 | Docker OpenAPI运行态冒烟 | `Invoke-RestMethod http://127.0.0.1:8080/api/v3/api-docs/pilot-v1` | 通过 | 分组文档返回 `SmartDisplay MES API`、server `/api`、JWT Bearer、`Result/PageResult` schema、标准错误响应、`/v1/lots` 路径；登录接口 `security=0`，Lot 列表接口 `security=1` |
 | EAP影子协议Docker冒烟 | `Invoke-RestMethod` 调用网关驱动、网关健康检查和 `/adapters/eap/messages` | 通过 | 前端反代返回 `SECS_GEM driverMode=SHADOW`、`protocolFrameValidation=true`；`GW-SECSGEM-SHADOW` 健康检查 `WARN`；SECS/GEM `S6F11` 入站归一为 `STATUS` 并 `PROCESSED` |
 | EAP失败消息诊断Docker冒烟 | `Invoke-RestMethod` 经前端反代提交缺少 SECS/GEM 帧标识的 `/adapters/eap/messages` 并查询消息详情/审计 | 通过 | `EGM-DIAG-20260610181059` 返回 `accepted=false`、消息状态 `FAILED`、详情诊断 `PROTOCOL_FRAME`、快照存在，审计 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 命中 1 条 |
@@ -557,3 +558,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.49` 共 49 个迁移文件 |
+
+## 2026-06-10 WMS 库位任务复核驳回处置复验
+
+本轮将 WMS 库位任务复核驳回后的状态从“只留痕”推进到“可处置”。处置只允许 `DONE + reviewResult=REJECTED + dispositionStatus=PENDING` 的任务进入，支持让步接收、显式调库和升级处理三种结果。关键边界是：复核驳回本身不自动冲正库存；只有用户明确选择 `ADJUST_INVENTORY` 并输入实盘可用数量时，才复用盘点逻辑写 `COUNT` 库存事务。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 WMS 复核驳回处置定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 102 项通过；覆盖待处置状态、让步接收关闭差异不改库存、显式调库写库存事务、非驳回/已处置/缺少实盘数量拒绝、失败审计映射和 `material:wms` 权限边界 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 420 项通过；覆盖 `dispositionMaterialLocationTask` API、`dispositionStatus`/`dispositionResult` 展示、`canDisposition`、接收差异和调库按钮 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.50` 共 50 个迁移文件 |

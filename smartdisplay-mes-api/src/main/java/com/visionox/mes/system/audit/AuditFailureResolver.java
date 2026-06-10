@@ -240,6 +240,9 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "material", "location-tasks", "*", "review")) {
             return target("MATERIAL_LOCATION_TASK_REVIEW", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }
+        if (matches(parts, offset, "material", "location-tasks", "*", "disposition")) {
+            return target("MATERIAL_LOCATION_TASK_DISPOSITION", parts[offset + 2], "MATERIAL_LOCATION_TASK");
+        }
         if (matches(parts, offset, "material", "location-tasks", "*", "cancel")) {
             return target("MATERIAL_LOCATION_TASK_CANCEL", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }

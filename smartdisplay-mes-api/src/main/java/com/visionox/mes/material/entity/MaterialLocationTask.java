@@ -43,6 +43,11 @@ public class MaterialLocationTask implements Serializable {
     private LocalDateTime reviewedTime;
     private String reviewResult;
     private String reviewConclusion;
+    private String dispositionStatus;
+    private String dispositionResult;
+    private String dispositionConclusion;
+    private String dispositionBy;
+    private LocalDateTime dispositionTime;
     private String cancelledBy;
     private LocalDateTime cancelledTime;
     private String cancelReason;

@@ -1204,6 +1204,13 @@ public class MaterialService {
         task.setReviewConclusion(conclusion);
         if ("REJECTED".equals(reviewResult)) {
             task.setExceptionReason(text(request, "exceptionReason", conclusion));
+            task.setDispositionStatus("PENDING");
+        } else {
+            task.setDispositionStatus("CLOSED");
+            task.setDispositionResult("APPROVED");
+            task.setDispositionConclusion(conclusion);
+            task.setDispositionBy(reviewer);
+            task.setDispositionTime(now);
         }
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
@@ -1212,6 +1219,75 @@ public class MaterialService {
                         + ", result=" + reviewResult + ", conclusion=" + conclusion,
                 reviewer, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> dispositionLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        if (!"DONE".equals(valueOr(task.getStatus(), ""))) {
+            throw new BusinessException("当前库位任务状态不允许复核处置: " + task.getStatus());
+        }
+        if (!"REJECTED".equals(valueOr(task.getReviewResult(), ""))) {
+            throw new BusinessException("仅复核驳回的库位任务允许处置");
+        }
+        String dispositionStatus = valueOr(task.getDispositionStatus(), "PENDING");
+        if (!"PENDING".equals(dispositionStatus)) {
+            throw new BusinessException("库位任务复核差异已处置: " + dispositionStatus);
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String operator = text(request, "operator", text(request, "dispositionBy", AuthContext.username()));
+        if (operator.isBlank()) {
+            throw new BusinessException("库位任务复核处置人不能为空");
+        }
+        String dispositionResult = normalizeLocationTaskDispositionResult(text(request, "dispositionResult",
+                text(request, "decision", text(request, "result", "ACCEPT_DEVIATION"))));
+        String conclusion = text(request, "dispositionConclusion", text(request, "conclusion",
+                defaultLocationTaskDispositionConclusion(dispositionResult)));
+
+        MaterialBatch adjustedBatch = null;
+        Map<String, Object> dispositionRequest = new LinkedHashMap<>(safeRequest(request));
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            Object countedValue = value(request, "countedAvailableQty");
+            if (countedValue == null || String.valueOf(countedValue).isBlank()) {
+                countedValue = value(request, "actualQty");
+            }
+            if (countedValue == null || String.valueOf(countedValue).isBlank()) {
+                throw new BusinessException("库存调整必须填写实盘可用数量");
+            }
+            BigDecimal countedAvailable = decimalValue(countedValue);
+            if (countedAvailable.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("countedAvailableQty不能小于0");
+            }
+            MaterialBatch batch = lockedBatch(task.getBatchNo());
+            Map<String, Object> countRequest = new LinkedHashMap<>(safeRequest(request));
+            countRequest.put("countedAvailableQty", countedAvailable);
+            countRequest.put("operator", operator);
+            countRequest.put("reason", conclusion);
+            countRequest.put("sourceSystem", "wms-review-disposition");
+            countRequest.put("sourceTaskNo", task.getTaskNo());
+            adjustedBatch = applyInventoryCount(batch, countRequest);
+            dispositionRequest.put("countedAvailableQty", countedAvailable);
+            dispositionRequest.put("adjustedBatchNo", adjustedBatch.getBatchNo());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        task.setDispositionResult(dispositionResult);
+        task.setDispositionConclusion(conclusion);
+        task.setDispositionBy(operator);
+        task.setDispositionTime(now);
+        task.setDispositionStatus("ESCALATE".equals(dispositionResult) ? "ESCALATED" : "CLOSED");
+        task.setUpdatedTime(now);
+        materialLocationTaskMapper.updateById(task);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("task", locationTaskRow(task));
+        if (adjustedBatch != null) {
+            response.put("batch", batchRow(adjustedBatch));
+        }
+        audit("MATERIAL_LOCATION_TASK_DISPOSITION", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "处置库位任务复核差异: " + dispositionResult + ", conclusion=" + conclusion,
+                operator, auditSnapshot(before, locationTaskRow(task), dispositionRequest));
+        return response;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -2832,6 +2908,11 @@ public class MaterialService {
         row.put("reviewedTime", task.getReviewedTime());
         row.put("reviewResult", valueOr(task.getReviewResult(), task.getReviewedTime() == null ? "" : "APPROVED"));
         row.put("reviewConclusion", task.getReviewConclusion());
+        row.put("dispositionStatus", valueOr(task.getDispositionStatus(), defaultLocationTaskDispositionStatus(task)));
+        row.put("dispositionResult", task.getDispositionResult());
+        row.put("dispositionConclusion", task.getDispositionConclusion());
+        row.put("dispositionBy", task.getDispositionBy());
+        row.put("dispositionTime", task.getDispositionTime());
         row.put("cancelledBy", task.getCancelledBy());
         row.put("cancelledTime", task.getCancelledTime());
         row.put("cancelReason", task.getCancelReason());
@@ -3167,6 +3248,34 @@ public class MaterialService {
             case "REJECT", "REJECTED", "FAIL", "FAILED", "NG", "驳回" -> "REJECTED";
             default -> throw new BusinessException("库位任务复核结果不支持: " + value);
         };
+    }
+
+    private String normalizeLocationTaskDispositionResult(String value) {
+        String result = valueOr(value, "ACCEPT_DEVIATION").trim().toUpperCase(Locale.ROOT);
+        return switch (result) {
+            case "ACCEPT", "ACCEPT_DEVIATION", "WAIVE", "CLOSE", "让步接收" -> "ACCEPT_DEVIATION";
+            case "ADJUST", "ADJUST_INVENTORY", "COUNT", "INVENTORY_COUNT", "库存调整" -> "ADJUST_INVENTORY";
+            case "ESCALATE", "ESCALATED", "MRB", "升级" -> "ESCALATE";
+            default -> throw new BusinessException("库位任务复核处置结果不支持: " + value);
+        };
+    }
+
+    private String defaultLocationTaskDispositionConclusion(String dispositionResult) {
+        return switch (dispositionResult) {
+            case "ADJUST_INVENTORY" -> "复核差异已按实盘数量完成库存调整";
+            case "ESCALATE" -> "复核差异已升级后续异常处置";
+            default -> "复核差异已评估并让步接收";
+        };
+    }
+
+    private String defaultLocationTaskDispositionStatus(MaterialLocationTask task) {
+        if ("REJECTED".equals(valueOr(task.getReviewResult(), ""))) {
+            return "PENDING";
+        }
+        if ("APPROVED".equals(valueOr(task.getReviewResult(), ""))) {
+            return "CLOSED";
+        }
+        return "";
     }
 
     private MaterialLocationTask lockedLocationTask(String taskNo) {

@@ -1308,6 +1308,10 @@ public class PilotMesService {
         return materialService.reviewLocationTask(taskNo, safeRequest(request));
     }
 
+    public Map<String, Object> dispositionMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.dispositionLocationTask(taskNo, safeRequest(request));
+    }
+
     public Map<String, Object> cancelMaterialLocationTask(String taskNo, Map<String, Object> request) {
         return materialService.cancelLocationTask(taskNo, safeRequest(request));
     }

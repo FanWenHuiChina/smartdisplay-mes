@@ -477,6 +477,8 @@
                       <span>{{ task.assigneeLabel }}</span>
                       <span class="task-review" :class="task.reviewType">{{ task.reviewText }}</span>
                       <span v-if="task.reviewConclusion">{{ task.reviewConclusion }}</span>
+                      <span v-if="task.dispositionText" class="task-review" :class="task.dispositionType">{{ task.dispositionText }}</span>
+                      <span v-if="task.dispositionConclusion">{{ task.dispositionConclusion }}</span>
                     </div>
                   </td>
                   <td>{{ task.time }}</td>
@@ -521,6 +523,22 @@
                         @click="cancelLocationTask(task)"
                       >
                         取消
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ACCEPT_DEVIATION')"
+                      >
+                        接收差异
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny primary"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ADJUST_INVENTORY')"
+                      >
+                        调库
                       </button>
                     </div>
                   </td>
@@ -805,7 +823,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   assignMaterialLocationTask,
   bindCarrier,
@@ -819,6 +837,7 @@ import {
   createSupplierQualificationReview,
   closeSupplierCorrectiveAction,
   decideSupplierQualificationReview,
+  dispositionMaterialLocationTask,
   evaluateMaterialSupplierQualification,
   freezeMaterial,
   getCarriers,
@@ -1379,6 +1398,9 @@ function mapLocationTask(item, index = 0) {
   const reviewed = Boolean(reviewer || reviewedTime)
   const reviewResult = item.reviewResult || (reviewed ? 'APPROVED' : '')
   const reviewConclusion = item.reviewConclusion || (reviewResult === 'REJECTED' ? item.exceptionReason || '' : '')
+  const dispositionStatus = item.dispositionStatus || (reviewResult === 'REJECTED' ? 'PENDING' : (reviewResult === 'APPROVED' ? 'CLOSED' : ''))
+  const dispositionResult = item.dispositionResult || ''
+  const dispositionConclusion = item.dispositionConclusion || ''
   const priority = Number(item.priority ?? defaultLocationTaskPriority(item.taskType))
   const dueTime = item.dueTime || ''
   const slaStatus = item.slaStatus || inferLocationTaskSlaStatus(status, dueTime)
@@ -1408,6 +1430,11 @@ function mapLocationTask(item, index = 0) {
     reviewConclusion,
     reviewText: locationTaskReviewText(status, reviewed, reviewer, reviewedTime, reviewResult),
     reviewType: locationTaskReviewType(status, reviewed, reviewResult),
+    dispositionStatus,
+    dispositionResult,
+    dispositionConclusion,
+    dispositionText: locationTaskDispositionText(dispositionStatus, dispositionResult),
+    dispositionType: locationTaskDispositionType(dispositionStatus, dispositionResult),
     priority,
     priorityText: `P${priority}`,
     dueTime,
@@ -1420,7 +1447,8 @@ function mapLocationTask(item, index = 0) {
     canAssign: status === 'CREATED',
     canComplete: ['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status),
     canCancel: ['CREATED', 'ASSIGNED'].includes(status),
-    canReview: status === 'DONE' && !reviewed
+    canReview: status === 'DONE' && !reviewed,
+    canDisposition: status === 'DONE' && reviewResult === 'REJECTED' && dispositionStatus === 'PENDING'
   }
 }
 
@@ -1437,6 +1465,23 @@ function locationTaskReviewText(status, reviewed, reviewer, reviewedTime, review
 function locationTaskReviewType(status, reviewed, reviewResult) {
   if (!reviewed) return status === 'DONE' ? 'amber' : 'gray'
   return reviewResult === 'REJECTED' ? 'red' : 'green'
+}
+
+function locationTaskDispositionText(status, result) {
+  if (!status) return ''
+  if (status === 'PENDING') return '待处置'
+  if (status === 'ESCALATED') return '已升级'
+  if (result === 'ADJUST_INVENTORY') return '已调库'
+  if (result === 'ACCEPT_DEVIATION') return '已接收'
+  return status === 'CLOSED' ? '已关闭' : status
+}
+
+function locationTaskDispositionType(status, result) {
+  if (status === 'PENDING') return 'amber'
+  if (status === 'ESCALATED') return 'red'
+  if (result === 'ADJUST_INVENTORY') return 'blue'
+  if (status === 'CLOSED') return 'green'
+  return 'gray'
 }
 
 function defaultLocationTaskPriority(taskType) {
@@ -1867,6 +1912,52 @@ async function reviewLocationTask(task, reviewResult = 'APPROVED') {
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务复核失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
+async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATION') {
+  try {
+    locationTaskSubmitting.value = true
+    const operator = locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    const payload = {
+      operator,
+      dispositionResult,
+      dispositionConclusion: dispositionResult === 'ADJUST_INVENTORY'
+        ? '复核驳回后按实盘数量完成库存调整'
+        : '复核驳回差异已确认，接受执行记录并关闭差异'
+    }
+    if (dispositionResult === 'ADJUST_INVENTORY') {
+      const { value } = await ElMessageBox.prompt(
+        `批次 ${task.batchNo} 复核驳回，请输入实盘可用数量`,
+        'WMS复核差异调库',
+        {
+          confirmButtonText: '调库',
+          cancelButtonText: '取消',
+          inputValue: String(task.actualQty ?? ''),
+          inputPattern: /^\d+(\.\d+)?$/,
+          inputErrorMessage: '请输入非负数字'
+        }
+      )
+      payload.countedAvailableQty = value
+    } else {
+      await ElMessageBox.confirm(
+        `确认接收库位任务 ${task.taskNo} 的复核差异？`,
+        'WMS复核差异处置',
+        {
+          confirmButtonText: '接收差异',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    }
+    await dispositionMaterialLocationTask(task.taskNo, payload)
+    ElMessage.success(dispositionResult === 'ADJUST_INVENTORY' ? '复核差异已调库关闭' : '复核差异已接收关闭')
+    await loadMaterialData()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.warning(error?.message || '库位任务复核差异处置失败')
   } finally {
     locationTaskSubmitting.value = false
   }

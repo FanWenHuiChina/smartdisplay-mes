@@ -78,7 +78,7 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 414 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、WMS 多库位拆批任务入口、WMS 库位任务复核、复核结果、复核驳回处置、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 420 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - OpenAPI/Swagger 合同回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` 通过，`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；Docker 后端覆盖新 jar 并重启后，`GET http://127.0.0.1:8080/api/v3/api-docs/pilot-v1` 已验证 title、server、JWT Bearer、`Result/PageResult` schema、标准错误响应、`/v1/lots` 路径、登录免鉴权和 Lot 列表鉴权均符合预期。
 - 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
@@ -86,10 +86,10 @@
 - 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 241, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
-- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.47` 共 47 个迁移文件。
-- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39-V1.47 已补充静态验收；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
+- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.50` 共 50 个迁移文件。
+- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39-V1.50 已补充静态验收；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
 - Docker交付配置：`docker compose config` 通过；根目录已新增 `docker-compose.yml` 作为交付入口；后端可执行包 `mvn.cmd "-DskipTests" package` 通过并生成 `target/smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar`。
-- Docker运行态复验：当前使用本地 jar/dist 覆盖现有后端和前端容器；后端重启后 Flyway 已从 `1.46` 迁移到 `1.47 Harden Eap Shadow Protocol Drivers`，`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 可用；EAP 影子协议接口冒烟通过。
+- Docker运行态复验：当前使用本地 jar/dist 覆盖现有后端和前端容器；后端重启后 Flyway 已从 `1.47` 迁移到 `1.50 Add Material Location Task Disposition`，`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 可用；前端反代登录、首页和库位任务接口冒烟通过，库位任务返回 `dispositionStatus` 处置字段。
 - HTTP状态流冒烟：经 `http://127.0.0.1:8888/api` 反代登录、总览、库位任务和分页审计查询均返回业务码 200；`/system/audit-logs?current=1&size=5&action=WMS&result=SUCCESS` 返回 `total=360`、本页 5 条且包含请求上下文字段；V1.38 盘点任务已验证 `CREATED -> ASSIGNED -> DONE` 和 `CREATED -> CANCELLED`。
 - BOM/ECO 会签 API 冒烟：经 `http://127.0.0.1:8080/api` 提交 BOM 变更、查询 ECO 会签任务、逐个会签通过并发布目标 BOM；变更单 `BCR-20260608064003841-0001` 生成 3 个任务并全部 `APPROVED`，发布后数据库为 `PUBLISHED|APPROVED|PE,QE,PLANNER`、任务统计 `3|3`。
 - HTTP冒烟：后端直连登录、前端首页、Swagger、前端 Nginx `/api` 反代登录、Dashboard 和库位任务接口均返回 200；`GET /api/v1/material/location-tasks` 当前返回 2 条记录。
@@ -922,3 +922,13 @@
 - 前端物料页把原单一“复核”按钮拆成“通过/驳回”，任务表展示 `复核通过`、`复核驳回`、复核人、复核时间和结论文本，继续沿用浅色 Codex app 工作台风格。
 - 前端契约脚本新增 WMS 库位任务复核结果检查，覆盖 `reviewResult`、`reviewConclusion`、通过/驳回按钮接线，防止页面退回只记录复核人和时间。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 98 项通过，`npm.cmd run verify:frontend-contract` 419 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.49` 共 49 个迁移文件。
+
+## 2026-06-10 增量：WMS 库位任务复核驳回处置
+
+- 新增 Flyway `V1.50__Add_Material_Location_Task_Disposition.sql`，为 `material_location_task` 补充 `disposition_status`、`disposition_result`、`disposition_conclusion`、`disposition_by` 和 `disposition_time`；历史复核驳回任务回填为 `PENDING`，历史复核通过任务回填为 `CLOSED/APPROVED`。
+- 新增 `POST /api/v1/material/location-tasks/{taskNo}/disposition`，仅允许 `DONE + reviewResult=REJECTED + dispositionStatus=PENDING` 的库位任务进入处置，避免未完成、未驳回或已处置任务被重复操作。
+- 处置结果支持 `ACCEPT_DEVIATION`、`ADJUST_INVENTORY` 和 `ESCALATE`：让步接收只关闭差异并写处置审计；显式调库必须提供 `countedAvailableQty` 或 `actualQty`，复用既有盘点逻辑写 `COUNT` 库存事务；升级处置将状态置为 `ESCALATED`，留给后续异常/MRB 编排。
+- 复核驳回本身仍不自动冲正、不隐式修改库存；库存变化只发生在用户明确选择 `ADJUST_INVENTORY` 并输入实盘可用数量后。
+- 前端物料页最近库位任务表新增处置状态与结论展示；待处置驳回任务提供“接收差异”和“调库”两个低饱和按钮，调库时弹出实盘可用数量输入框，继续沿用浅色 Codex app 工作台风格。
+- 新增 `MATERIAL_LOCATION_TASK_DISPOSITION` 审计动作和失败审计映射，处置快照保留 `before`、`after`、`changedFields`、原始请求、处置人、处置结论以及调库批次证据。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 102 项通过，`npm.cmd run verify:frontend-contract` 420 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.50` 共 50 个迁移文件。
