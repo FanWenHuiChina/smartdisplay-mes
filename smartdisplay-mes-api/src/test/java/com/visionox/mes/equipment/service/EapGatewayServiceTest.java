@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -273,22 +272,58 @@ class EapGatewayServiceTest {
         when(gatewayMapper.selectOne(any())).thenReturn(gateway);
         when(eapAdapter.handleMessage(any())).thenThrow(new BusinessException("Unsupported message"));
 
-        assertThatThrownBy(() -> service.ingestMessage(Map.of(
+        Map<String, Object> response = service.ingestMessage(Map.of(
                 "gatewayCode", "GW-SIM-HTTP-01",
                 "messageType", "UNKNOWN",
                 "payload", Map.of("equipmentCode", "COATER_01"),
                 "operator", "ee1001"
-        ), eapAdapter)).isInstanceOf(BusinessException.class);
+        ), eapAdapter);
 
         ArgumentCaptor<EquipmentGatewayMessage> captor = ArgumentCaptor.forClass(EquipmentGatewayMessage.class);
         verify(messageMapper).insert(captor.capture());
         EquipmentGatewayMessage message = captor.getValue();
         assertThat(message.getProcessStatus()).isEqualTo("FAILED");
         assertThat(message.getErrorMessage()).contains("Unsupported message");
+        assertThat(message.getResponseSnapshot()).contains("accepted", "Unsupported message");
+        assertThat(response).containsEntry("accepted", false);
+        assertThat(response.get("errorMessage")).asString().contains("Unsupported message");
         assertThat(gateway.getStatus()).isEqualTo("DEGRADED");
         assertThat(gateway.getLastError()).contains("Unsupported message");
         verify(messageMapper).updateById(message);
         verify(gatewayMapper, times(2)).updateById(gateway);
+        verify(auditLogService).recordFailure(eq("EAP_GATEWAY_MESSAGE_FAILED"), eq(message.getMessageNo()), eq("EQUIPMENT_GATEWAY_MESSAGE"), any(), eq("ee1001"), eq("equipment-gateway-service"), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void messageDetailShouldExposeSnapshotsAndDiagnostic() {
+        EapGatewayService service = service();
+        EquipmentGatewayMessage message = new EquipmentGatewayMessage();
+        message.setMessageNo("EGM-DETAIL-001");
+        message.setGatewayCode("GW-SECS-01");
+        message.setEquipmentCode("EVAP_01");
+        message.setProtocolType("SECS_GEM");
+        message.setDriverCode("secs-gem-driver");
+        message.setDirection("INBOUND");
+        message.setMessageType("UNKNOWN");
+        message.setProcessStatus("FAILED");
+        message.setErrorMessage("SECS/GEM frame is invalid: stream/function is required");
+        message.setOccurredTime(LocalDateTime.now().minusSeconds(5));
+        message.setProcessedTime(LocalDateTime.now());
+        message.setPayloadSnapshot("{\"gatewayCode\":\"GW-SECS-01\",\"payload\":{\"equipmentCode\":\"EVAP_01\"}}");
+        message.setNormalizedPayloadSnapshot("");
+        message.setResponseSnapshot("{\"accepted\":false,\"errorMessage\":\"stream/function is required\"}");
+        when(messageMapper.selectOne(any())).thenReturn(message);
+
+        Map<String, Object> detail = service.messageDetail("EGM-DETAIL-001");
+
+        assertThat(detail).containsEntry("messageNo", "EGM-DETAIL-001");
+        assertThat(detail.get("payloadSnapshot")).asString().contains("GW-SECS-01");
+        assertThat(detail.get("responseSnapshot")).asString().contains("accepted");
+        Map<String, Object> diagnostic = (Map<String, Object>) detail.get("diagnostic");
+        assertThat(diagnostic).containsEntry("canRetry", true);
+        assertThat(diagnostic).containsEntry("failureCategory", "PROTOCOL_FRAME");
+        assertThat(diagnostic.get("operatorAction")).asString().contains("协议帧字段");
     }
 
     @Test
@@ -334,20 +369,22 @@ class EapGatewayServiceTest {
         gateway.setDriverMode("SHADOW");
         when(gatewayMapper.selectOne(any())).thenReturn(gateway);
 
-        assertThatThrownBy(() -> service.ingestMessage(Map.of(
+        Map<String, Object> response = service.ingestMessage(Map.of(
                 "gatewayCode", "GW-SECS-01",
                 "payload", Map.of("equipmentCode", "EVAP_01", "status", "RUNNING"),
                 "operator", "ee1001"
-        ), eapAdapter)).isInstanceOf(BusinessException.class)
-                .hasMessageContaining("secsMessage or stream/function is required");
+        ), eapAdapter);
 
         ArgumentCaptor<EquipmentGatewayMessage> captor = ArgumentCaptor.forClass(EquipmentGatewayMessage.class);
         verify(messageMapper).insert(captor.capture());
         EquipmentGatewayMessage message = captor.getValue();
         assertThat(message.getProcessStatus()).isEqualTo("FAILED");
         assertThat(message.getErrorMessage()).contains("SECS/GEM frame is invalid");
+        assertThat(response).containsEntry("accepted", false);
+        assertThat(response.get("errorMessage")).asString().contains("secsMessage or stream/function is required");
         assertThat(gateway.getStatus()).isEqualTo("DEGRADED");
         verify(messageMapper).updateById(message);
+        verify(auditLogService).recordFailure(eq("EAP_GATEWAY_MESSAGE_FAILED"), eq(message.getMessageNo()), eq("EQUIPMENT_GATEWAY_MESSAGE"), any(), eq("ee1001"), eq("equipment-gateway-service"), any());
     }
 
     @Test

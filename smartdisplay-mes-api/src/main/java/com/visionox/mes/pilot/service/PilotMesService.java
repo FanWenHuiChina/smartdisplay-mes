@@ -778,6 +778,10 @@ public class PilotMesService {
         }
     }
 
+    public Map<String, Object> equipmentGatewayMessageDetail(String messageNo) {
+        return eapGatewayService.messageDetail(messageNo);
+    }
+
     public List<Map<String, Object>> equipmentGatewayDrivers() {
         return eapGatewayService.drivers();
     }

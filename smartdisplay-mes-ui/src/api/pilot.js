@@ -67,6 +67,7 @@ export const heartbeatEquipmentGateway = (gatewayCode, data = {}) => request.pos
 export const checkEquipmentGatewayHealth = (gatewayCode, data = {}) => request.post(`/v1/equipment/gateways/${gatewayCode}/health-check`, data)
 export const getEquipmentGatewayHealthChecks = (params = {}) => request.get('/v1/equipment/gateway-health-checks', { params })
 export const getEquipmentGatewayMessages = (params = {}) => request.get('/v1/equipment/gateway-messages', { params })
+export const getEquipmentGatewayMessageDetail = messageNo => request.get(`/v1/equipment/gateway-messages/${messageNo}`)
 export const getEquipmentGatewayDrivers = () => request.get('/v1/equipment/gateway-drivers')
 export const getEquipmentParameterSamples = (params = {}) => request.get('/v1/equipment/parameters', { params })
 export const reportEquipmentParameters = (data = {}) => request.post('/v1/equipment/parameters/report', data)

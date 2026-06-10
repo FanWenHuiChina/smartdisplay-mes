@@ -428,6 +428,11 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.equipmentGatewayMessages(gatewayCode));
     }
 
+    @GetMapping("/equipment/gateway-messages/{messageNo}")
+    public Result<Map<String, Object>> equipmentGatewayMessageDetail(@PathVariable String messageNo) {
+        return Result.success(pilotMesService.equipmentGatewayMessageDetail(messageNo));
+    }
+
     @GetMapping("/equipment/gateway-drivers")
     public Result<List<Map<String, Object>>> equipmentGatewayDrivers() {
         return Result.success(pilotMesService.equipmentGatewayDrivers());

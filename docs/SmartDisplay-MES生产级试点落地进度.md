@@ -851,5 +851,15 @@
 - `EapGatewayService.registerGateway` 未显式传入 `driverMode` 时会使用驱动能力默认值，SECS/GEM、OPC UA、厂商 HTTP 默认进入 `SHADOW`，避免误把真实协议边界当成简单模拟。
 - 新增 Flyway `V1.47__Harden_Eap_Shadow_Protocol_Drivers.sql`，把运行库中的 `GW-SECSGEM-PLACEHOLDER`、`GW-OPCUA-PLACEHOLDER` 升级为 `GW-SECSGEM-SHADOW`、`GW-OPCUA-SHADOW`，并重写驱动配置快照和健康检查说明。
 - 前端设备页开发 fallback 已同步改为 `GW-SECSGEM-SHADOW`、`GW-OPCUA-SHADOW`，驱动模式显示 `SHADOW`，驱动模式选项使用 `EXTERNAL`，不再显示旧网关口径。
-- 已验证：`EapGatewayServiceTest` 14 项通过，后端全量 241 项通过，Flyway 静态验收 47 个迁移通过，前端契约 404 项通过，前端生产构建和生产包扫描通过。
+- 已验证：`EapGatewayServiceTest` 15 项通过，后端全量 242 项通过，Flyway 静态验收 47 个迁移通过，前端契约 406 项通过，前端生产构建和生产包扫描通过。
 - 已部署到当前 Docker 运行环境：本地 jar/dist 已覆盖后端和前端容器；后端重启后 Flyway 已迁移到 `1.47 Harden Eap Shadow Protocol Drivers`；前端反代冒烟确认 `SECS_GEM driverMode=SHADOW`、`protocolFrameValidation=true`，`GW-SECSGEM-SHADOW` 健康检查返回 `WARN`，SECS/GEM `S6F11` 入站归一为 `STATUS` 并处理为 `PROCESSED`。
+
+## 2026-06-10 增量：EAP 消息失败留痕与诊断详情
+
+- `EapGatewayService.ingestMessage` 去掉外层事务，网关消息插入、失败状态更新和网关降级各自提交；适配器内部写操作仍由设备领域事务控制，失败时不会提交半成品业务写入，同时 `equipment_gateway_message` 保留 `FAILED`、错误信息和失败响应快照。
+- 新增 `GET /api/v1/equipment/gateway-messages/{messageNo}`，返回消息摘要、原始入站快照、归一化消息、适配器响应、发生/处理时间和诊断建议。
+- 失败入站新增 `EAP_GATEWAY_MESSAGE_FAILED` 审计，审计结果为 `FAIL`，业务对象为 `EQUIPMENT_GATEWAY_MESSAGE`，便于系统审计页按 EAP 动作分组追溯。
+- 前端设备页的 EAP 网关消息履历新增“诊断”入口，使用浅色抽屉展示网关、设备、协议、处理结果、失败分类、处置建议、原始快照、归一化快照和适配器响应。
+- 前端开发 fallback 增加一条 SECS/GEM 帧缺失失败样例，用于离线演示消息详情抽屉；生产包扫描仍保证默认生产构建不携带典型业务样例标识。
+- 已验证：`EapGatewayServiceTest` 15 项通过，后端全量 242 项通过，Flyway 静态验收 47 个迁移通过，前端契约 406 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
+- 已部署到当前 Docker 运行环境：本地 jar/dist 已覆盖后端和前端容器；经前端反代提交缺少 SECS/GEM 帧标识的 `EGM-DIAG-20260610181059`，返回 `accepted=false`、消息状态 `FAILED`、详情诊断 `PROTOCOL_FRAME`，并查到 1 条 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 审计。
