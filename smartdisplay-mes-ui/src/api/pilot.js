@@ -40,6 +40,7 @@ export const getTraceSn = sn => request.get(`/v1/trace/sn/${sn}`)
 export const searchTrace = (params = {}) => request.get('/v1/trace/search', { params })
 
 export const getQualityInspections = (params = {}) => request.get('/v1/quality/inspections', { params })
+export const createQualityInspection = (data = {}) => request.post('/v1/quality/inspections', data)
 export const getQualityExceptions = (params = {}) => request.get('/v1/quality/exceptions', { params })
 export const getQualityMrbRecords = eventNo => request.get(`/v1/quality/exceptions/${eventNo}/mrb-records`)
 export const getQualityMrbMinutes = mrbNo => request.get(`/v1/quality/mrb-records/${mrbNo}/minutes`)

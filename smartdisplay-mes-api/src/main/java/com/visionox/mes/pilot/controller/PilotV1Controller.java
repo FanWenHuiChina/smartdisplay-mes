@@ -365,8 +365,8 @@ public class PilotV1Controller {
     }
 
     @PostMapping("/quality/inspections")
-    public Result<List<Map<String, Object>>> createInspection(@RequestBody(required = false) Map<String, Object> request) {
-        return Result.success(pilotMesService.qualityInspections(String.valueOf(request == null ? "" : request.getOrDefault("lotNo", ""))));
+    public Result<Map<String, Object>> createInspection(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.createQualityInspection(request));
     }
 
     @GetMapping("/equipment/events")

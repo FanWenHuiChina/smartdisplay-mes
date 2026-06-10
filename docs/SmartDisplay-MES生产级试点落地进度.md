@@ -773,3 +773,14 @@
 - `GET /api/v1/system/audit-logs` 已返回 `requestSnapshot`，系统管理页审计表新增“快照”列和展开面板，可直接查看变更前、变更后、变更字段和请求参数。
 - 旧的物料审计调用保持兼容，未传快照的动作仍按原逻辑写审计；库位任务成功动作和失败审计映射共同形成成功/失败双向留痕。
 - 已验证 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,PilotMesServiceTest" test` 通过 71 项；`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 后端全量通过 220 项；`npm.cmd run verify:frontend-contract` 通过 393 项；`npm.cmd run build`、`npm.cmd run verify:production-bundle`、`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 和 `npm.cmd run e2e:browser` 均通过，最新 E2E 报告 `docs/SmartDisplay-MES-browser-e2e-20260609-224839.md/json`。
+
+## 2026-06-10 增量：MES 手工质检录入写闭环
+
+- `POST /api/v1/quality/inspections` 已从质量检验查询占位升级为 MES 手工质检写入口，服务端会校验 Lot 存在性，默认写入 `sourceSystem=mes-quality-workbench` 和 `defectCode=D-MANUAL-NG`。
+- 手工质检支持多检验项落库；OK 只写检验记录和 `QUALITY_INSPECTION` 审计，NG 会创建缺陷、异常事件，并自动对 Lot 执行 Hold。
+- `PilotMesService` 和 `/api/v1/quality/inspections` 控制器已改为返回本次写入结果，包含 `messageType=MANUAL_INSPECTION`、检验项数量、缺陷数量、是否触发 Hold 和异常单摘要。
+- RBAC 新增 `quality:inspection-create` 按钮权限；QE 默认可执行 MES 手工质检录入，PE/OPERATOR 不具备该写权限，QMS Adapter 仍走原有模拟外部系统上报路径。
+- 前端质量页从“QMS 模拟检验上报”升级为“检验录入 / QMS Adapter”，支持在 `MES 手工录入` 和 `QMS Adapter` 之间切换，并分别调用 `createQualityInspection` 与 `ingestQmsInspection`。
+- 前端契约脚本新增 `createQualityInspection` API、`quality:inspection-create` 权限和 `manual-inspection-submit` 页面级检查，防止质量页退回只读或只支持 QMS Adapter。
+- 已验证：质量定向后端回归 58 项通过，后端全量 225 项通过，前端契约 401 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
+- 已部署到当前 Docker 运行环境：完整镜像重建因本机 Docker 代理 `127.0.0.1:7897` 拒绝连接受阻，本轮先用本地 jar/dist 覆盖现有后端和前端容器；经 `http://127.0.0.1:8888/api` 冒烟确认 MES 手工质检写接口返回 `MANUAL_INSPECTION` 且 `inspectionCount=1`。

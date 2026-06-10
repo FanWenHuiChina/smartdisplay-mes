@@ -421,3 +421,20 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 载具追溯探活 | 登录后绑定 `CST-260606-002` 到演示 Lot 并查询 `/api/v1/trace/lots/{lotNo}` | 通过 | 追溯摘要返回 `carrierCount=1` 和载具号 |
 | Hybrid RAG 探活 | 登录后调用 `/api/v1/ai/kb/index-jobs` 和 `/api/v1/ai/kb/ask` | 通过 | `LOCAL_RAG_HYBRID` 激活；索引 7 个切片；问答返回 `HYBRID_LOCAL`、`HIGH`、3 条引用 |
 | 浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 12 步通过，报告 `docs/SmartDisplay-MES-browser-e2e-20260608-183556.md` |
+
+## 2026-06-10 MES 手工质检录入复验
+
+本轮将 `POST /api/v1/quality/inspections` 从查询占位升级为 MES 手工质检写入口，并保留 QMS Adapter 独立上报入口。质量页同步改为“MES 手工录入 / QMS Adapter”双来源，新增 `quality:inspection-create` 按钮权限，QE 可录入，PE/OPERATOR 不具备该写权限。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端质量定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,PilotMesServiceTest,RolePermissionServiceTest" test` | 通过 | 58 项通过；覆盖手工质检落库、NG 缺陷/异常/Hold、服务委托和 RBAC 权限 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 225 项通过 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 401 checks`；覆盖 `createQualityInspection`、`quality:inspection-create` 和质量页手工录入路径 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留既有 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| Docker 镜像重建 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 受阻 | 本机 Docker 仍强制访问 `127.0.0.1:7897` 代理且端口拒绝连接，基础镜像元数据无法解析 |
+| Docker 覆盖部署 | 本地 `mvn package` + `npm run build` 后将 jar/dist 覆盖进现有 `smartdisplay-mes-api`、`smartdisplay-mes-ui` 容器 | 通过 | 后端重启成功，前端容器已替换为本轮 `quality-*` 产物 |
+| 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 登录 QE 后调用 `POST /api/v1/quality/inspections` | 通过 | 返回 `messageType=MANUAL_INSPECTION`、`inspectionCount=1`、`defectCount=0`、`holdApplied=false`，返回项为 `MANUAL_SMOKE_20260610104448` |
+
+说明：本轮 Docker 可运行态已经更新到当前代码，但不是通过完整镜像重建完成；待本机 Docker 代理恢复后，需要重新执行一次 `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 固化镜像路径。

@@ -271,3 +271,14 @@
 | AI 配置迁移 | Flyway `V1.43` 激活 `LOCAL_RAG_HYBRID`，`SOP_QA` 默认使用 `HYBRID_LOCAL` | 已落地，Docker 运行库已到 `v1.43` |
 | 前端 AI 入口 | AI 页提供 `Hybrid Local` 索引按钮，并纳入前端契约检查 | 已落地，`verify:frontend-contract` 328 项通过 |
 | 回归验证 | 后端全量、前端契约、生产构建、生产包扫描、Docker 探活和浏览器 E2E 均通过 | 已通过 |
+
+## 2026-06-10 补充验收：MES 手工质检录入
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| MES 手工质检写入口 | `POST /api/v1/quality/inspections` 必须创建真实 `quality_inspection` 记录，而不是返回静态或查询占位数据 | 已落地，HTTP 冒烟返回 `messageType=MANUAL_INSPECTION` |
+| NG 自动闭环 | 手工质检 NG 必须生成缺陷、异常事件并自动 Hold Lot | 已落地，`QualityServiceTest` 覆盖 |
+| OK 审计留痕 | 手工质检 OK 必须写检验记录和 `QUALITY_INSPECTION` 审计，不触发 Hold | 已落地，Docker 冒烟返回 `holdApplied=false` |
+| 权限边界 | QE 可录入 MES 手工质检，PE/OPERATOR 不可越权调用该写入口 | 已落地，`quality:inspection-create` 权限和 `RolePermissionServiceTest` 覆盖 |
+| 前端双来源 | 质量页必须支持 `MES 手工录入` 与 `QMS Adapter` 两种来源，并分别调用独立 API | 已落地，前端契约 401 项通过 |
+| Docker 运行态 | 当前 Docker 页面和接口必须能看到本轮质量页与手工质检写接口 | 已通过覆盖部署；完整镜像重建待本机 Docker 代理恢复后复跑 |

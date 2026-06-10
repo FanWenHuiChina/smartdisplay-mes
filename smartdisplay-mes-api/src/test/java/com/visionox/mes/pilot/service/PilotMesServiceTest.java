@@ -313,6 +313,27 @@ class PilotMesServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void createQualityInspectionShouldDelegateToManualQualityInspection() {
+        Map<String, Object> response = Map.of("messageType", "MANUAL_INSPECTION", "lotNo", "LOT001");
+        when(qualityService.createManualInspection(any())).thenReturn(response);
+
+        Map<String, Object> result = pilotMesService.createQualityInspection(Map.of(
+                "lotNo", "LOT001",
+                "result", "NG",
+                "operator", "qe1001"
+        ));
+
+        assertThat(result).isEqualTo(response);
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).createManualInspection(payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue())
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("result", "NG")
+                .containsEntry("operator", "qe1001");
+    }
+
+    @Test
     void checkWmsMaterialReadinessShouldReturnReadinessAndWriteAdapterAudit() {
         when(materialService.materialReadiness()).thenReturn(Map.of("readiness", "READY", "batches", List.of()));
 

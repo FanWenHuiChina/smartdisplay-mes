@@ -36,7 +36,7 @@ public class RolePermissionService {
     private static final List<String> ALL_BUTTONS = List.of(
             "order:create", "order:release",
             "lot:track-in", "lot:track-out", "lot:hold", "lot:release", "lot:rework", "lot:scrap",
-            "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close",
+            "quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close",
             "material:wms", "material:iqc", "material:supplier-manage",
             "bom:change", "bom:eco-approve",
             "recipe:publish", "equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway",
@@ -126,6 +126,9 @@ public class RolePermissionService {
         }
         if (path.contains("/quality") && path.contains("/close")) {
             return buttons.contains("quality:exception-close");
+        }
+        if (path.matches("^/v1/quality/inspections/?$") || path.matches("^/quality/inspections/?$")) {
+            return buttons.contains("quality:inspection-create");
         }
         if (path.startsWith("/v1/quality") || path.startsWith("/quality")) {
             return buttons.contains("quality:mrb-review")
@@ -302,7 +305,7 @@ public class RolePermissionService {
             case "OPERATOR" -> List.of("lot:track-in", "lot:track-out");
             case "QE" -> List.of(
                     "lot:hold", "lot:release", "lot:rework", "lot:scrap",
-                    "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "material:iqc", "material:supplier-manage", "bom:eco-approve",
+                    "quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "material:iqc", "material:supplier-manage", "bom:eco-approve",
                     "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index"
             );
             case "PE" -> List.of("quality:mrb-approve", "quality:mrb-escalate", "recipe:publish", "bom:change", "bom:eco-approve", "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index");

@@ -137,6 +137,7 @@ const requiredApiExports = [
   ['getTraceSn', '/v1/trace/sn/${sn}'],
   ['searchTrace', '/v1/trace/search'],
   ['getQualityInspections', '/v1/quality/inspections'],
+  ['createQualityInspection', '/v1/quality/inspections'],
   ['getQualityExceptions', '/v1/quality/exceptions'],
   ['getQualityMrbRecords', '/v1/quality/exceptions/${eventNo}/mrb-records'],
   ['getQualityMrbMinutes', '/v1/quality/mrb-records/${mrbNo}/minutes'],
@@ -270,6 +271,7 @@ const requiredButtons = [
   'lot:release',
   'lot:rework',
   'lot:scrap',
+  'quality:inspection-create',
   'quality:mrb-review',
   'quality:mrb-approve',
   'quality:mrb-escalate',
@@ -302,7 +304,7 @@ const pageContracts = [
   ['views/recipe/index.vue', ['getRecipeList', 'getRecipeDetail', 'publishRecipe'], ['recipe:publish']],
   ['views/execution/index.vue', ['getLots', 'getTrackInChecks', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
-  ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
+  ['views/quality/index.vue', ['getQualityInspections', 'createQualityInspection', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['searchTrace'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
@@ -351,6 +353,7 @@ for (const relativePath of listVueFiles('src/views')) {
 const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
+check('page:views/quality/index.vue:manual-inspection-submit', hasAll(qualityView, ['createQualityInspection', 'submitQualityInspection', "qmsForm.mode === 'MES'", "hasButton('quality:inspection-create')"]), 'quality page must expose MES manual inspection write path separately from QMS adapter')
 
 const traceView = read('src/views/trace/index.vue')
 check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['serialNumbers', 'serialNumberSummary', 'serialNumberCount']), 'Trace page must display production SN binding evidence returned by /trace/search')

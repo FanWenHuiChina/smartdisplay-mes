@@ -853,6 +853,10 @@ public class PilotMesService {
         return qualityService.reportQmsInspection(adapterPayload(request, "qms-adapter", "simulated-qms-adapter"));
     }
 
+    public Map<String, Object> createQualityInspection(Map<String, Object> request) {
+        return qualityService.createManualInspection(safeRequest(request));
+    }
+
     public Map<String, Object> checkWmsMaterialReadiness(Map<String, Object> request) {
         Map<String, Object> payload = adapterPayload(request, "wms-adapter", "simulated-wms-adapter");
         Map<String, Object> data = new LinkedHashMap<>(materialService.materialReadiness());

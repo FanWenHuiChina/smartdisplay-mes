@@ -210,6 +210,65 @@ public class QualityService {
         return data;
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> createManualInspection(Map<String, Object> request) {
+        Map<String, Object> source = new LinkedHashMap<>(request == null ? Map.of() : request);
+        source.putIfAbsent("sourceSystem", "mes-quality-workbench");
+        source.putIfAbsent("defectCode", "D-MANUAL-NG");
+        String lotNo = requiredQmsText(source, "lotNo", "质量检验录入缺少Lot号");
+        Lot lot = lotMapper.selectOne(new LambdaQueryWrapper<Lot>().eq(Lot::getLotNo, lotNo).last("LIMIT 1"));
+        if (lot == null) {
+            throw new BusinessException("质量检验录入Lot不存在: " + lotNo);
+        }
+
+        String inspector = text(source, "inspector", text(source, "operator", AuthContext.username()));
+        LotStepRecord stepRecord = externalStepRecord(lot, source);
+        List<QualityInspection> inspections = new ArrayList<>();
+        int defectCount = 0;
+
+        for (Map<String, Object> item : qmsInspectionItems(source)) {
+            String itemResult = normalizeQmsResult(text(item, "result", text(source, "result", "OK")));
+            QualityInspection inspection = buildExternalInspection(lot, stepRecord, source, item, inspector, itemResult);
+            inspection.setSource("MES_MANUAL");
+            inspection.setRemark(text(item, "remark", text(source, "remark", "MES质量工作台手工录入")));
+            inspectionMapper.insert(inspection);
+            inspections.add(inspection);
+            if ("NG".equals(itemResult)) {
+                defectCount++;
+                createDefect(inspection,
+                        text(item, "defectCode", text(source, "defectCode", "D-MANUAL-NG")),
+                        text(item, "defectName", text(item, "defectDescription",
+                                inspection.getItemName() + "不合格")),
+                        text(item, "defectLevel", text(source, "defectLevel", "MAJOR")));
+            }
+        }
+
+        boolean hasNg = inspections.stream().anyMatch(inspection -> "NG".equals(inspection.getResult()));
+        audit("QUALITY_INSPECTION", lotNo, "LOT",
+                "MES质量检验录入 result=" + (hasNg ? "NG" : "OK") + ", items=" + inspections.size(), inspector,
+                JSONUtil.toJsonStr(source));
+
+        ExceptionEvent event = null;
+        if (hasNg) {
+            event = createException(lot, stepRecord, inspections);
+            autoHold(lotNo, "QUALITY", "MES质量检验不合格，异常单 " + event.getEventNo() + " 自动 Hold", inspector);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sourceSystem", "mes-quality-workbench");
+        data.put("messageType", "MANUAL_INSPECTION");
+        data.put("lotNo", lotNo);
+        data.put("result", hasNg ? "NG" : "OK");
+        data.put("inspectionCount", inspections.size());
+        data.put("defectCount", defectCount);
+        data.put("holdApplied", hasNg);
+        data.put("inspections", inspections.stream().map(this::inspectionRow).collect(Collectors.toList()));
+        if (event != null) {
+            data.put("exceptionEvent", exceptionRow(event));
+        }
+        return data;
+    }
+
     public List<Map<String, Object>> mrbRecords(String eventNo) {
         findException(eventNo);
         return mrbRecordMapper.selectList(new LambdaQueryWrapper<QualityMrbRecord>()

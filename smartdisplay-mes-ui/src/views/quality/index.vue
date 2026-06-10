@@ -26,11 +26,18 @@
 
     <div class="mes-card section-gap">
       <div class="mes-card__head">
-        <div class="mes-card__title">QMS 模拟检验上报</div>
+        <div class="mes-card__title">检验录入 / QMS Adapter</div>
         <span class="status-tag" :class="qmsResultType">{{ qmsResultText }}</span>
       </div>
       <div class="mes-card__body">
         <div class="qms-form">
+          <div class="mes-field">
+            <label>来源</label>
+            <select v-model="qmsForm.mode" class="mes-select">
+              <option value="MES">MES 手工录入</option>
+              <option value="QMS">QMS Adapter</option>
+            </select>
+          </div>
           <div class="mes-field">
             <label>Lot</label>
             <input v-model="qmsForm.lotNo" class="mes-input" placeholder="请输入 Lot" />
@@ -93,12 +100,12 @@
             <span>{{ qmsSubmitHint }}</span>
           </div>
           <button
-            v-if="canMrbAction"
+            v-if="canSubmitInspection"
             class="mes-btn primary"
             :disabled="qmsSubmitting"
-            @click="submitQmsInspection"
+            @click="submitQualityInspection"
           >
-            {{ qmsSubmitting ? '上报中' : '提交 QMS 上报' }}
+            {{ qmsSubmitting ? '提交中' : submitInspectionLabel }}
           </button>
         </div>
       </div>
@@ -291,11 +298,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   approveQualityMrbTask,
   closeQualityException,
+  createQualityInspection,
   getQualityExceptions,
   getQualityInspections,
   getQualityMrbApprovals,
@@ -335,6 +343,11 @@ const fallbackMrbApprovals = [
   { taskNo: 'MRBT-FALLBACK-PE', mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', approvalRole: 'PE', approvalStatus: 'ESCALATED', approver: '-', opinion: '-', dueTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(), slaLevel: 'CRITICAL', slaHours: 3, escalatedTo: 'pm1001', escalationCount: 1 }
 ]
 
+const defaultDefectCodes = {
+  MES: 'D-MANUAL-NG',
+  QMS: 'D-QMS-NG'
+}
+
 const inspections = ref(__DEV_MOCK_FALLBACK__ ? fallbackInspections : [])
 const exceptions = ref(__DEV_MOCK_FALLBACK__ ? fallbackExceptions : [])
 const defectTopN = ref(__DEV_MOCK_FALLBACK__ ? fallbackDefects : [])
@@ -356,6 +369,7 @@ const mrbForm = reactive({
 })
 
 const qmsForm = reactive({
+  mode: 'MES',
   lotNo: __DEV_MOCK_FALLBACK__ ? fallbackInspections[0]?.lotNo || '' : '',
   result: 'OK',
   itemCode: 'VISUAL_CHECK',
@@ -366,9 +380,18 @@ const qmsForm = reactive({
   unit: '',
   stepCode: '',
   equipmentCode: '',
-  defectCode: 'D-QMS-NG',
+  defectCode: defaultDefectCodes.MES,
   operator: localStorage.getItem('username') || 'qe1001',
-  remark: 'QMS模拟检验上报'
+  remark: defaultInspectionRemark('MES')
+})
+
+watch(() => qmsForm.mode, (mode, previousMode) => {
+  if (!qmsForm.defectCode || qmsForm.defectCode === defaultDefectCodes[previousMode]) {
+    qmsForm.defectCode = defaultDefectCodes[mode] || defaultDefectCodes.MES
+  }
+  if (!qmsForm.remark || qmsForm.remark === defaultInspectionRemark(previousMode)) {
+    qmsForm.remark = defaultInspectionRemark(mode)
+  }
 })
 
 const openExceptionCount = computed(() => exceptions.value.filter(item => item.status !== 'CLOSED').length)
@@ -404,6 +427,8 @@ const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
 const canReviewAction = computed(() => hasButton('quality:mrb-review'))
 const canCloseAction = computed(() => hasButton('quality:exception-close'))
 const canMrbAction = computed(() => canReviewAction.value || canCloseAction.value)
+const canInspectionCreate = computed(() => hasButton('quality:inspection-create'))
+const canSubmitInspection = computed(() => qmsForm.mode === 'MES' ? canInspectionCreate.value : canMrbAction.value)
 const canApproveAction = computed(() => hasButton('quality:mrb-approve'))
 const canEscalateAction = computed(() => hasButton('quality:mrb-escalate'))
 const qmsResultType = computed(() => {
@@ -412,14 +437,15 @@ const qmsResultType = computed(() => {
   return 'green'
 })
 const qmsResultText = computed(() => {
-  if (!qmsResult.value) return '待上报'
+  if (!qmsResult.value) return '待提交'
   return `${qmsResult.value.result || '-'} / ${qmsResult.value.inspectionCount || 0}项`
 })
 const qmsSubmitHint = computed(() => {
-  if (!qmsForm.lotNo) return '选择 Lot 后可模拟外部 QMS 推送'
+  if (!qmsForm.lotNo) return qmsForm.mode === 'MES' ? '选择 Lot 后可录入 MES 质检结果' : '选择 Lot 后可模拟外部 QMS 推送'
   if (qmsForm.result === 'NG') return 'NG 将自动生成异常并 Hold Lot'
-  return 'OK 上报只写检验记录和审计'
+  return qmsForm.mode === 'MES' ? 'OK 录入会写检验记录和审计' : 'OK 上报只写检验记录和审计'
 })
+const submitInspectionLabel = computed(() => qmsForm.mode === 'MES' ? '提交 MES 质检' : '提交 QMS 上报')
 
 const defects = computed(() => defectTopN.value.map(item => ({
   code: item.defectCode,
@@ -545,6 +571,10 @@ function optionalDecimal(value) {
     throw new Error('QMS数值字段必须是数字')
   }
   return number
+}
+
+function defaultInspectionRemark(mode) {
+  return mode === 'QMS' ? 'QMS模拟检验上报' : 'MES质量工作台手工录入'
 }
 
 function actionLabel(action) {
@@ -747,9 +777,33 @@ async function handleClose(item) {
   }
 }
 
-async function submitQmsInspection() {
-  if (!canMrbAction.value) {
-    ElMessage.warning('当前角色无权执行 QMS 检验上报')
+function inspectionPayload() {
+  const itemCode = qmsForm.mode === 'MES' ? 'MANUAL_RESULT' : 'QMS_RESULT'
+  const itemName = qmsForm.mode === 'MES' ? 'MES检验结果' : 'QMS检验结果'
+  const item = {
+    itemCode: qmsForm.itemCode || itemCode,
+    itemName: qmsForm.itemName || qmsForm.itemCode || itemName,
+    result: qmsForm.result,
+    measuredValue: optionalDecimal(qmsForm.measuredValue),
+    lowerLimit: optionalDecimal(qmsForm.lowerLimit),
+    upperLimit: optionalDecimal(qmsForm.upperLimit),
+    unit: qmsForm.unit,
+    defectCode: qmsForm.result === 'NG' ? qmsForm.defectCode : undefined,
+    remark: qmsForm.remark
+  }
+  return {
+    lotNo: qmsForm.lotNo,
+    stepCode: qmsForm.stepCode || undefined,
+    equipmentCode: qmsForm.equipmentCode || undefined,
+    operator: qmsForm.operator || localStorage.getItem('username') || 'qe1001',
+    result: qmsForm.result,
+    items: [item]
+  }
+}
+
+async function submitQualityInspection() {
+  if (!canSubmitInspection.value) {
+    ElMessage.warning(qmsForm.mode === 'MES' ? '当前角色无权录入 MES 质检结果' : '当前角色无权执行 QMS 检验上报')
     return
   }
   if (!qmsForm.lotNo) {
@@ -758,30 +812,16 @@ async function submitQmsInspection() {
   }
   try {
     qmsSubmitting.value = true
-    const item = {
-      itemCode: qmsForm.itemCode || 'QMS_RESULT',
-      itemName: qmsForm.itemName || qmsForm.itemCode || 'QMS检验结果',
-      result: qmsForm.result,
-      measuredValue: optionalDecimal(qmsForm.measuredValue),
-      lowerLimit: optionalDecimal(qmsForm.lowerLimit),
-      upperLimit: optionalDecimal(qmsForm.upperLimit),
-      unit: qmsForm.unit,
-      defectCode: qmsForm.result === 'NG' ? qmsForm.defectCode : undefined,
-      remark: qmsForm.remark
-    }
-    const result = await ingestQmsInspection({
-      lotNo: qmsForm.lotNo,
-      stepCode: qmsForm.stepCode || undefined,
-      equipmentCode: qmsForm.equipmentCode || undefined,
-      operator: qmsForm.operator || localStorage.getItem('username') || 'qe1001',
-      result: qmsForm.result,
-      items: [item]
-    })
+    const payload = inspectionPayload()
+    const result = qmsForm.mode === 'MES'
+      ? await createQualityInspection(payload)
+      : await ingestQmsInspection(payload)
     qmsResult.value = result
-    ElMessage.success(result?.holdApplied ? 'QMS NG 已上报并触发 Hold' : 'QMS 检验已上报')
+    const sourceLabel = qmsForm.mode === 'MES' ? 'MES 质检' : 'QMS 检验'
+    ElMessage.success(result?.holdApplied ? `${sourceLabel} NG 已触发 Hold` : `${sourceLabel}已提交`)
     await loadQualityData()
   } catch (error) {
-    ElMessage.warning(error?.message || 'QMS 检验上报失败')
+    ElMessage.warning(error?.message || '检验提交失败')
   } finally {
     qmsSubmitting.value = false
   }
