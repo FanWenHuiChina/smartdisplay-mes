@@ -70,8 +70,9 @@
 | --- | --- | --- |
 | Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.47`，容器库已迁移到 `1.47` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
+| API文档合同 | Swagger/OpenAPI 必须提供 `/api/v3/api-docs/pilot-v1` 分组，声明 `/api/v1/**`、JWT Bearer、统一响应、分页模型和标准错误响应 | 已落地，`OpenApiConfigTest` 5 项通过；Docker 运行态已验证 `Result/PageResult`、400/401/403/500、登录免 Bearer 和业务接口 Bearer 安全要求 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，404 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，406 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |

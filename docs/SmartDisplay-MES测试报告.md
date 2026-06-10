@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前后端单元/服务级闭环测试、Track In 预校验矩阵、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟和设备页 EAP 失败消息诊断抽屉浏览器 E2E；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
+当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E 和 `pilot-v1` OpenAPI 分组文档生产化；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
 
 ## 测试环境
 
@@ -34,6 +34,7 @@
 | 核心执行审计差异快照回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`；验证审计快照包含 `before/after/changedFields/request`，并覆盖 Rework Route/起始工序校验、Scrap 二次确认和 Recipe 筛选 |
 | RBAC权限口径回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；验证 PE/EE 质量菜单口径、操作员 Track In/Out 写权限和跨域写操作拒绝 |
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
+| OpenAPI/Swagger合同回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` | 通过 | `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `pilot-v1` 分组、`/api` 服务器路径、JWT Bearer、统一 `Result/PageResult` schema、标准 400/401/403/500 响应和登录接口免 Bearer |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
 | 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 406 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
@@ -53,6 +54,7 @@
 | Docker Compose 状态 | `docker compose -f smartdisplay-mes-api\docker-compose.yml ps` | 通过 | `smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 监听 `8080`，`smartdisplay-mes-ui` 监听 `8888` |
 | Docker Compose 启动 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | 三服务构建并启动成功，后端启动时执行 Flyway 自动迁移 |
 | Docker Flyway 迁移 | `docker compose -f smartdisplay-mes-api\docker-compose.yml exec -T postgres psql -U postgres -d smartdisplay_mes -c "select version, description, success from flyway_schema_history order by installed_rank desc limit 5;"` | 通过 | 最新迁移为 `1.47 Harden Eap Shadow Protocol Drivers`，`success=t` |
+| Docker OpenAPI运行态冒烟 | `Invoke-RestMethod http://127.0.0.1:8080/api/v3/api-docs/pilot-v1` | 通过 | 分组文档返回 `SmartDisplay MES API`、server `/api`、JWT Bearer、`Result/PageResult` schema、标准错误响应、`/v1/lots` 路径；登录接口 `security=0`，Lot 列表接口 `security=1` |
 | EAP影子协议Docker冒烟 | `Invoke-RestMethod` 调用网关驱动、网关健康检查和 `/adapters/eap/messages` | 通过 | 前端反代返回 `SECS_GEM driverMode=SHADOW`、`protocolFrameValidation=true`；`GW-SECSGEM-SHADOW` 健康检查 `WARN`；SECS/GEM `S6F11` 入站归一为 `STATUS` 并 `PROCESSED` |
 | EAP失败消息诊断Docker冒烟 | `Invoke-RestMethod` 经前端反代提交缺少 SECS/GEM 帧标识的 `/adapters/eap/messages` 并查询消息详情/审计 | 通过 | `EGM-DIAG-20260610181059` 返回 `accepted=false`、消息状态 `FAILED`、详情诊断 `PROTOCOL_FRAME`、快照存在，审计 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 命中 1 条 |
 | HTTP 冒烟 | `Invoke-RestMethod` 调用登录、Dashboard、库位任务和分页审计接口 | 通过 | 前端反代登录、`/dashboard/overview`、`/material/location-tasks` 均返回业务码 200；`/system/audit-logs?current=1&size=5&action=WMS&result=SUCCESS` 返回 `total=360`、本页 5 条且包含请求上下文字段 |
