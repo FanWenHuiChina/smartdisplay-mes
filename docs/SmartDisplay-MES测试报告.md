@@ -514,3 +514,14 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` |
 | Docker 运行态部署 | `docker compose -f smartdisplay-mes-api\docker-compose.yml cp ... backend:/app/app.jar` 后重启后端 | 通过 | 后端容器启动成功，Flyway 当前版本 `1.46`，迁移无需更新 |
 | 审计 fallback 冒烟 | 登录后查询 `GET /api/v1/system/audit-logs?bizNo=NO_SUCH_AUDIT_OBJECT_20260610` | 通过 | 返回业务码 `200` 且 `data=[]`，没有返回 `Hold Release 审批`、`Recipe 参数变更` 等试点样例审计 |
+
+## 2026-06-10 追溯 Route 证据按 Lot 产品匹配复验
+
+本轮修正 Lot/SN/多入口追溯中的 Route 证据来源：`traceLot` 不再调用 `/routes` 汇总列表并取第一条生效路线，而是按当前 Lot 的 `productCode` 读取唯一生效 Route 和工序序列。这样在多产品、多 Route 并存时，追溯链路不会把其他产品的工艺路线挂到当前 Lot 上；如果主数据缺失，追溯返回 `route.status=MISSING` 和错误说明，避免运行时下标异常。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 追溯定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,PilotMesFlowIntegrationTest" test` | 通过 | 38 项通过；覆盖 `traceLot` 按 Lot 产品读取 `RTE_OLED_V1`，以及完整执行闭环追溯 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 236 项通过 |
+| 后端打包与部署 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` 后覆盖 Docker 后端 jar 并重启 | 通过 | 后端容器启动成功，Flyway 当前版本仍为 `1.46` |
+| Docker 追溯冒烟 | 登录后查询 `GET /api/v1/trace/lots/LOTSCP20260610010414-001` | 通过 | `lot.productCode=AMOLED_65`，`route.routeCode=RTE_G6_AMOLED65_V08`，`route.productCode=AMOLED_65`，产品匹配结果为 `true` |

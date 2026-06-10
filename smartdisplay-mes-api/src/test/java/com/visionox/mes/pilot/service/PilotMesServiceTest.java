@@ -634,6 +634,7 @@ class PilotMesServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of(Map.of(
                 "lotNo", "LOT001",
                 "itemCode", "THICKNESS",
@@ -672,6 +673,7 @@ class PilotMesServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
         when(stepRecordMapper.selectList(any())).thenReturn(List.of(stepRecord));
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        stubTraceRoute();
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
@@ -704,6 +706,7 @@ class PilotMesServiceTest {
         when(serialNumberMapper.selectList(any())).thenReturn(List.of(first, second));
         when(serialNumberMapper.selectCount(any())).thenReturn(2L);
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
         when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
@@ -722,6 +725,8 @@ class PilotMesServiceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> carriers = (List<Map<String, Object>>) trace.get("carriers");
         @SuppressWarnings("unchecked")
+        Map<String, Object> route = (Map<String, Object>) trace.get("route");
+        @SuppressWarnings("unchecked")
         Map<String, Object> impactSummary = (Map<String, Object>) trace.get("impactSummary");
         @SuppressWarnings("unchecked")
         Map<String, Object> relatedDimensions = (Map<String, Object>) trace.get("relatedDimensions");
@@ -730,6 +735,10 @@ class PilotMesServiceTest {
                 .containsExactly("LOT001-SN001", "LOT001-SN002");
         assertThat(carriers).hasSize(1);
         assertThat(carriers.get(0)).containsEntry("carrierNo", "CST-001");
+        assertThat(route)
+                .containsEntry("routeCode", "RTE_OLED_V1")
+                .containsEntry("productCode", "OLED_PANEL");
+        assertThat((List<String>) route.get("steps")).containsExactly("CLEAN", "COATING");
         assertThat(summary)
                 .containsEntry("totalCount", 2L)
                 .containsEntry("returnedCount", 2)
@@ -753,6 +762,7 @@ class PilotMesServiceTest {
         when(stepRecordMapper.selectList(any())).thenReturn(List.of());
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
         when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
@@ -1073,6 +1083,11 @@ class PilotMesServiceTest {
         route.setRouteVersion("V1");
         route.setStatus("ACTIVE");
         return route;
+    }
+
+    private void stubTraceRoute() {
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN", "COATING"));
     }
 
     private Equipment equipment(String equipmentCode, String stepCode) {

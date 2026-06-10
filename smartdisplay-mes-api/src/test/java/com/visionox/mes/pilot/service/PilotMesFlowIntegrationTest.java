@@ -382,11 +382,6 @@ class PilotMesFlowIntegrationTest {
         when(recipeMapper.selectList(any())).thenReturn(List.of(recipe, exposureRecipe));
         when(recipeParamMapper.selectList(any())).thenReturn(List.of(thicknessParam));
         when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
-        when(routeService.activeRouteSummaries()).thenReturn(List.of(Map.of(
-                "routeCode", "RTE-OLED-PILOT",
-                "productCode", "OLED_PANEL",
-                "steps", List.of("COATING", "EXPOSURE")
-        )));
     }
 
     private ProductionOrder order() {

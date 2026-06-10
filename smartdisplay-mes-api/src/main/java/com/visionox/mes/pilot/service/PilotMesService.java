@@ -1004,7 +1004,7 @@ public class PilotMesService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("lot", lot);
         data.put("order", orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, lot.getOrderNo())));
-        data.put("route", routes().get(0));
+        data.put("route", traceRoute(lot.getProductCode()));
         data.put("serialNumbers", serialNumbers);
         data.put("serialNumberSummary", serialNumberSummary(lotNo, serialNumbers));
         data.put("carriers", carrierTraceRows(lotNo));
@@ -1018,6 +1018,28 @@ public class PilotMesService {
         data.put("impactSummary", traceImpactSummary(matches, data));
         data.put("relatedDimensions", traceRelatedDimensions(matches, data));
         return data;
+    }
+
+    private Map<String, Object> traceRoute(String productCode) {
+        try {
+            Route route = routeService.findActiveRoute(productCode);
+            List<String> steps = safeList(routeService.activeStepCodes(productCode));
+            return Map.of(
+                    "routeCode", valueOr(route.getRouteCode(), ""),
+                    "productCode", valueOr(route.getProductCode(), productCode),
+                    "version", valueOr(route.getRouteVersion(), ""),
+                    "status", valueOr(route.getStatus(), ""),
+                    "steps", steps
+            );
+        } catch (BusinessException e) {
+            log.warn("追溯Route证据读取失败: product={}, reason={}", productCode, e.getMessage());
+            return Map.of(
+                    "productCode", valueOr(productCode, ""),
+                    "status", "MISSING",
+                    "steps", List.of(),
+                    "error", e.getMessage()
+            );
+        }
     }
 
     public Map<String, Object> traceSn(String sn) {

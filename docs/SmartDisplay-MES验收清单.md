@@ -350,3 +350,13 @@
 | 覆盖范围 | 试点聚合接口中的 BOM、Route、设备、物料、质量、异常、审计、看板等 fallback 路径必须受统一开关控制 | 已落地，`PilotMesService` 已统一辅助方法收口 |
 | 回归验证 | 聚合服务定向和后端全量测试必须通过 | 已通过：`PilotMesServiceTest` 37 项、后端全量 236 项 |
 | Docker 冒烟 | Docker 运行态查询不存在审计对象时必须返回空数组，而不是演示审计样例 | 已通过：`NO_SUCH_AUDIT_OBJECT_20260610` 返回 `data=[]` |
+
+## 2026-06-10 补充验收：追溯 Route 证据按 Lot 产品匹配
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| Route 证据准确性 | Lot 追溯返回的 Route 必须按当前 Lot 产品读取，不能从全局生效 Route 列表取第一条 | 已落地，`traceLot` 调用 `findActiveRoute(lot.productCode)` |
+| 工序序列证据 | 追溯返回 Route 时必须包含当前产品生效工序序列，便于审计防跳站和返工路径 | 已落地，返回 `route.steps` |
+| 主数据缺失语义 | 当前产品缺失生效 Route 时，追溯不得抛下标异常，应返回可读的缺失证据 | 已落地，返回 `route.status=MISSING` 和错误说明 |
+| 回归验证 | 追溯定向和后端全量测试必须通过 | 已通过：追溯定向 38 项、后端全量 236 项 |
+| Docker 冒烟 | Docker 运行态 Lot 追溯中 `lot.productCode` 与 `route.productCode` 必须一致 | 已通过：`LOTSCP20260610010414-001` 返回 `AMOLED_65 / RTE_G6_AMOLED65_V08 / AMOLED_65` |

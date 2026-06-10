@@ -834,3 +834,10 @@
 - 演示类单测通过 `ReflectionTestUtils` 显式开启 fallback，保留开发演示能力；新增关闭 fallback 的 BOM、设备事件和系统审计断言，防止回退。
 - 已验证：`PilotMesServiceTest` 37 项通过，后端全量测试 236 项通过；后端打包成功并覆盖当前 Docker 后端容器。
 - Docker 冒烟已通过：登录后查询不存在业务对象 `NO_SUCH_AUDIT_OBJECT_20260610` 的 `/api/v1/system/audit-logs` 返回 `data=[]`，不再返回 `Hold Release 审批`、`Recipe 参数变更` 等试点样例审计。
+
+## 2026-06-10 增量：追溯 Route 证据按 Lot 产品匹配
+
+- `PilotMesService.traceLot` 的 Route 证据已从“读取全部生效 Route 并取第一条”改为按当前 Lot 的 `productCode` 调用 `RouteService.findActiveRoute` 和 `activeStepCodes`。
+- 追溯返回的 `route` 现在包含 `routeCode`、`productCode`、`version`、`status` 和工序序列；当 Route 主数据缺失时返回 `status=MISSING` 与错误说明，避免空列表下标异常。
+- 这项修正和 Route 单一生效版本治理配套，保证 Lot/SN/工单/设备/物料/缺陷多入口追溯中的工艺路线证据与当前 Lot 产品一致。
+- 已验证：`PilotMesServiceTest,PilotMesFlowIntegrationTest` 定向 38 项通过，后端全量测试 236 项通过；Docker 追溯 `LOTSCP20260610010414-001` 返回 `lot.productCode=AMOLED_65`、`route.routeCode=RTE_G6_AMOLED65_V08`、`route.productCode=AMOLED_65`。
