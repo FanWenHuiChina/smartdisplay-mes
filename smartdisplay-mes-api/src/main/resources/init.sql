@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS md_recipe (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_recipe_product_step_equip_ver
 ON md_recipe(product_code, step_code, equipment_code, recipe_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_recipe_single_active_context
+ON md_recipe(product_code, step_code, equipment_code) WHERE deleted = 0 AND status = 'ACTIVE';
 
 CREATE INDEX IF NOT EXISTS idx_recipe_product ON md_recipe(product_code);
 

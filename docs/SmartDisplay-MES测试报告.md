@@ -464,3 +464,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` |
 | Docker 运行态 | 本地 jar 覆盖现有 `smartdisplay-mes-api` 容器并重启 | 通过 | 后端容器重启成功，Flyway 当前版本 `1.43`，前端容器无需替换 |
 | 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 创建 DRAFT Recipe、发布并查询审计 | 通过 | 创建 `RCP_AUDIT_20260610121152` 后发布成功；管理员查询 `RECIPE_PUBLISH` 返回 1 条，审计操作人为 `pe`，快照包含 `before/after`、`DRAFT -> ACTIVE` 和 `changedFields=["status","updatedBy"]` |
+
+## 2026-06-10 Recipe 单一生效版本治理复验
+
+本轮补齐 Recipe 发布/激活时的生产级版本治理：同一 `productCode + stepCode + equipmentCode` 只能保留一个 `ACTIVE` Recipe。发布或激活新版本时，服务层会自动停用同上下文旧版 `ACTIVE`，写 `RECIPE_AUTO_DEACTIVATE` 审计；发布审计 `RECIPE_PUBLISH` 同时记录 `singleActiveContext`、`replacedActiveCount` 和 `replacedActiveRecipes`。数据库侧新增 `V1.44__Enforce_Single_Active_Recipe.sql`，先收敛历史重复生效数据，再创建部分唯一索引 `uk_recipe_single_active_context` 兜底并发一致性。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 Recipe 定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RecipeServiceTest" test` | 通过 | 12 项通过；覆盖发布新版本自动停用旧 `ACTIVE`、旧激活接口复用同一治理链、自动停用审计和发布替换快照 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 229 项通过 |
+| 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成并覆盖 Docker 后端容器中的 `app.jar` |
+| Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.43` 迁移到 `1.44 - Enforce Single Active Recipe`；数据库记录 `version=1.44, success=t` |
+| 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 创建并发布两个同上下文不同版本 Recipe | 通过 | `RCP_SINGLE_20260610124831_V1` 自动变 `INACTIVE`，`RCP_SINGLE_20260610124831_V2` 为 `ACTIVE`；`RECIPE_PUBLISH` 和 `RECIPE_AUTO_DEACTIVATE` 审计各 1 条，发布快照含 `replacedActiveCount=1` |

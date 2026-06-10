@@ -305,3 +305,14 @@
 | 失败审计口径 | Recipe 发布失败必须归类到 `RECIPE_PUBLISH`，与成功审计动作一致 | 已落地，`AuditFailureResolverTest` 覆盖 |
 | 回归验证 | Recipe 定向、失败审计定向和后端全量测试必须通过 | 已通过：定向 43 项、后端全量 227 项 |
 | Docker 冒烟 | Docker 运行态必须能创建 DRAFT Recipe、发布并查询到 `RECIPE_PUBLISH` 审计 | 已通过：`RCP_AUDIT_20260610121152` 发布后管理员查询到 1 条 `RECIPE_PUBLISH`，快照含 `DRAFT -> ACTIVE` |
+
+## 2026-06-10 补充验收：Recipe 单一生效版本治理
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 单一 ACTIVE 业务规则 | 同一产品、工序、设备下任意时刻只能有一个 `ACTIVE` Recipe | 已落地，发布/激活服务层自动停用旧 `ACTIVE`，数据库部分唯一索引兜底 |
+| 自动停用审计 | 新版本发布导致旧版本失效时，必须能追溯旧版本从 `ACTIVE -> INACTIVE` 的原因和触发版本 | 已落地，写 `RECIPE_AUTO_DEACTIVATE`，快照包含触发 Recipe 和单一生效上下文 |
+| 发布替换快照 | `RECIPE_PUBLISH` 审计必须能看出本次发布替换了多少旧版本、替换了哪些 Recipe | 已落地，快照包含 `singleActiveContext`、`replacedActiveCount`、`replacedActiveRecipes` |
+| 数据库一致性 | 即使绕过服务层，也不能在未删除数据中产生同上下文多条 `ACTIVE` | 已落地，`V1.44__Enforce_Single_Active_Recipe.sql` 创建 `uk_recipe_single_active_context` |
+| 回归验证 | Recipe 定向和后端全量测试必须通过 | 已通过：Recipe 定向 12 项、后端全量 229 项 |
+| Docker 冒烟 | Docker 运行态必须完成 V1.44 迁移，并验证两个同上下文版本发布后的状态和审计 | 已通过：`RCP_SINGLE_20260610124831_V1` 自动失效，`RCP_SINGLE_20260610124831_V2` 生效；发布和自动停用审计各 1 条 |

@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -185,6 +186,63 @@ class RecipeServiceTest {
     }
 
     @Test
+    void publishRecipeShouldDeactivatePreviousActiveRecipeInSameContext() {
+        Recipe current = recipe(101L, "RCP-COAT-V2", "V2", "DRAFT");
+        Recipe previous = recipe(100L, "RCP-COAT-V1", "V1", "ACTIVE");
+        when(recipeMapper.selectById(101L)).thenReturn(current);
+        when(recipeMapper.selectList(any())).thenReturn(List.of(previous));
+
+        recipeService.publishRecipe(101L);
+
+        assertThat(previous.getStatus()).isEqualTo("INACTIVE");
+        assertThat(previous.getUpdatedBy()).isEqualTo("system");
+        assertThat(current.getStatus()).isEqualTo("ACTIVE");
+        assertThat(current.getUpdatedBy()).isEqualTo("system");
+
+        ArgumentCaptor<Recipe> recipeCaptor = ArgumentCaptor.forClass(Recipe.class);
+        verify(recipeMapper, times(2)).updateById(recipeCaptor.capture());
+        assertThat(recipeCaptor.getAllValues())
+                .extracting(Recipe::getRecipeCode)
+                .containsExactly("RCP-COAT-V1", "RCP-COAT-V2");
+
+        ArgumentCaptor<String> actionCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bizNoCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService, times(2)).record(actionCaptor.capture(), bizNoCaptor.capture(), eq("RECIPE"),
+                any(), eq("system"), eq("recipe-service"), snapshotCaptor.capture());
+
+        assertThat(actionCaptor.getAllValues()).containsExactly("RECIPE_AUTO_DEACTIVATE", "RECIPE_PUBLISH");
+        assertThat(bizNoCaptor.getAllValues()).containsExactly("RCP-COAT-V1", "RCP-COAT-V2");
+        assertThat(snapshotCaptor.getAllValues().get(0))
+                .contains("\"triggerRecipeCode\":\"RCP-COAT-V2\"")
+                .contains("\"status\":\"ACTIVE\"")
+                .contains("\"status\":\"INACTIVE\"");
+        assertThat(snapshotCaptor.getAllValues().get(1))
+                .contains("\"replacedActiveCount\":1")
+                .contains("\"replacedActiveRecipes\"")
+                .contains("\"recipeCode\":\"RCP-COAT-V1\"")
+                .contains("\"singleActiveContext\"");
+    }
+
+    @Test
+    void activateRecipeShouldUseSingleActiveVersionGovernance() {
+        Recipe current = recipe(101L, "RCP-COAT-V2", "V2", "DRAFT");
+        Recipe previous = recipe(100L, "RCP-COAT-V1", "V1", "ACTIVE");
+        when(recipeMapper.selectById(101L)).thenReturn(current);
+        when(recipeMapper.selectList(any())).thenReturn(List.of(previous));
+
+        recipeService.activateRecipe(101L);
+
+        assertThat(previous.getStatus()).isEqualTo("INACTIVE");
+        assertThat(current.getStatus()).isEqualTo("ACTIVE");
+
+        ArgumentCaptor<String> actionCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService, times(2)).record(actionCaptor.capture(), any(), eq("RECIPE"),
+                any(), eq("system"), eq("recipe-service"), any());
+        assertThat(actionCaptor.getAllValues()).containsExactly("RECIPE_AUTO_DEACTIVATE", "RECIPE_ACTIVATE");
+    }
+
+    @Test
     void deactivateRecipeShouldSetRecipeInactiveAndOperator() {
         Recipe recipe = recipe("RCP-COAT-V1", "V1", "ACTIVE");
         when(recipeMapper.selectById(100L)).thenReturn(recipe);
@@ -194,7 +252,8 @@ class RecipeServiceTest {
         assertThat(recipe.getStatus()).isEqualTo("INACTIVE");
         assertThat(recipe.getUpdatedBy()).isEqualTo("system");
         verify(recipeMapper).updateById(recipe);
-        verifyRecipeStatusAudit("RECIPE_DEACTIVATE", "停用Recipe", "ACTIVE", "INACTIVE");
+        verifyRecipeStatusAudit("RECIPE_DEACTIVATE", "停用Recipe", "ACTIVE", "INACTIVE",
+                "\"request\":{\"id\":100}");
     }
 
     private RecipeCreateRequest createRequest() {
@@ -225,8 +284,12 @@ class RecipeServiceTest {
     }
 
     private Recipe recipe(String recipeCode, String version, String status) {
+        return recipe(100L, recipeCode, version, status);
+    }
+
+    private Recipe recipe(Long id, String recipeCode, String version, String status) {
         Recipe recipe = new Recipe();
-        recipe.setId(100L);
+        recipe.setId(id);
         recipe.setRecipeCode(recipeCode);
         recipe.setRecipeName(recipeCode);
         recipe.setProductCode("OLED_PANEL");
@@ -238,6 +301,13 @@ class RecipeServiceTest {
     }
 
     private void verifyRecipeStatusAudit(String action, String description, String beforeStatus, String afterStatus) {
+        verifyRecipeStatusAudit(action, description, beforeStatus, afterStatus,
+                "\"singleActiveContext\"",
+                "\"replacedActiveCount\":0");
+    }
+
+    private void verifyRecipeStatusAudit(String action, String description, String beforeStatus, String afterStatus,
+                                         String... requestFragments) {
         ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq(action), eq("RCP-COAT-V1"), eq("RECIPE"),
                 eq(description), eq("system"), eq("recipe-service"), snapshotCaptor.capture());
@@ -245,6 +315,7 @@ class RecipeServiceTest {
                 .contains("\"status\":\"" + beforeStatus + "\"")
                 .contains("\"status\":\"" + afterStatus + "\"")
                 .contains("\"changedFields\":[\"status\",\"updatedBy\"]")
-                .contains("\"request\":{\"id\":100}");
+                .contains("\"id\":100");
+        assertThat(snapshotCaptor.getValue()).contains(requestFragments);
     }
 }

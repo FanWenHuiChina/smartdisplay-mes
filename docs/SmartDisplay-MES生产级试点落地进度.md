@@ -802,3 +802,11 @@
 - Recipe 审计快照统一包含 `before`、`after`、`changedFields` 和 `request`，可在系统审计页回看发布前后的状态、操作人、产品、工序、设备、版本和请求 ID。
 - `RecipeServiceTest` 补充创建、发布、激活、停用审计断言，并覆盖重复编码、重复产品工序设备版本、缺失 Recipe 和已激活 Recipe 不写成功审计。
 - 已验证：后端 Recipe/审计定向 43 项通过，后端全量 227 项通过；本轮未改前端页面，前端工作台继续调用既有 `publishRecipe` API。
+
+## 2026-06-10 增量：Recipe 单一生效版本治理
+
+- `RecipeService.publishRecipe` 和旧 `activateRecipe` 已统一走单一生效版本治理链：发布/激活新版本前，会查找同一产品、工序、设备下的旧 `ACTIVE` Recipe，并自动置为 `INACTIVE`。
+- 新增 `RECIPE_AUTO_DEACTIVATE` 审计动作，记录被系统自动停用旧版本的 `before/after/changedFields/request`；`RECIPE_PUBLISH` 快照新增 `singleActiveContext`、`replacedActiveCount` 和 `replacedActiveRecipes`，可追溯新版本替换了哪些旧版本。
+- 新增 Flyway `V1.44__Enforce_Single_Active_Recipe.sql`，迁移时先按 `updated_time/created_time + recipe_version + id` 保留每个上下文最新一条 `ACTIVE`，再创建部分唯一索引 `uk_recipe_single_active_context`，数据库侧兜底同上下文单一 `ACTIVE`。
+- `schema.sql` 和 `init.sql` 已同步补齐单一 `ACTIVE` 基线索引，保证新库初始化和升级库的约束一致。
+- 已验证：Recipe 定向测试 12 项通过，后端全量 229 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.44`；HTTP 冒烟中 `RCP_SINGLE_20260610124831_V2` 发布后自动停用 `RCP_SINGLE_20260610124831_V1`，并查到发布/自动停用两类审计。

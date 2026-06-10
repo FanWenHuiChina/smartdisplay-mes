@@ -203,13 +203,54 @@ public class RecipeService {
         }
 
         Map<String, Object> before = recipeSnapshot(recipe);
+        List<RecipeStatusChange> replacedChanges = deactivateReplacedActiveRecipes(recipe);
+
         recipe.setStatus("ACTIVE");
         recipe.setUpdatedBy(AuthContext.username());
         recipeMapper.updateById(recipe);
+
+        replacedChanges.forEach(change -> audit("RECIPE_AUTO_DEACTIVATE",
+                (String) change.after().get("recipeCode"),
+                "自动停用同上下文旧版Recipe",
+                auditSnapshot(change.before(), change.after(), autoDeactivateRequest(recipe))));
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("id", id);
+        request.put("singleActiveContext", singleActiveContext(recipe));
+        request.put("replacedActiveCount", replacedChanges.size());
+        request.put("replacedActiveRecipes", replacedChanges.stream()
+                .map(RecipeStatusChange::before)
+                .toList());
+
         audit(auditAction, recipe.getRecipeCode(), actionLabel,
-                auditSnapshot(before, recipeSnapshot(recipe), Map.of("id", id)));
+                auditSnapshot(before, recipeSnapshot(recipe), request));
 
         log.info("Recipe已激活: {}", recipe.getRecipeCode());
+    }
+
+    private List<RecipeStatusChange> deactivateReplacedActiveRecipes(Recipe targetRecipe) {
+        List<Recipe> activeRecipes = recipeMapper.selectList(
+                new LambdaQueryWrapper<Recipe>()
+                        .eq(Recipe::getProductCode, targetRecipe.getProductCode())
+                        .eq(Recipe::getStepCode, targetRecipe.getStepCode())
+                        .eq(Recipe::getEquipmentCode, targetRecipe.getEquipmentCode())
+                        .eq(Recipe::getStatus, "ACTIVE")
+                        .ne(Recipe::getId, targetRecipe.getId())
+                        .orderByDesc(Recipe::getRecipeVersion)
+        );
+        if (activeRecipes == null || activeRecipes.isEmpty()) {
+            return List.of();
+        }
+
+        return activeRecipes.stream()
+                .map(activeRecipe -> {
+                    Map<String, Object> before = recipeSnapshot(activeRecipe);
+                    activeRecipe.setStatus("INACTIVE");
+                    activeRecipe.setUpdatedBy(AuthContext.username());
+                    recipeMapper.updateById(activeRecipe);
+                    return new RecipeStatusChange(before, recipeSnapshot(activeRecipe));
+                })
+                .toList();
     }
 
     /**
@@ -286,5 +327,25 @@ public class RecipeService {
         snapshot.put("recipeVersion", request.getRecipeVersion());
         snapshot.put("paramCount", paramCount);
         return snapshot;
+    }
+
+    private Map<String, Object> singleActiveContext(Recipe recipe) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("productCode", recipe.getProductCode());
+        context.put("stepCode", recipe.getStepCode());
+        context.put("equipmentCode", recipe.getEquipmentCode());
+        return context;
+    }
+
+    private Map<String, Object> autoDeactivateRequest(Recipe triggerRecipe) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("triggerRecipeId", triggerRecipe.getId());
+        request.put("triggerRecipeCode", triggerRecipe.getRecipeCode());
+        request.put("triggerRecipeVersion", triggerRecipe.getRecipeVersion());
+        request.put("singleActiveContext", singleActiveContext(triggerRecipe));
+        return request;
+    }
+
+    private record RecipeStatusChange(Map<String, Object> before, Map<String, Object> after) {
     }
 }
