@@ -400,6 +400,14 @@
                 <label>{{ locationTaskQtyLabel }}</label>
                 <input v-model="locationTaskForm.qty" class="mes-input" inputmode="decimal" :placeholder="locationTaskQtyPlaceholder" />
               </div>
+              <div class="mes-field">
+                <label>优先级</label>
+                <input v-model="locationTaskForm.priority" class="mes-input" inputmode="numeric" placeholder="0-10" />
+              </div>
+              <div class="mes-field">
+                <label>SLA小时</label>
+                <input v-model="locationTaskForm.dueHours" class="mes-input" inputmode="numeric" placeholder="1-168" />
+              </div>
               <div v-if="locationTaskForm.taskType === 'SPLIT'" class="mes-field">
                 <label>子批次号</label>
                 <input v-model.trim="locationTaskForm.childBatchNo" class="mes-input" placeholder="留空自动生成" />
@@ -439,6 +447,7 @@
                   <th>源/目标库位</th>
                   <th>数量</th>
                   <th>状态</th>
+                  <th>SLA</th>
                   <th>执行/复核</th>
                   <th>时间</th>
                   <th>操作</th>
@@ -457,6 +466,12 @@
                   <td>{{ task.sourceLocation }} → {{ task.targetLocation }}</td>
                   <td>{{ task.qty }}</td>
                   <td><span class="status-tag" :class="task.type">{{ task.status }}</span></td>
+                  <td>
+                    <div class="task-main">
+                      <span class="task-review" :class="task.slaType">{{ task.slaText }}</span>
+                      <span>{{ task.priorityText }}</span>
+                    </div>
+                  </td>
                   <td>
                     <div class="task-main">
                       <span>{{ task.assigneeLabel }}</span>
@@ -502,7 +517,7 @@
                   </td>
                 </tr>
                 <tr v-if="!locationTaskRows.length">
-                  <td colspan="8" class="empty-cell">暂无库位任务</td>
+                  <td colspan="9" class="empty-cell">暂无库位任务</td>
                 </tr>
               </tbody>
             </table>
@@ -935,10 +950,10 @@ const fallbackMaterialLocations = [
 ]
 
 const fallbackLocationTasks = [
-  { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
-  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' }
+  { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', priority: 6, dueTime: new Date(Date.now() + 3 * 3600000).toISOString(), slaStatus: 'ON_TRACK', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', priority: 9, dueTime: new Date(Date.now() - 3600000).toISOString(), overdue: true, slaStatus: 'OVERDUE', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', priority: 3, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
+  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' }
 ]
 
 const wmsActions = [
@@ -1012,6 +1027,8 @@ const locationTaskForm = reactive({
   targetLocation: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations[0].locationCode : '',
   qty: '',
   childBatchNo: '',
+  priority: '5',
+  dueHours: '6',
   reason: '试点库位任务',
   operator: localStorage.getItem('username') || 'admin'
 })
@@ -1351,6 +1368,10 @@ function mapLocationTask(item, index = 0) {
   const reviewer = item.reviewer || ''
   const reviewedTime = item.reviewedTime || ''
   const reviewed = Boolean(reviewer || reviewedTime)
+  const priority = Number(item.priority ?? defaultLocationTaskPriority(item.taskType))
+  const dueTime = item.dueTime || ''
+  const slaStatus = item.slaStatus || inferLocationTaskSlaStatus(status, dueTime)
+  const slaType = item.slaType || slaStatusType(slaStatus)
   return {
     key: item.taskNo || `${item.batchNo}-${item.taskType}-${index}`,
     taskNo: item.taskNo || '-',
@@ -1374,6 +1395,13 @@ function mapLocationTask(item, index = 0) {
     reviewedTime,
     reviewText: reviewed ? `已复核 ${reviewer || '-'}${reviewedTime ? ` / ${formatTime(reviewedTime)}` : ''}` : (status === 'DONE' ? '待复核' : '未完成'),
     reviewType: reviewed ? 'green' : (status === 'DONE' ? 'amber' : 'gray'),
+    priority,
+    priorityText: `P${priority}`,
+    dueTime,
+    overdue: item.overdue ?? slaStatus === 'OVERDUE',
+    slaStatus,
+    slaText: locationTaskSlaText(slaStatus, dueTime),
+    slaType,
     time: formatTime(timeSource),
     type: item.type || statusType(status),
     canAssign: status === 'CREATED',
@@ -1385,6 +1413,38 @@ function mapLocationTask(item, index = 0) {
 
 function locationTaskLabel(taskType) {
   return locationTaskTypes.find(item => item.value === taskType)?.label || taskType || '任务'
+}
+
+function defaultLocationTaskPriority(taskType) {
+  if (taskType === 'SPLIT') return 8
+  if (taskType === 'PUTAWAY') return 6
+  if (taskType === 'MOVE') return 5
+  return 3
+}
+
+function inferLocationTaskSlaStatus(status, dueTime) {
+  if (!['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status)) return 'CLOSED'
+  const date = dueTime ? new Date(dueTime) : null
+  if (!date || Number.isNaN(date.getTime())) return 'ON_TRACK'
+  const delta = date.getTime() - Date.now()
+  if (delta < 0) return 'OVERDUE'
+  if (delta <= 3600000) return 'DUE_SOON'
+  return 'ON_TRACK'
+}
+
+function locationTaskSlaText(slaStatus, dueTime) {
+  const dueText = dueTime ? formatDate(dueTime) : '-'
+  if (slaStatus === 'OVERDUE') return `逾期 ${dueText}`
+  if (slaStatus === 'DUE_SOON') return `临期 ${dueText}`
+  if (slaStatus === 'CLOSED') return '已关闭'
+  return `正常 ${dueText}`
+}
+
+function slaStatusType(slaStatus) {
+  if (slaStatus === 'OVERDUE') return 'red'
+  if (slaStatus === 'DUE_SOON') return 'amber'
+  if (slaStatus === 'ON_TRACK') return 'blue'
+  return 'green'
 }
 
 function setWmsAction(action) {
@@ -1692,6 +1752,8 @@ async function submitLocationTask() {
     const payload = {
       taskType: locationTaskForm.taskType,
       batchNo: locationTaskForm.batchNo,
+      priority: numberValue(locationTaskForm.priority, '优先级', true),
+      dueHours: numberValue(locationTaskForm.dueHours, 'SLA小时'),
       reason: locationTaskForm.reason || `${currentLocationTaskLabel.value}库位任务`,
       operator: locationTaskForm.operator || localStorage.getItem('username') || 'admin'
     }
@@ -2248,6 +2310,18 @@ onMounted(loadMaterialData)
   color: var(--mes-amber);
   background: var(--mes-amber-soft);
   border-color: #eadfc8;
+}
+
+.task-review.red {
+  color: var(--mes-red);
+  background: var(--mes-red-soft);
+  border-color: #ead6d4;
+}
+
+.task-review.blue {
+  color: var(--mes-blue);
+  background: var(--mes-blue-soft);
+  border-color: #d3dde6;
 }
 
 .task-review.gray {

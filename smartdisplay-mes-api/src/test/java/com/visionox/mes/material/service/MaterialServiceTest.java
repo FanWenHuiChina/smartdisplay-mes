@@ -549,6 +549,8 @@ class MaterialServiceTest {
                 "taskType", "MOVE",
                 "batchNo", "PI_INK_B007",
                 "targetLocation", "WMS-A01",
+                "priority", 9,
+                "dueHours", 2,
                 "operator", "wms1001",
                 "reason", "产线补料前移库"
         ));
@@ -570,6 +572,8 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("100");
         assertThat(task.getActualQty()).isEqualByComparingTo("0");
         assertThat(task.getStatus()).isEqualTo("CREATED");
+        assertThat(task.getPriority()).isEqualTo(9);
+        assertThat(task.getDueTime()).isEqualTo(task.getCreatedTime().plusHours(2));
         ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
                 any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
@@ -580,6 +584,8 @@ class MaterialServiceTest {
                 .contains("\"taskType\":\"MOVE\"")
                 .contains("\"batchNo\":\"PI_INK_B007\"")
                 .contains("\"targetLocation\":\"WMS-A01\"")
+                .contains("\"priority\":9")
+                .contains("\"slaStatus\":\"ON_TRACK\"")
                 .contains("\"request\"")
                 .contains("\"operator\":\"wms1001\"")
                 .contains("\"changedFields\"");
@@ -666,6 +672,8 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("25");
         assertThat(task.getActualQty()).isEqualByComparingTo("0");
         assertThat(task.getStatus()).isEqualTo("CREATED");
+        assertThat(task.getPriority()).isEqualTo(8);
+        assertThat(task.getDueTime()).isEqualTo(task.getCreatedTime().plusHours(2));
         assertThat(task.getRequestSnapshot()).contains("childBatchNo=PI_INK_B007-S01");
         ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
@@ -965,6 +973,28 @@ class MaterialServiceTest {
         assertThat(row.get("batchNo")).isEqualTo("PI_INK_B007");
         assertThat(row.get("actualQty")).isEqualTo(new BigDecimal("100"));
         assertThat(row.get("status")).isEqualTo("DONE");
+        assertThat(row.get("priority")).isEqualTo(5);
+        assertThat(row.get("slaStatus")).isEqualTo("CLOSED");
+        assertThat(row.get("overdue")).isEqualTo(false);
+    }
+
+    @Test
+    void materialLocationTasksShouldExposeOverdueSlaRows() {
+        MaterialLocationTask task = locationTask("MLT-SLA-001", "PUTAWAY", "PI_INK_B007");
+        task.setStatus("ASSIGNED");
+        task.setPriority(10);
+        task.setDueTime(LocalDateTime.now().minusMinutes(5));
+        when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
+
+        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null);
+
+        assertThat(rows).hasSize(1);
+        Map<String, Object> row = rows.get(0);
+        assertThat(row.get("priority")).isEqualTo(10);
+        assertThat(row.get("dueTime")).isEqualTo(task.getDueTime());
+        assertThat(row.get("overdue")).isEqualTo(true);
+        assertThat(row.get("slaStatus")).isEqualTo("OVERDUE");
+        assertThat(row.get("slaType")).isEqualTo("red");
     }
 
     @Test

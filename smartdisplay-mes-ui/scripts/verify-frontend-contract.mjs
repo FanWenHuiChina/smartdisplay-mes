@@ -368,6 +368,7 @@ check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['s
 const materialView = read('src/views/material/index.vue')
 check('page:views/material/index.vue:wms-split-location-task', hasAll(materialView, ['SPLIT', '拆批', 'childBatchNo', '拆出数量', 'createMaterialLocationTask', 'completeMaterialLocationTask']), 'Material page must expose WMS split batch location task with child batch evidence')
 check('page:views/material/index.vue:wms-location-task-review', hasAll(materialView, ['reviewMaterialLocationTask', 'reviewLocationTask', 'canReview', 'reviewer', 'reviewedTime', '待复核']), 'Material page must expose WMS location task review evidence and action')
+check('page:views/material/index.vue:wms-location-task-sla', hasAll(materialView, ['priority', 'dueHours', 'SLA小时', 'slaStatus', 'slaText', 'OVERDUE', 'DUE_SOON', 'locationTaskSlaText']), 'Material page must expose WMS location task priority and SLA evidence')
 
 const layoutView = read('src/views/layout/MainLayout.vue')
 check('layout:dashboard-badges-api-driven', hasAll(layoutView, ['getOverview', 'dashboardBadges', 'badgeKey', 'loadNavigationSummary']), 'Layout dashboard badges must be driven by /dashboard/overview')

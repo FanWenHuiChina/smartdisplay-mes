@@ -47,6 +47,8 @@ public class MaterialLocationTask implements Serializable {
     private String exceptionReason;
     private String taskSource;
     private LocalDateTime completedTime;
+    private Integer priority;
+    private LocalDateTime dueTime;
     private String requestSnapshot;
 
     @TableField(fill = FieldFill.INSERT)

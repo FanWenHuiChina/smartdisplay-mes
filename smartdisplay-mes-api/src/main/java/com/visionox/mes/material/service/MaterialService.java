@@ -871,9 +871,16 @@ public class MaterialService {
         if (batchNo != null && !batchNo.isBlank()) {
             wrapper.eq(MaterialLocationTask::getBatchNo, batchNo);
         }
-        wrapper.orderByDesc(MaterialLocationTask::getExecutedTime)
-                .orderByDesc(MaterialLocationTask::getId)
-                .last("LIMIT 100");
+        wrapper.last("""
+                ORDER BY
+                    CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING') THEN 0 ELSE 1 END,
+                    CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING')
+                        AND due_time IS NOT NULL AND due_time < CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+                    priority DESC,
+                    due_time ASC NULLS LAST,
+                    created_time DESC
+                LIMIT 100
+                """);
         return materialLocationTaskMapper.selectList(wrapper).stream()
                 .map(this::locationTaskRow)
                 .collect(Collectors.toList());
@@ -2820,6 +2827,11 @@ public class MaterialService {
         row.put("cancelReason", task.getCancelReason());
         row.put("exceptionReason", task.getExceptionReason());
         row.put("taskSource", valueOr(task.getTaskSource(), "MANUAL"));
+        row.put("priority", locationTaskPriority(task));
+        row.put("dueTime", task.getDueTime());
+        row.put("overdue", locationTaskOverdue(task));
+        row.put("slaStatus", locationTaskSlaStatus(task));
+        row.put("slaType", locationTaskSlaType(task));
         row.put("executedTime", task.getExecutedTime());
         row.put("completedTime", task.getCompletedTime());
         row.put("createdTime", task.getCreatedTime());
@@ -2867,6 +2879,8 @@ public class MaterialService {
         task.setReason(reason);
         task.setOperator(operator);
         task.setTaskSource(text(request, "taskSource", "MANUAL"));
+        task.setPriority(locationTaskPriority(request, taskType));
+        task.setDueTime(locationTaskDueTime(request, taskType, now));
         task.setExecutedTime("DONE".equals(status) ? now : null);
         task.setCompletedTime("DONE".equals(status) ? now : null);
         task.setRequestSnapshot(request == null ? "{}" : request.toString());
@@ -2893,6 +2907,71 @@ public class MaterialService {
             case "COUNT" -> "WMS inventory count task";
             case "SPLIT" -> "WMS split batch";
             default -> "WMS location move";
+        };
+    }
+
+    private int locationTaskPriority(Map<String, Object> request, String taskType) {
+        int defaultPriority = switch (normalizeLocationTaskType(taskType)) {
+            case "SPLIT" -> 8;
+            case "PUTAWAY" -> 6;
+            case "MOVE" -> 5;
+            default -> 3;
+        };
+        return Math.max(0, Math.min(10, intValue(value(request, "priority"), defaultPriority)));
+    }
+
+    private int locationTaskPriority(MaterialLocationTask task) {
+        return task.getPriority() == null ? locationTaskPriority(Map.of(), task.getTaskType()) : task.getPriority();
+    }
+
+    private LocalDateTime locationTaskDueTime(Map<String, Object> request, String taskType, LocalDateTime createdTime) {
+        Object rawDueTime = value(request, "dueTime");
+        if (rawDueTime instanceof LocalDateTime time) {
+            return time;
+        }
+        if (rawDueTime != null && !String.valueOf(rawDueTime).isBlank()) {
+            try {
+                return LocalDateTime.parse(String.valueOf(rawDueTime));
+            } catch (Exception ignored) {
+                // 截止时间格式不合法时使用标准SLA，避免任务创建被非关键字段阻断。
+            }
+        }
+        int defaultHours = switch (normalizeLocationTaskType(taskType)) {
+            case "SPLIT" -> 2;
+            case "PUTAWAY" -> 4;
+            case "MOVE" -> 6;
+            default -> 8;
+        };
+        int dueHours = Math.max(1, Math.min(168, intValue(value(request, "dueHours"), defaultHours)));
+        return createdTime.plusHours(dueHours);
+    }
+
+    private boolean locationTaskOverdue(MaterialLocationTask task) {
+        if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
+            return false;
+        }
+        return task.getDueTime() != null && task.getDueTime().isBefore(LocalDateTime.now());
+    }
+
+    private String locationTaskSlaStatus(MaterialLocationTask task) {
+        if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
+            return "CLOSED";
+        }
+        if (locationTaskOverdue(task)) {
+            return "OVERDUE";
+        }
+        if (task.getDueTime() != null && task.getDueTime().isBefore(LocalDateTime.now().plusHours(1))) {
+            return "DUE_SOON";
+        }
+        return "ON_TRACK";
+    }
+
+    private String locationTaskSlaType(MaterialLocationTask task) {
+        return switch (locationTaskSlaStatus(task)) {
+            case "OVERDUE" -> "red";
+            case "DUE_SOON" -> "amber";
+            case "ON_TRACK" -> "blue";
+            default -> "green";
         };
     }
 

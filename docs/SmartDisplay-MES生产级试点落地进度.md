@@ -904,3 +904,12 @@
 - 前端物料页最近库位任务表新增“执行/复核”列，显示 `待复核`、复核人和复核时间；`DONE` 且未复核任务提供“复核”按钮，沿用浅色 Codex app 工作台风格。
 - 前端契约脚本新增 `reviewMaterialLocationTask` API、物料页复核状态和按钮接线检查，防止后续只保留后端接口而页面无入口。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 96 项通过，`npm.cmd run verify:frontend-contract` 417 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过；构建仅保留既有第三方 pure annotation 和 chunk size 警告。
+
+## 2026-06-10 增量：WMS 库位任务 SLA 与优先级
+
+- 新增 Flyway `V1.48__Add_Material_Location_Task_Sla.sql`，为 `material_location_task` 补充 `priority` 和 `due_time`，并增加按状态、到期时间和优先级排序的 SLA 索引。
+- `MaterialService.createLocationTaskRecord` 会为上架、移库、拆批和盘点任务写入默认优先级与默认 SLA；前端或外部适配器可通过 `priority`、`dueHours` 或 `dueTime` 覆盖。
+- `GET /api/v1/material/location-tasks` 返回 `priority`、`dueTime`、`overdue`、`slaStatus` 和 `slaType`，并按未完成任务、逾期、优先级和到期时间排序，便于 WMS 班组先处理高优先级/逾期待办。
+- 前端物料页库位任务操作台新增“优先级”和“SLA小时”输入，任务表新增 SLA 列，显示 `正常`、`临期`、`逾期`、`已关闭` 和 P 级别，继续沿用浅色 Codex app 工作台风格。
+- 前端契约脚本新增 WMS 库位任务 SLA 检查，覆盖 `priority`、`dueHours`、`slaStatus`、`OVERDUE` 和 `DUE_SOON` 接线，防止后续退回只显示任务状态。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 97 项通过，`npm.cmd run verify:frontend-contract` 418 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.48` 共 48 个迁移文件。
