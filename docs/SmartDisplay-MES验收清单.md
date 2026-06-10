@@ -282,3 +282,15 @@
 | 权限边界 | QE 可录入 MES 手工质检，PE/OPERATOR 不可越权调用该写入口 | 已落地，`quality:inspection-create` 权限和 `RolePermissionServiceTest` 覆盖 |
 | 前端双来源 | 质量页必须支持 `MES 手工录入` 与 `QMS Adapter` 两种来源，并分别调用独立 API | 已落地，前端契约 401 项通过 |
 | Docker 运行态 | 当前 Docker 页面和接口必须能看到本轮质量页与手工质检写接口 | 已通过覆盖部署；完整镜像重建待本机 Docker 代理恢复后复跑 |
+
+## 2026-06-10 补充验收：AI 设备异常分析
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 设备异常分析入口 | AI 页必须提供设备异常分析工作区，并可调用 `POST /api/v1/ai/equipment/analyze` | 已落地，前端契约 404 项覆盖 |
+| MES 证据快照 | AI 设备分析必须留存设备事件、关联 Lot、近期缺陷、良率看板、模型配置和 SOP 证据输入快照 | 已落地，`PilotMesServiceTest` 覆盖 |
+| 输出结构 | 返回风险等级、事件数、Lot 数、缺陷数、可能原因、排查步骤、引用来源和 `writeActionAllowed=false` | 已落地 |
+| 权限边界 | QE/EE 可执行设备异常分析，OPERATOR 不可调用 AI 写入口 | 已落地，后端和前端权限矩阵已对齐 |
+| AI 安全边界 | AI 结果只做辅助分析，不自动 Hold、Release、停机或派工 | 已落地，输出和留痕均标记 `writeActionAllowed=false` |
+| 回归验证 | 后端全量、前端契约、生产构建和生产包扫描必须通过 | 已通过：后端 226 项、前端契约 404 项、生产包 14 个 JS 产物 clean |
+| Docker 冒烟 | Docker 运行态必须能经前端反代生成设备异常分析并查询到 AI 留痕 | 已通过：`EVAP_01` 返回 `P1/HIGH`，留痕 1 条 |

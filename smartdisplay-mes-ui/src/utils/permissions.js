@@ -17,7 +17,7 @@ const ROLE_PERMISSIONS = {
   OPERATOR: { menus: ['dashboard', 'execution', 'trace'], buttons: ['lot:track-in', 'lot:track-out'], dataScope: 'SELF_SHIFT' },
   QE: {
     menus: ['dashboard', 'quality', 'material', 'trace', 'ai'],
-    buttons: ['lot:hold', 'lot:release', 'lot:rework', 'lot:scrap', 'quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close', 'material:iqc', 'material:supplier-manage', 'bom:eco-approve', 'ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index'],
+    buttons: ['lot:hold', 'lot:release', 'lot:rework', 'lot:scrap', 'quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close', 'material:iqc', 'material:supplier-manage', 'bom:eco-approve', 'ai:yield-report', 'ai:equipment-analyze', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index'],
     dataScope: 'LINE'
   },
   PE: { menus: ['dashboard', 'master', 'recipe', 'quality', 'ai'], buttons: ['quality:mrb-approve', 'quality:mrb-escalate', 'recipe:publish', 'bom:change', 'bom:eco-approve', 'ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index'], dataScope: 'LINE' },

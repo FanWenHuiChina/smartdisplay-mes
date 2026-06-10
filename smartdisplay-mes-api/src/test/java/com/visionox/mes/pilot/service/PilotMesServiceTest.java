@@ -732,6 +732,70 @@ class PilotMesServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void aiEquipmentAnalyzeShouldRecordMesEvidenceSnapshotAndAudit() {
+        Lot lot = lot("LOT001", "PROCESSING");
+        lot.setCurrentEquipmentCode("EVAP_01");
+        when(equipmentService.events("EVAP_01", null)).thenReturn(List.of(Map.of(
+                "eventNo", "EVE-001",
+                "equipmentCode", "EVAP_01",
+                "eventLevel", "P1",
+                "eventType", "ALARM"
+        )));
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(lotMapper.selectList(any())).thenReturn(List.of(lot));
+        when(qualityService.defectTopN(5)).thenReturn(List.of(Map.of(
+                "defectCode", "D-MURA",
+                "defectName", "Mura",
+                "qty", 12
+        )));
+        when(aiKnowledgeService.searchSources(any(), eq(2))).thenReturn(List.of(Map.of(
+                "chunkNo", "SOP-EVAP-001-001",
+                "chunkTitle", "蒸镀真空波动排查",
+                "score", 0.91,
+                "evidenceLevel", "HIGH"
+        )));
+
+        Map<String, Object> result = pilotMesService.aiEquipmentAnalyze(Map.of(
+                "equipmentCode", "EVAP_01",
+                "lotNo", "LOT001"
+        ));
+
+        assertThat(result)
+                .containsEntry("reportType", "EQUIPMENT_ANALYSIS")
+                .containsEntry("equipmentCode", "EVAP_01")
+                .containsEntry("riskLevel", "P1")
+                .containsEntry("eventCount", 1)
+                .containsEntry("lotCount", 1)
+                .containsEntry("defectCount", 12)
+                .containsEntry("writeActionAllowed", false)
+                .containsEntry("evidenceLevel", "MEDIUM");
+        assertThat((List<Map<String, Object>>) result.get("lotContexts"))
+                .first()
+                .satisfies(row -> assertThat(row)
+                        .containsEntry("lotNo", "LOT001")
+                        .containsEntry("currentEquipmentCode", "EVAP_01"));
+        assertThat((List<Map<String, Object>>) result.get("recentDefects"))
+                .first()
+                .satisfies(row -> assertThat(row).containsEntry("defectCode", "D-MURA"));
+
+        ArgumentCaptor<Object> inputCaptor = ArgumentCaptor.forClass(Object.class);
+        ArgumentCaptor<Object> outputCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(aiRecordService).record(any(), eq("EQUIPMENT_ANALYSIS"), eq("EVAP_01"), eq("EQUIPMENT"),
+                eq("equipment-analyze-v2"), eq("mock-structured-output"), inputCaptor.capture(), outputCaptor.capture(),
+                eq("system"), any());
+        Map<String, Object> inputSnapshot = (Map<String, Object>) inputCaptor.getValue();
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("events")).hasSize(1);
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("lots")).hasSize(1);
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("recentDefects")).hasSize(1);
+        assertThat((Map<String, Object>) outputCaptor.getValue())
+                .containsEntry("riskLevel", "P1")
+                .containsEntry("writeActionAllowed", false);
+        verify(auditLogService).record(eq("AI_EQUIPMENT_ANALYZE"), eq("EVAP_01"), eq("AI_REPORT"), any(),
+                eq("system"), eq("smartdisplay-mes-api"), isNull());
+    }
+
+    @Test
     void trackOutShouldMoveLotToNextActiveRouteStep() {
         Lot lot = lot("LOT001", "READY");
         lot.setCurrentStepCode("CLEAN");

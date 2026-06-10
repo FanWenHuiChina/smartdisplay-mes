@@ -784,3 +784,13 @@
 - 前端契约脚本新增 `createQualityInspection` API、`quality:inspection-create` 权限和 `manual-inspection-submit` 页面级检查，防止质量页退回只读或只支持 QMS Adapter。
 - 已验证：质量定向后端回归 58 项通过，后端全量 225 项通过，前端契约 401 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
 - 已部署到当前 Docker 运行环境：完整镜像重建因本机 Docker 代理 `127.0.0.1:7897` 拒绝连接受阻，本轮先用本地 jar/dist 覆盖现有后端和前端容器；经 `http://127.0.0.1:8888/api` 冒烟确认 MES 手工质检写接口返回 `MANUAL_INSPECTION` 且 `inspectionCount=1`。
+
+## 2026-06-10 增量：AI 设备异常分析工作台
+
+- AI 页新增“AI 设备异常分析”工作区，支持输入设备号和可选 Lot，调用 `POST /api/v1/ai/equipment/analyze`，展示风险等级、事件数量、关联 Lot、近期缺陷数量、排查步骤、可能原因和 SOP/RAG 引用来源。
+- 后端 `aiEquipmentAnalyze` 的输入快照从泛化看板升级为设备级证据链：目标设备事件、当前/关联 Lot 快照、近期缺陷 TopN、良率看板、模型配置和检索到的 SOP 片段均写入 `ai_report_record`。
+- 分析输出补充 `eventCount`、`lotCount`、`defectCount`、`lotContexts`、`recentDefects`、`sources`、`riskLevel` 和 `writeActionAllowed=false`，明确 AI 只辅助排查，不自动 Hold、Release、停机或派工。
+- RBAC 权限口径对齐：`ai:equipment-analyze` 保持 EE 可用，同时加入 QE 默认权限，支持质量工程师从缺陷和设备报警联动排查；前端权限矩阵与后端默认权限同步。
+- 前端契约新增 AI 页设备异常分析检查，要求页面必须包含 `analyzeEquipment`、`runEquipmentAnalyze`、`ai:equipment-analyze` 权限、关联 Lot 和引用来源展示，防止后续退回 API 封装未接线状态。
+- 已验证：后端 AI/RBAC 定向 44 项通过，后端全量 226 项通过，前端契约 404 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
+- 已部署到当前 Docker 运行环境：继续采用本地 jar/dist 覆盖现有容器；经 `http://127.0.0.1:8888/api` 冒烟确认 `EVAP_01` 设备异常分析返回 `riskLevel=P1`、`writeActionAllowed=false`，并写入 1 条 `EQUIPMENT_ANALYSIS` AI 留痕。

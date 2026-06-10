@@ -52,8 +52,8 @@ class PermissionChangeServiceTest {
     void createChangeRequestShouldPersistSnapshotsAndAuditSubmitAction() {
         PermissionChangeRequest change = permissionChangeService.createChangeRequest(Map.of(
                 "targetRole", "QE",
-                "addButtons", List.of("ai:equipment-analyze"),
-                "reason", "质量工程师需要联动设备异常分析"
+                "addButtons", List.of("material:wms"),
+                "reason", "质量工程师临时参与WMS物料处置"
         ));
 
         ArgumentCaptor<PermissionChangeRequest> captor = ArgumentCaptor.forClass(PermissionChangeRequest.class);
@@ -64,7 +64,7 @@ class PermissionChangeServiceTest {
         assertThat(saved.getTargetRole()).isEqualTo("QE");
         assertThat(saved.getStatus()).isEqualTo("PENDING_REVIEW");
         assertThat(saved.getBeforeSnapshot()).contains("quality:mrb-review");
-        assertThat(saved.getAfterSnapshot()).contains("ai:equipment-analyze");
+        assertThat(saved.getAfterSnapshot()).contains("material:wms");
         verify(auditLogService).record(eq("PERMISSION_CHANGE_SUBMIT"), eq(saved.getChangeNo()),
                 eq("PERMISSION_CHANGE"), any(), eq(saved.getRequester()), eq("permission-service"), eq(saved.getAfterSnapshot()));
     }

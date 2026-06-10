@@ -60,6 +60,110 @@
     <div class="mes-grid section-gap">
       <div class="mes-card">
         <div class="mes-card__head">
+          <div class="mes-card__title">AI 设备异常分析</div>
+          <span class="status-tag" :class="equipmentRiskType">{{ equipmentRiskText }}</span>
+        </div>
+        <div class="mes-card__body equipment-analysis">
+          <div class="equipment-form">
+            <div class="mes-field">
+              <label>设备</label>
+              <input v-model.trim="equipmentForm.equipmentCode" class="mes-input" placeholder="EVAP_01" />
+            </div>
+            <div class="mes-field">
+              <label>Lot</label>
+              <input v-model.trim="equipmentForm.lotNo" class="mes-input" placeholder="可选" />
+            </div>
+            <button
+              v-if="canAnalyzeEquipment"
+              class="mes-btn primary"
+              :disabled="analyzingEquipment"
+              @click="runEquipmentAnalyze"
+            >
+              {{ analyzingEquipment ? '分析中' : '生成异常分析' }}
+            </button>
+          </div>
+
+          <div class="equipment-kpis">
+            <div class="mini-card">
+              <div class="mini-top">
+                <span>事件</span>
+                <span class="status-tag blue">{{ equipmentAnalysis?.eventCount || 0 }}</span>
+              </div>
+              <div class="mini-meta">目标设备近期异常事件</div>
+            </div>
+            <div class="mini-card">
+              <div class="mini-top">
+                <span>关联 Lot</span>
+                <span class="status-tag purple">{{ equipmentAnalysis?.lotCount || 0 }}</span>
+              </div>
+              <div class="mini-meta">当前设备或请求 Lot 上下文</div>
+            </div>
+            <div class="mini-card">
+              <div class="mini-top">
+                <span>缺陷</span>
+                <span class="status-tag amber">{{ equipmentAnalysis?.defectCount || 0 }}</span>
+              </div>
+              <div class="mini-meta">近期缺陷数量聚合</div>
+            </div>
+            <div class="mini-card">
+              <div class="mini-top">
+                <span>证据</span>
+                <span class="status-tag" :class="equipmentEvidenceType">{{ equipmentEvidenceText }}</span>
+              </div>
+              <div class="mini-meta">{{ equipmentAnalysis?.retrievalStrategy || 'MES_AND_RAG' }}</div>
+            </div>
+          </div>
+
+          <div v-if="equipmentAnalysis" class="equipment-output">
+            <div class="ai-box">
+              <h3>可能原因</h3>
+              <p>{{ equipmentCausesText }}</p>
+            </div>
+            <div class="ai-box">
+              <h3>排查步骤</h3>
+              <div class="step-list">
+                <div v-for="(step, index) in equipmentCheckSteps" :key="step" class="step-row">
+                  <span>{{ index + 1 }}</span>
+                  <p>{{ step }}</p>
+                </div>
+              </div>
+            </div>
+            <table class="mes-table equipment-lot-table">
+              <thead>
+                <tr><th>Lot</th><th>工单</th><th>状态</th><th>当前工序</th><th>设备</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="lot in equipmentLotContexts" :key="lot.lotNo">
+                  <td>{{ lot.lotNo }}</td>
+                  <td>{{ lot.orderNo || '-' }}</td>
+                  <td>{{ lot.status || '-' }}</td>
+                  <td>{{ lot.currentStepCode || '-' }}</td>
+                  <td>{{ lot.currentEquipmentCode || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="cards equipment-sources">
+              <div v-for="source in equipmentSources" :key="source.chunkNo || source.chunkTitle || source.warning" class="mini-card">
+                <div class="mini-top">
+                  <span>{{ source.chunkTitle || source.documentName || '引用来源' }}</span>
+                  <span class="status-tag" :class="source.evidenceLevel ? evidenceTagType(source.evidenceLevel) : 'amber'">
+                    {{ source.evidenceLevel || '提示' }}
+                  </span>
+                </div>
+                <div class="mini-meta">
+                  {{ source.warning || source.chunkNo || source.content || '-' }}
+                  <span v-if="source.score"> / {{ formatScore(source.score) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mes-grid section-gap">
+      <div class="mes-card">
+        <div class="mes-card__head">
           <div class="mes-card__title">AI 模型运行配置</div>
           <span class="status-tag blue">{{ activeModelConfigs.length }} ACTIVE</span>
         </div>
@@ -241,6 +345,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
+  analyzeEquipment,
   askKnowledgeBase,
   createKnowledgeIndexJob,
   createYieldReport,
@@ -280,6 +385,27 @@ const aiSummary = ref(__DEV_MOCK_FALLBACK__ ? [
   { title: '建议', text: '暂停 COATER_02 高优先级 Lot 进站，执行压力传感器点检；对 PI 胶批次追加抽检。' }
 ] : [])
 
+const equipmentForm = ref({
+  equipmentCode: __DEV_MOCK_FALLBACK__ ? 'EVAP_01' : '',
+  lotNo: ''
+})
+const equipmentAnalysis = ref(__DEV_MOCK_FALLBACK__ ? {
+  reportNo: 'AIR-EQP-DEMO',
+  equipmentCode: 'EVAP_01',
+  riskLevel: 'P2',
+  eventCount: 2,
+  lotCount: 1,
+  defectCount: 12,
+  evidenceLevel: 'MEDIUM',
+  evidenceType: 'blue',
+  retrievalStrategy: 'MES_AND_RAG',
+  possibleCauses: ['腔体真空波动', '材料蒸镀速率偏移'],
+  checkSteps: ['确认最近 2 小时报警趋势', '复核真空泵状态', '抽查当前 Lot AOI 缺陷分布'],
+  lotContexts: [{ lotNo: 'LOT202406004', orderNo: 'MO20260606012', status: 'PROCESSING', currentStepCode: 'EVAPORATION', currentEquipmentCode: 'EVAP_01' }],
+  sources: [{ chunkNo: 'SOP-EVAP-001-001', chunkTitle: '蒸镀真空波动排查', evidenceLevel: 'MEDIUM', score: 0.82 }]
+} : null)
+const analyzingEquipment = ref(false)
+
 const reportRecords = ref(__DEV_MOCK_FALLBACK__ ? [
   { report: 'YIELD-20260606-D', scope: 'G6-FLEX-LINE-01', owner: 'qa_lead', modelMode: 'SIMULATED', status: 'NONE', type: 'green', time: '14:30' },
   { report: 'EQ-COATER02-ANL', scope: 'COATER_02', owner: 'eq_eng', modelMode: 'SIMULATED', status: 'LOW', type: 'amber', time: '14:12' },
@@ -310,11 +436,20 @@ const indexJobs = ref([])
 const importing = ref(false)
 const indexing = ref(false)
 const canYieldReport = computed(() => hasButton('ai:yield-report'))
+const canAnalyzeEquipment = computed(() => hasButton('ai:equipment-analyze'))
 const canAskSop = computed(() => hasButton('ai:kb-ask'))
 const canImportKb = computed(() => hasButton('ai:kb-import'))
 const canIndexKb = computed(() => hasButton('ai:kb-index'))
 const activeModelConfigs = computed(() => aiModelConfigs.value.filter(config => config.status === 'ACTIVE' && config.enabled !== 0))
 const activeYieldConfig = computed(() => aiModelConfigs.value.find(config => config.useCase === 'YIELD_DAILY') || {})
+const equipmentRiskText = computed(() => equipmentAnalysis.value?.riskLevel || '待分析')
+const equipmentRiskType = computed(() => riskTagType(equipmentAnalysis.value?.riskLevel))
+const equipmentEvidenceText = computed(() => equipmentAnalysis.value?.evidenceLevel || 'NONE')
+const equipmentEvidenceType = computed(() => equipmentAnalysis.value?.evidenceType || evidenceTagType(equipmentAnalysis.value?.evidenceLevel))
+const equipmentCausesText = computed(() => normalizeList(equipmentAnalysis.value?.possibleCauses).join('；') || '等待分析结果')
+const equipmentCheckSteps = computed(() => normalizeList(equipmentAnalysis.value?.checkSteps))
+const equipmentLotContexts = computed(() => Array.isArray(equipmentAnalysis.value?.lotContexts) ? equipmentAnalysis.value.lotContexts : [])
+const equipmentSources = computed(() => Array.isArray(equipmentAnalysis.value?.sources) ? equipmentAnalysis.value.sources : [])
 const reportDateLabel = computed(() => reportDate.value.slice(5))
 const documentForm = ref(__DEV_MOCK_FALLBACK__ ? {
   documentName: '涂胶膜厚异常处置SOP',
@@ -486,6 +621,43 @@ async function generateYieldReport() {
   }
 }
 
+async function runEquipmentAnalyze() {
+  if (!canAnalyzeEquipment.value) {
+    ElMessage.warning('当前角色无权生成 AI 设备异常分析')
+    return
+  }
+  if (!equipmentForm.value.equipmentCode) {
+    ElMessage.warning('请输入设备编码')
+    return
+  }
+  try {
+    analyzingEquipment.value = true
+    const data = await analyzeEquipment({
+      equipmentCode: equipmentForm.value.equipmentCode,
+      lotNo: equipmentForm.value.lotNo || undefined
+    })
+    equipmentAnalysis.value = data
+    reportRecords.value = [
+      {
+        report: data.reportNo || `AIR-EQP-${Date.now()}`,
+        scope: data.equipmentCode || equipmentForm.value.equipmentCode,
+        owner: 'system',
+        modelMode: data.modelMode || 'SIMULATED',
+        status: data.riskLevel || data.evidenceLevel || 'SUCCESS',
+        type: riskTagType(data.riskLevel),
+        time: '当前'
+      },
+      ...reportRecords.value
+    ]
+    await loadAiReportRecords()
+    ElMessage.success('AI 设备异常分析已生成')
+  } catch (error) {
+    warnDevFallback('AI设备异常分析接口不可用', error)
+  } finally {
+    analyzingEquipment.value = false
+  }
+}
+
 function selectReportDate() {
   const current = new Date(`${reportDate.value}T00:00:00`)
   current.setDate(current.getDate() - 1)
@@ -541,6 +713,19 @@ function evidenceTagType(level) {
   return 'red'
 }
 
+function riskTagType(level) {
+  if (level === 'P1' || level === 'CRITICAL') return 'red'
+  if (level === 'P2' || level === 'HIGH') return 'amber'
+  if (level === 'P3' || level === 'MEDIUM') return 'blue'
+  return 'gray'
+}
+
+function normalizeList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  if (!value) return []
+  return [String(value)]
+}
+
 function modelConfigType(config) {
   if (config.enabled === 0) return 'gray'
   return config.status === 'ACTIVE' ? 'green' : 'amber'
@@ -576,6 +761,67 @@ onMounted(loadYieldDashboard)
 .kb-form {
   display: grid;
   gap: 12px;
+}
+
+.equipment-analysis {
+  display: grid;
+  gap: 14px;
+}
+
+.equipment-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.equipment-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.equipment-output {
+  display: grid;
+  gap: 12px;
+}
+
+.step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.step-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.step-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: var(--mes-muted);
+  font-size: 12px;
+}
+
+.step-row p {
+  margin: 1px 0 0;
+  color: var(--mes-text);
+  line-height: 1.45;
+}
+
+.equipment-lot-table {
+  table-layout: fixed;
+}
+
+.equipment-sources {
+  margin-top: 0;
 }
 
 .kb-form-row {
@@ -620,6 +866,11 @@ onMounted(loadYieldDashboard)
 
 @media (max-width: 760px) {
   .kb-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .equipment-form,
+  .equipment-kpis {
     grid-template-columns: 1fr;
   }
 }

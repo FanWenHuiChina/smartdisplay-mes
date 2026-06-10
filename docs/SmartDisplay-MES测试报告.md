@@ -438,3 +438,17 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 登录 QE 后调用 `POST /api/v1/quality/inspections` | 通过 | 返回 `messageType=MANUAL_INSPECTION`、`inspectionCount=1`、`defectCount=0`、`holdApplied=false`，返回项为 `MANUAL_SMOKE_20260610104448` |
 
 说明：本轮 Docker 可运行态已经更新到当前代码，但不是通过完整镜像重建完成；待本机 Docker 代理恢复后，需要重新执行一次 `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 固化镜像路径。
+
+## 2026-06-10 AI 设备异常分析工作台复验
+
+本轮将第 7 周 AI 设备异常分析从“有 API 封装但页面未接线”推进到可操作工作台：AI 页新增设备异常分析卡片，输入设备号和可选 Lot 后调用 `POST /api/v1/ai/equipment/analyze`，展示风险等级、事件数、关联 Lot、近期缺陷、排查步骤和 SOP/RAG 证据；后端输入快照同步包含目标设备事件、Lot 上下文、近期缺陷 TopN、良率看板和模型配置，AI 仍只做辅助分析，不自动执行生产动作。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 AI/RBAC 定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,RolePermissionServiceTest" test` | 通过 | 44 项通过；覆盖设备异常分析证据快照、AI 留痕、审计和 QE/EE 权限 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 226 项通过 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | `Frontend contract passed: 404 checks`；新增 AI 页设备异常分析工作台接线检查 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留既有 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| Docker 运行态 | 本地 jar/dist 覆盖现有 `smartdisplay-mes-api`、`smartdisplay-mes-ui` 容器 | 通过 | 三服务运行正常；完整镜像重建仍待本机 Docker 代理恢复 |
+| 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 登录 QE 后调用 `POST /api/v1/ai/equipment/analyze` | 通过 | `EVAP_01` 返回 `EQUIPMENT_ANALYSIS`、`riskLevel=P1`、`eventCount=2`、`lotCount=2`、`defectCount=7`、`writeActionAllowed=false`、`evidenceLevel=HIGH`，AI 留痕查询返回 1 条 |

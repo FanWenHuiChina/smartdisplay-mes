@@ -306,7 +306,7 @@ public class RolePermissionService {
             case "QE" -> List.of(
                     "lot:hold", "lot:release", "lot:rework", "lot:scrap",
                     "quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "material:iqc", "material:supplier-manage", "bom:eco-approve",
-                    "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index"
+                    "ai:yield-report", "ai:equipment-analyze", "ai:kb-ask", "ai:kb-import", "ai:kb-index"
             );
             case "PE" -> List.of("quality:mrb-approve", "quality:mrb-escalate", "recipe:publish", "bom:change", "bom:eco-approve", "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index");
             case "EE" -> List.of("quality:mrb-approve", "quality:mrb-escalate", "bom:eco-approve", "equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway", "ai:equipment-analyze", "ai:kb-ask", "ai:kb-import", "ai:kb-index");

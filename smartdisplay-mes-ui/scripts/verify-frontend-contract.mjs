@@ -307,7 +307,7 @@ const pageContracts = [
   ['views/quality/index.vue', ['getQualityInspections', 'createQualityInspection', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
   ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['searchTrace'], []],
-  ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
+  ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'analyzeEquipment', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:equipment-analyze', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
   ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
 ]
 
@@ -329,6 +329,7 @@ for (const [relativePath, apiNames, buttonKeys] of pageContracts) {
 
 const aiView = read('src/views/ai/index.vue')
 check('page:views/ai/index.vue:hybrid-local-index', aiView.includes("runKnowledgeIndex('HYBRID_LOCAL')"), 'AI page must expose local hybrid RAG indexing')
+check('page:views/ai/index.vue:equipment-analysis-workbench', hasAll(aiView, ['analyzeEquipment', 'runEquipmentAnalyze', 'equipmentAnalysis', "hasButton('ai:equipment-analyze')", 'equipmentLotContexts', 'equipmentSources']), 'AI page must expose equipment anomaly analysis with MES context and RAG evidence')
 
 const masterView = read('src/views/master/index.vue')
 check('page:views/master/index.vue:bom-change-validation-file', masterView.includes('validationFileName') && masterView.includes('validationFileHash'), 'BOM change submit must carry substitute validation attachment metadata')

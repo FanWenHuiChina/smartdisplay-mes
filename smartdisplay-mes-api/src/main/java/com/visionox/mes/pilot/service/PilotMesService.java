@@ -1336,25 +1336,37 @@ public class PilotMesService {
 
     public Map<String, Object> aiEquipmentAnalyze(Map<String, Object> request) {
         String equipmentCode = text(request, "equipmentCode", "EVAP_01");
+        String lotNo = text(request, "lotNo", "");
         String reportNo = "AIR-EQP-" + System.currentTimeMillis();
         Map<String, Object> modelConfig = aiModelConfig("EQUIPMENT_ANALYSIS", "equipment-analyze-v2", "mock-structured-output");
         String model = text(modelConfig, "modelName", "mock-structured-output");
         String promptVersion = text(modelConfig, "promptTemplateVersion", "equipment-analyze-v2");
+        List<Map<String, Object>> equipmentEvents = targetEquipmentEvents(equipmentCode);
+        List<Map<String, Object>> lotContexts = equipmentLotContexts(equipmentCode, lotNo);
+        List<Map<String, Object>> recentDefects = recentDefectsForEquipment(equipmentCode);
         Map<String, Object> inputSnapshot = new LinkedHashMap<>();
         inputSnapshot.put("request", safeRequest(request));
         inputSnapshot.put("equipmentCode", equipmentCode);
-        inputSnapshot.put("events", equipmentEvents());
+        inputSnapshot.put("events", equipmentEvents);
+        inputSnapshot.put("lots", lotContexts);
+        inputSnapshot.put("recentDefects", recentDefects);
         inputSnapshot.put("yield", dashboardYield());
         inputSnapshot.put("modelConfig", modelConfig);
-        List<Map<String, Object>> sources = aiKnowledgeService.searchSources(equipmentCode + " 设备报警 真空 波动 Mura SOP", 2);
+        List<Map<String, Object>> sources = aiKnowledgeService.searchSources(
+                equipmentCode + " 设备报警 真空 波动 Mura SOP " + String.join(" ", defectNames(recentDefects)), 2);
         Map<String, Object> evidence = evidenceSummary(sources, text(modelConfig, "retrievalStrategy", "MES_AND_RAG"));
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("riskLevel", "P2");
+        output.put("riskLevel", equipmentRiskLevel(equipmentEvents, recentDefects, evidence));
         output.put("equipmentCode", equipmentCode);
+        output.put("eventCount", equipmentEvents.size());
+        output.put("lotCount", lotContexts.size());
+        output.put("defectCount", recentDefects.stream().mapToInt(row -> intValue(row.get("qty"), 0)).sum());
         output.put("possibleCauses", List.of("腔体真空波动", "材料蒸镀速率偏移", "PM 后参数未完全稳定"));
         output.put("checkSteps", List.of("确认最近 2 小时报警趋势", "复核真空泵状态", "抽查当前 Lot AOI 缺陷分布"));
         output.put("sources", sources.isEmpty() ? List.of(Map.of("warning", "知识库依据不足，请补充设备手册或SOP片段")) : sources);
         output.put("writeActionAllowed", false);
+        output.put("lotContexts", lotContexts);
+        output.put("recentDefects", recentDefects);
         output.putAll(evidence);
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("reportNo", reportNo);
@@ -1485,6 +1497,78 @@ public class PilotMesService {
         putEvidence(evidence, evidenceCount, maxEvidenceScore, evidenceLevel,
                 "INSUFFICIENT".equals(evidenceLevel), retrievalStrategy);
         return evidence;
+    }
+
+    private List<Map<String, Object>> targetEquipmentEvents(String equipmentCode) {
+        List<Map<String, Object>> rows = equipmentEvents(equipmentCode, null);
+        if (rows != null && !rows.isEmpty()) {
+            return rows.stream().limit(8).collect(Collectors.toList());
+        }
+        return equipmentEvents().stream()
+                .filter(row -> Objects.equals(equipmentCode, String.valueOf(row.get("equipmentCode"))))
+                .limit(8)
+                .collect(Collectors.toList());
+    }
+
+    private List<Map<String, Object>> equipmentLotContexts(String equipmentCode, String lotNo) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (lotNo != null && !lotNo.isBlank()) {
+            Lot lot = findLot(lotNo);
+            rows.add(lotSnapshot(lot));
+        }
+        try {
+            List<Lot> activeLots = lotMapper.selectList(lotScopedWrapper()
+                    .eq(Lot::getCurrentEquipmentCode, equipmentCode)
+                    .orderByDesc(Lot::getUpdatedTime)
+                    .last("LIMIT 5"));
+            if (activeLots == null) {
+                return rows;
+            }
+            for (Lot lot : activeLots) {
+                if (rows.stream().noneMatch(row -> Objects.equals(row.get("lotNo"), lot.getLotNo()))) {
+                    rows.add(lotSnapshot(lot));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AI设备分析关联Lot读取失败，已仅使用请求上下文: equipment={}, reason={}", equipmentCode, e.getMessage());
+        }
+        return rows;
+    }
+
+    private List<Map<String, Object>> recentDefectsForEquipment(String equipmentCode) {
+        try {
+            return qualityService.defectTopN(5);
+        } catch (Exception e) {
+            log.warn("AI设备分析近期缺陷读取失败，已降级到空缺陷证据: equipment={}, reason={}", equipmentCode, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> defectNames(List<Map<String, Object>> defects) {
+        if (defects == null) {
+            return List.of();
+        }
+        return defects.stream()
+                .map(row -> text(row, "defectName", text(row, "defectCode", "")))
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.toList());
+    }
+
+    private String equipmentRiskLevel(List<Map<String, Object>> events,
+                                      List<Map<String, Object>> defects,
+                                      Map<String, Object> evidence) {
+        boolean criticalEvent = events != null && events.stream()
+                .map(row -> String.valueOf(row.getOrDefault("eventLevel", row.getOrDefault("severity", ""))).toUpperCase(Locale.ROOT))
+                .anyMatch(level -> level.contains("P1") || level.contains("CRITICAL"));
+        int defectQty = defects == null ? 0 : defects.stream().mapToInt(row -> intValue(row.get("qty"), 0)).sum();
+        String evidenceLevel = text(evidence, "evidenceLevel", "INSUFFICIENT");
+        if (criticalEvent || defectQty >= 20) {
+            return "P1";
+        }
+        if (defectQty >= 8 || "HIGH".equals(evidenceLevel) || (events != null && events.size() >= 3)) {
+            return "P2";
+        }
+        return "P3";
     }
 
     private Map<String, Object> aiMetadata(Map<String, Object> modelConfig, Map<String, Object> report) {

@@ -142,7 +142,7 @@ class RolePermissionServiceTest {
         assertThat(qePermissions.get("role")).isEqualTo("QE");
         assertThat((Iterable<String>) qePermissions.get("menus")).contains("quality", "material", "trace", "ai");
         assertThat((Iterable<String>) qePermissions.get("buttons"))
-                .contains("quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "lot:release", "material:iqc", "material:supplier-manage", "ai:kb-import", "ai:kb-index");
+                .contains("quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "lot:release", "material:iqc", "material:supplier-manage", "ai:yield-report", "ai:equipment-analyze", "ai:kb-import", "ai:kb-index");
         assertThat(qePermissions.get("dataScope")).isEqualTo("LINE");
 
         var operatorPermissions = service.permissions("operator");
