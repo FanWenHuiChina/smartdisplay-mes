@@ -56,6 +56,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -212,6 +213,85 @@ class PilotMesServiceTest {
                 .contains("\"after\"")
                 .contains("\"changedFields\"")
                 .contains("\"operator\":\"wms1001\"");
+    }
+
+    @Test
+    void pageAuditLogsShouldMapPagedRowsAndParseDateRange() {
+        AuditLog log = new AuditLog();
+        log.setAction("MATERIAL_LOCATION_TASK_CREATE");
+        log.setBizNo("MLT-001");
+        log.setBizType("MATERIAL_LOCATION_TASK");
+        log.setOperator("wms1001");
+        log.setResult("SUCCESS");
+        log.setSource("material-service");
+        log.setDescription("创建库位任务");
+        log.setRequestMethod("POST");
+        log.setRequestUri("/api/v1/material/location-tasks");
+        log.setClientIp("10.10.1.9");
+        log.setUserAgent("MES-Console/1.0");
+        log.setCreatedTime(LocalDateTime.of(2026, 6, 9, 21, 46, 39));
+        log.setRequestSnapshot("{\"before\":{},\"after\":{\"status\":\"CREATED\"},\"changedFields\":[\"status\"],\"request\":{\"operator\":\"wms1001\"}}");
+        Page<AuditLog> sourcePage = new Page<>(2, 5, 12);
+        sourcePage.setRecords(List.of(log));
+        when(auditLogService.page(
+                eq(2L),
+                eq(5L),
+                eq("MLT"),
+                eq("WMS"),
+                eq("SUCCESS"),
+                eq("material-service"),
+                eq("wms1001"),
+                eq(LocalDateTime.of(2026, 6, 9, 0, 0)),
+                eq(LocalDateTime.of(2026, 6, 9, 23, 59, 59))
+        )).thenReturn(sourcePage);
+
+        Page<Map<String, Object>> result = pilotMesService.pageAuditLogs(
+                2L,
+                5L,
+                "MLT",
+                "WMS",
+                "SUCCESS",
+                "material-service",
+                "wms1001",
+                "2026-06-09",
+                "2026-06-09"
+        );
+
+        assertThat(result.getCurrent()).isEqualTo(2);
+        assertThat(result.getSize()).isEqualTo(5);
+        assertThat(result.getTotal()).isEqualTo(12);
+        assertThat(result.getRecords()).hasSize(1);
+        assertThat(result.getRecords().get(0))
+                .containsEntry("object", "MLT-001")
+                .containsEntry("bizType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("action", "MATERIAL_LOCATION_TASK_CREATE")
+                .containsEntry("result", "SUCCESS")
+                .containsEntry("source", "material-service")
+                .containsEntry("requestMethod", "POST")
+                .containsEntry("requestUri", "/api/v1/material/location-tasks")
+                .containsEntry("clientIp", "10.10.1.9");
+        assertThat(result.getRecords().get(0).get("requestSnapshot").toString())
+                .contains("\"before\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void pageAuditLogsShouldRejectInvalidDateRange() {
+        assertThatThrownBy(() -> pilotMesService.pageAuditLogs(
+                1L,
+                20L,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "bad-date",
+                ""
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("审计时间");
+
+        verify(auditLogService, never()).page(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

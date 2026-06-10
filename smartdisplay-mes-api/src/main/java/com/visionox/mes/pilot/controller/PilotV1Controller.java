@@ -61,8 +61,20 @@ public class PilotV1Controller {
     }
 
     @GetMapping("/system/audit-logs")
-    public Result<List<Map<String, Object>>> auditLogs(@RequestParam(required = false) String bizNo) {
-        return Result.success(pilotMesService.auditLogs(bizNo));
+    public Result<?> auditLogs(@RequestParam(required = false) String bizNo,
+                               @RequestParam(required = false) String action,
+                               @RequestParam(required = false) String result,
+                               @RequestParam(required = false) String source,
+                               @RequestParam(required = false) String operator,
+                               @RequestParam(required = false) String startTime,
+                               @RequestParam(required = false) String endTime,
+                               @RequestParam(required = false) Long current,
+                               @RequestParam(required = false) Long size) {
+        if (current == null && size == null && action == null && result == null
+                && source == null && operator == null && startTime == null && endTime == null) {
+            return Result.success(pilotMesService.auditLogs(bizNo));
+        }
+        return Result.success(pilotMesService.pageAuditLogs(current, size, bizNo, action, result, source, operator, startTime, endTime));
     }
 
     @GetMapping("/system/summary")

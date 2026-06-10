@@ -178,7 +178,7 @@
                 v-model.trim="filters.bizNo"
                 class="mes-input"
                 placeholder="请输入业务对象"
-                @keyup.enter="loadAuditLogs"
+                @keyup.enter="queryAuditLogs"
               />
             </div>
             <div class="mes-field">
@@ -188,11 +188,38 @@
                 <option value="TRACK">Track In / Out</option>
                 <option value="LOT">Hold / Release</option>
                 <option value="ORDER">工单</option>
+                <option value="WMS">WMS</option>
+                <option value="QMS">QMS</option>
+                <option value="EAP">EAP</option>
                 <option value="AI">AI</option>
                 <option value="RECIPE">Recipe</option>
               </select>
             </div>
-            <button class="mes-btn primary" :disabled="loadingAudit" @click="loadAuditLogs">
+            <div class="mes-field">
+              <label>结果</label>
+              <select v-model="filters.result" class="mes-select">
+                <option value="">全部结果</option>
+                <option value="SUCCESS">SUCCESS</option>
+                <option value="FAIL">FAIL</option>
+              </select>
+            </div>
+            <div class="mes-field">
+              <label>来源</label>
+              <input v-model.trim="filters.source" class="mes-input" placeholder="service / adapter" @keyup.enter="queryAuditLogs" />
+            </div>
+            <div class="mes-field">
+              <label>操作人</label>
+              <input v-model.trim="filters.operator" class="mes-input" placeholder="账号" @keyup.enter="queryAuditLogs" />
+            </div>
+            <div class="mes-field">
+              <label>开始日期</label>
+              <input v-model="filters.startTime" type="date" class="mes-input" />
+            </div>
+            <div class="mes-field">
+              <label>结束日期</label>
+              <input v-model="filters.endTime" type="date" class="mes-input" />
+            </div>
+            <button class="mes-btn primary" :disabled="loadingAudit" @click="queryAuditLogs">
               {{ loadingAudit ? '查询中' : '查询' }}
             </button>
             <button class="mes-btn" @click="resetFilters">重置</button>
@@ -219,6 +246,17 @@
           </table>
           <div v-if="!filteredAuditLogs.length" class="audit-empty">
             暂无匹配审计日志
+          </div>
+          <div class="pager-row audit-pager">
+            <el-pagination
+              v-model:current-page="auditPagination.page"
+              v-model:page-size="auditPagination.size"
+              :total="auditPagination.total"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleAuditSizeChange"
+              @current-change="handleAuditPageChange"
+            />
           </div>
           <div v-if="selectedAuditLog" class="audit-snapshot-panel">
             <div class="audit-snapshot__head">
@@ -279,10 +317,20 @@ const fallbackAuditLogs = [
 
 const filters = reactive({
   bizNo: '',
-  action: ''
+  action: '',
+  result: '',
+  source: '',
+  operator: '',
+  startTime: '',
+  endTime: ''
 })
 
 const auditLogs = ref(__DEV_MOCK_FALLBACK__ ? fallbackAuditLogs.map(mapAuditLog) : [])
+const auditPagination = reactive({
+  page: 1,
+  size: 20,
+  total: __DEV_MOCK_FALLBACK__ ? fallbackAuditLogs.length : 0
+})
 const loadingAudit = ref(false)
 const lastRefreshText = ref(__DEV_MOCK_FALLBACK__ ? '开发样例' : '待接口')
 const permissionChanges = ref([])
@@ -369,14 +417,11 @@ const permissionDiffRows = computed(() => {
   ]
 })
 
-const filteredAuditLogs = computed(() => {
-  if (!filters.action) return auditLogs.value
-  return auditLogs.value.filter(log => actionMatches(log.action, filters.action))
-})
+const filteredAuditLogs = computed(() => auditLogs.value)
 
 const auditStatusText = computed(() => {
   if (loadingAudit.value) return '加载中'
-  return `${filteredAuditLogs.value.length} 条 / ${lastRefreshText.value}`
+  return `${auditPagination.total} 条 / ${lastRefreshText.value}`
 })
 
 const metrics = computed(() => {
@@ -387,7 +432,7 @@ const metrics = computed(() => {
   return [
     { label: '启用用户', value: String(userCount), tag: 'RBAC', type: 'blue', left: `角色 ${roles.value.length}`, right: `待审 ${permissionPending}` },
     { label: '权限点', value: String(permissionPointCount.value), tag: '按模块', type: 'green', left: `角色 ${permissionSnapshots.value.length}`, right: `敏感 ${sensitivePermissionCount.value}` },
-    { label: '审计事件', value: String(auditLogs.value.length), tag: '当前', type: 'teal', left: `成功 ${successCount}`, right: `待复核 ${reviewCount}` },
+    { label: '审计事件', value: String(auditPagination.total || auditLogs.value.length), tag: '当前', type: 'teal', left: `成功 ${successCount}`, right: `待复核 ${reviewCount}` },
     { label: '权限变更', value: String(permissionChanges.value.length), tag: `待审 ${permissionPending}`, type: permissionPending ? 'amber' : 'green', left: '审批闭环', right: '审计留痕' }
   ]
 })
@@ -408,7 +453,8 @@ function resultType(result = '') {
 }
 
 function mapAuditLog(log, index = 0) {
-  const time = log.time || log.createdTime || '-'
+  const createdTime = log.createdTime || log.time || ''
+  const time = log.time || createdTime || '-'
   const object = log.object || log.bizNo || '-'
   const action = log.action || '-'
   const result = log.result || '成功'
@@ -416,12 +462,19 @@ function mapAuditLog(log, index = 0) {
   return {
     key: `${time}-${object}-${action}-${index}`,
     time,
+    createdTime,
     user: log.user || log.operator || 'system',
     object,
+    bizType: log.bizType || '-',
     action,
     result,
     type: resultType(result),
     source: log.source || '-',
+    description: log.description || '',
+    requestMethod: log.requestMethod || '',
+    requestUri: log.requestUri || '',
+    clientIp: log.clientIp || '',
+    userAgent: log.userAgent || '',
     requestSnapshot,
     hasSnapshot: Boolean(requestSnapshot && requestSnapshot !== '{}')
   }
@@ -446,26 +499,43 @@ function showAuditSnapshot(log) {
   selectedAuditLog.value = log
 }
 
-function actionMatches(action = '', type = '') {
-  const upper = action.toUpperCase()
-  if (type === 'LOT') return upper.includes('HOLD') || upper.includes('RELEASE') || upper.includes('LOT_')
-  if (type === 'TRACK') return upper.includes('TRACK')
-  if (type === 'ORDER') return upper.includes('ORDER') || action.includes('工单')
-  if (type === 'AI') return upper.includes('AI')
-  if (type === 'RECIPE') return upper.includes('RECIPE')
-  return true
+function auditQueryParams() {
+  const params = {
+    current: auditPagination.page,
+    size: auditPagination.size
+  }
+  for (const key of ['bizNo', 'action', 'result', 'source', 'operator', 'startTime', 'endTime']) {
+    if (filters[key]) {
+      params[key] = filters[key]
+    }
+  }
+  return params
+}
+
+function applyAuditPage(data) {
+  const records = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : []
+  auditLogs.value = records.map(mapAuditLog)
+  if (Array.isArray(data)) {
+    auditPagination.total = data.length
+    return
+  }
+  auditPagination.page = Number(data?.current) || auditPagination.page
+  auditPagination.size = Number(data?.size) || auditPagination.size
+  auditPagination.total = Number(data?.total) || 0
 }
 
 async function loadAuditLogs() {
   loadingAudit.value = true
   try {
-    const data = await getAuditLogs(filters.bizNo ? { bizNo: filters.bizNo } : {})
-    auditLogs.value = Array.isArray(data) ? data.map(mapAuditLog) : []
+    const data = await getAuditLogs(auditQueryParams())
+    applyAuditPage(data)
+    selectedAuditLog.value = null
     lastRefreshText.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } catch (error) {
     warnDevFallback('审计日志接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) {
       auditLogs.value = fallbackAuditLogs.map(mapAuditLog)
+      auditPagination.total = auditLogs.value.length
       lastRefreshText.value = '开发样例'
     }
   } finally {
@@ -473,10 +543,28 @@ async function loadAuditLogs() {
   }
 }
 
+function queryAuditLogs() {
+  auditPagination.page = 1
+  return loadAuditLogs()
+}
+
+function handleAuditSizeChange(size) {
+  auditPagination.size = size
+  auditPagination.page = 1
+  return loadAuditLogs()
+}
+
+function handleAuditPageChange(page) {
+  auditPagination.page = page
+  return loadAuditLogs()
+}
+
 function resetFilters() {
-  filters.bizNo = ''
-  filters.action = ''
-  loadAuditLogs()
+  for (const key of Object.keys(filters)) {
+    filters[key] = ''
+  }
+  auditPagination.page = 1
+  return loadAuditLogs()
 }
 
 function exportAuditLogs() {
@@ -486,8 +574,23 @@ function exportAuditLogs() {
   }
 
   const rows = [
-    ['时间', '用户', '对象', '操作', '结果', '来源', '快照'],
-    ...filteredAuditLogs.value.map(log => [log.time, log.user, log.object, log.action, log.result, log.source, log.requestSnapshot])
+    ['时间', '创建时间', '用户', '对象', '业务类型', '操作', '结果', '来源', '描述', '请求方法', '请求URI', '客户端IP', 'UserAgent', '快照'],
+    ...filteredAuditLogs.value.map(log => [
+      log.time,
+      log.createdTime,
+      log.user,
+      log.object,
+      log.bizType,
+      log.action,
+      log.result,
+      log.source,
+      log.description,
+      log.requestMethod,
+      log.requestUri,
+      log.clientIp,
+      log.userAgent,
+      log.requestSnapshot
+    ])
   ]
   const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
@@ -826,7 +929,7 @@ async function runRuleSimulation() {
   try {
     filters.action = 'LOT'
     filters.bizNo = ''
-    await loadAuditLogs()
+    await queryAuditLogs()
     ElMessage.success('规则试运行完成，已切换到 Hold / Release 审计样本')
   } finally {
     ruleActionLoading.value = ''
@@ -856,10 +959,21 @@ onMounted(() => {
 <style scoped>
 .audit-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
   gap: 9px;
   align-items: end;
   padding-bottom: 12px;
+}
+
+.audit-toolbar .mes-btn {
+  justify-content: center;
+  min-width: 76px;
+}
+
+.audit-pager {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 
 .audit-empty {

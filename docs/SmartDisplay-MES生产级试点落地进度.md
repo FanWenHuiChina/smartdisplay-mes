@@ -1,6 +1,6 @@
 # SmartDisplay MES 生产级试点落地进度
 
-更新时间：2026-06-09
+更新时间：2026-06-10
 
 ## 当前定位
 
@@ -26,7 +26,7 @@
   - Material/IQC：`/api/v1/material/batches`、`/api/v1/material/locations`、`/api/v1/material/location-tasks`、`/api/v1/material/inventory-transactions`、`/api/v1/material/incoming-inspections`、`/api/v1/material/suppliers`、`/api/v1/material/suppliers/trends`、`/api/v1/material/suppliers/qualification-reviews`、供应商8D接口、`POST /api/v1/material/location-tasks`、`POST /api/v1/material/batches/{batchNo}/incoming-inspection`。
   - Trace/Dashboard/AI：Lot追溯、良率看板、生产总览、AI良率日报、设备异常分析、SOP问答、AI模型配置、AI报告留痕查询、知识库索引任务履历。
 - 修正项目启动类和 Track In 注释中的合规表述，统一为公开行业模型和通用MES实践。
-- 新增 `sys_audit_log`，工单创建/释放、Track In/Out、Hold/Release、Rework、Scrap、AI良率日报、AI设备异常分析、AI SOP问答已写入审计；审计记录已自动补充请求方法、URI、客户端IP和User-Agent，并支持关键写接口失败留痕。
+- 新增 `sys_audit_log`，工单创建/释放、Track In/Out、Hold/Release、Rework、Scrap、AI良率日报、AI设备异常分析、AI SOP问答已写入审计；审计记录已自动补充请求方法、URI、客户端IP和User-Agent，并支持关键写接口失败留痕；审计查询支持分页、业务对象、动作分组、结果、来源、操作人和日期范围过滤。
 - 新增 `md_route`、`md_route_step`，Track In 第二层已改为 Route 防跳站强校验。
 - 新增 `quality_inspection`、`quality_defect_record`、`exception_event`，Track Out 会按 Recipe 参数上下限生成质检记录；显式 NG 或关键参数超限会创建异常事件并自动 Hold Lot。
 - 新增 `md_bom`、`md_bom_item`、`md_bom_change_request`、`md_bom_change_attachment`、`md_bom_eco_approval_task`、`md_material_location`、`material_location_task`、`material_batch`、`material_loading`、`material_consumption`、`material_inventory_txn`、`material_incoming_inspection`、`material_coa_attachment`、`material_carrier`、`md_supplier`、`supplier_corrective_action`、`supplier_qualification_review_task`，Track In 已接入关键物料齐套校验与批次锁定，Track Out 已生成物料消耗追溯；BOM 变更已支持替代料验证报告附件元数据、ECO 包快照、风险等级和跨部门会签；WMS 入库会校验库位状态、物料类别、单位和容量，冻结、解冻、退料、盘点会写库存事务履历和审计；库位任务已支持上架、整批移库、盘点任务单；来料 IQC 判定会写检验记录、COA/附件元数据、审计并联动批次质量状态；供应商准入、8D整改、周期复审任务和月度评分趋势已基于批次、IQC 与8D记录聚合。
@@ -71,22 +71,24 @@
   - 设备与自动化：接入 `/v1/master/equipments`、`/v1/equipment/events`、`/v1/equipment/events/{eventNo}/close`、`/v1/equipment/oee`、`/v1/equipment/status-history`、`/v1/equipment/status/report`、`/v1/equipment/cycle-samples`、`/v1/equipment/cycle-samples/report`、`/v1/equipment/standard-cycles`、`/v1/equipment/gateways`、`/v1/equipment/gateway-drivers`、`/v1/equipment/gateway-health-checks`、`/v1/equipment/gateway-messages`、`/v1/equipment/parameters`、`/v1/equipment/pm-tasks`、`/v1/equipment/recipe-downloads`、`/v1/adapters/eap/messages`、设备事件创建/关闭、OEE拆解、停机原因TopN、EAP状态上报、节拍采样、标准节拍主数据、网关连接配置、驱动配置、网关心跳、健康检查、消息履历、参数上报、PM完成、Recipe下发/回读和统一EAP消息入口。
   - 追溯分析：接入 `/v1/trace/lots/{lotNo}`。
   - AI页面：接入 `/v1/dashboard/yield`、`/v1/ai/reports/yield`、`/v1/ai/kb/ask`、`/v1/ai/model-configs`、`/v1/ai/report-records`、`/v1/ai/kb/index-jobs`，展示模型模式、检索策略、证据等级、最高证据分、真实报告留痕、知识库索引状态和索引任务履历。
+  - 系统管理：接入 `/v1/system/audit-logs` 分页筛选，支持按业务对象、动作分组、结果、来源、操作人和日期范围查询，并导出创建时间、业务类型、请求方法、URI、客户端IP、User-Agent 和结构化快照。
 
 ## 验证结果
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线和生产 mock fallback 禁用约束，共 392 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 396 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
-- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260609-181400.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 219, Failures: 0, Errors: 0, Skipped: 0`。
+- 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-010414.md`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 223, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
-- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.41` 共 41 个迁移文件。
-- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39/V1.40/V1.41 已补充静态验收，V1.39 已完成 Docker 容器数据库迁移复验；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
+- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.43` 共 43 个迁移文件。
+- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39-V1.43 已补充静态验收，当前容器数据库已完成 V1.43 迁移复验；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
 - Docker交付配置：`docker compose config` 通过；根目录已新增 `docker-compose.yml` 作为交付入口；后端可执行包 `mvn.cmd "-DskipTests" package` 通过并生成 `target/smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar`。
-- Docker容器级复验：`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 通过；`smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 暴露 `8080`，`smartdisplay-mes-ui` 暴露 `8888`；容器数据库 Flyway 已迁移到 `V1.39 Add Bom Eco Approval Tasks`。
-- HTTP状态流冒烟：经 `http://127.0.0.1:8888/api` 反代登录、总览和库位任务查询均返回业务码 200；V1.38 盘点任务已验证 `CREATED -> ASSIGNED -> DONE` 和 `CREATED -> CANCELLED`。
+- Docker容器级复验：`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 通过；`smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 暴露 `8080`，`smartdisplay-mes-ui` 暴露 `8888`；容器数据库 Flyway 已迁移到 `V1.43 Add Hybrid Local Rag Config`。
+- HTTP状态流冒烟：经 `http://127.0.0.1:8888/api` 反代登录、总览、库位任务和分页审计查询均返回业务码 200；`/system/audit-logs?current=1&size=5&action=WMS&result=SUCCESS` 返回 `total=360`、本页 5 条且包含请求上下文字段；V1.38 盘点任务已验证 `CREATED -> ASSIGNED -> DONE` 和 `CREATED -> CANCELLED`。
 - BOM/ECO 会签 API 冒烟：经 `http://127.0.0.1:8080/api` 提交 BOM 变更、查询 ECO 会签任务、逐个会签通过并发布目标 BOM；变更单 `BCR-20260608064003841-0001` 生成 3 个任务并全部 `APPROVED`，发布后数据库为 `PUBLISHED|APPROVED|PE,QE,PLANNER`、任务统计 `3|3`。
 - HTTP冒烟：后端直连登录、前端首页、Swagger、前端 Nginx `/api` 反代登录、Dashboard 和库位任务接口均返回 200；`GET /api/v1/material/location-tasks` 当前返回 2 条记录。
 - 性能冒烟实测：经 `http://127.0.0.1:8888/api` 反代运行 `tools/run-pilot-performance-smoke.ps1` 通过，导入 1000 条模拟工单成功；订单列表 P95 15.67ms、Lot 列表 P95 13.72ms、良率看板 P95 17.28ms、Lot 追溯 P95 60.08ms；报告见 `docs/SmartDisplay-MES-performance-smoke-20260608-030053.md`。
@@ -94,7 +96,7 @@
 
 ## 仍未达到生产级落地标准的缺口
 
-- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 已写入 `before/after/changedFields/request` 结构化差异快照；批量操作差异快照和新增写接口审计映射仍需持续治理。
+- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 已写入 `before/after/changedFields/request` 结构化差异快照；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出；批量操作差异快照和新增写接口审计映射仍需持续治理。
 - 质量：基础检验、缺陷、异常事件、NG/参数超限自动 Hold、MRB复判、异常关闭、结构化处置结论、MRB履历、会议号、参与人、审批状态、附件元数据、会议纪要正文版本管理、多角色会签待办、按角色/风险/处置动作的审批 SLA、逾期升级策略和关闭前会签校验已落地。
 - 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取、复核和多库位拆批任务。
 - 设备：设备主数据、能力矩阵、事件队列、EAP 参数采样、参数越限自动设备事件、PM任务、Recipe下发/回读命令履历、事件关闭、OEE拆解、停机原因TopN、设备状态历史、标准/实际节拍采样、标准节拍主数据、EAP 统一适配器、网关连接配置、协议驱动抽象、网关心跳、健康检查和消息履历已落地；仍缺真实 SECS/GEM、OPC UA、厂商 HTTP 驱动真机联调和毫秒级设备状态采集。

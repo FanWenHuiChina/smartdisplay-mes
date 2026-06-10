@@ -1,6 +1,7 @@
 package com.visionox.mes.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.visionox.mes.auth.security.AuthContext;
 import com.visionox.mes.system.audit.AuditRequestContext;
 import com.visionox.mes.system.entity.AuditLog;
@@ -60,5 +61,74 @@ public class AuditLogService {
         }
         wrapper.orderByDesc(AuditLog::getCreatedTime).last("LIMIT " + Math.max(1, limit));
         return auditLogMapper.selectList(wrapper);
+    }
+
+    public Page<AuditLog> page(long current,
+                               long size,
+                               String bizNo,
+                               String action,
+                               String result,
+                               String source,
+                               String operator,
+                               LocalDateTime startTime,
+                               LocalDateTime endTime) {
+        LambdaQueryWrapper<AuditLog> wrapper = new LambdaQueryWrapper<>();
+        if (hasText(bizNo)) {
+            wrapper.like(AuditLog::getBizNo, bizNo.trim());
+        }
+        applyActionFilter(wrapper, action);
+        if (hasText(result)) {
+            wrapper.eq(AuditLog::getResult, result.trim().toUpperCase());
+        }
+        if (hasText(source)) {
+            wrapper.like(AuditLog::getSource, source.trim());
+        }
+        if (hasText(operator)) {
+            wrapper.like(AuditLog::getOperator, operator.trim());
+        }
+        if (startTime != null) {
+            wrapper.ge(AuditLog::getCreatedTime, startTime);
+        }
+        if (endTime != null) {
+            wrapper.le(AuditLog::getCreatedTime, endTime);
+        }
+        wrapper.orderByDesc(AuditLog::getCreatedTime);
+        long safeCurrent = Math.max(1, current);
+        long safeSize = Math.min(Math.max(1, size), 100);
+        return auditLogMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+    }
+
+    private void applyActionFilter(LambdaQueryWrapper<AuditLog> wrapper, String action) {
+        if (!hasText(action)) {
+            return;
+        }
+        String normalized = action.trim().toUpperCase();
+        switch (normalized) {
+            case "TRACK" -> wrapper.like(AuditLog::getAction, "TRACK");
+            case "LOT" -> wrapper.and(group -> group
+                    .like(AuditLog::getAction, "LOT")
+                    .or().like(AuditLog::getAction, "HOLD")
+                    .or().like(AuditLog::getAction, "RELEASE")
+                    .or().like(AuditLog::getAction, "REWORK")
+                    .or().like(AuditLog::getAction, "SCRAP"));
+            case "ORDER" -> wrapper.like(AuditLog::getAction, "ORDER");
+            case "AI" -> wrapper.like(AuditLog::getAction, "AI");
+            case "RECIPE" -> wrapper.like(AuditLog::getAction, "RECIPE");
+            case "WMS" -> wrapper.and(group -> group
+                    .like(AuditLog::getAction, "WMS")
+                    .or().like(AuditLog::getAction, "MATERIAL_LOCATION_TASK")
+                    .or().like(AuditLog::getAction, "MATERIAL_"));
+            case "QMS" -> wrapper.and(group -> group
+                    .like(AuditLog::getAction, "QMS")
+                    .or().like(AuditLog::getAction, "QUALITY_"));
+            case "EAP" -> wrapper.and(group -> group
+                    .like(AuditLog::getAction, "EAP")
+                    .or().like(AuditLog::getAction, "EQUIPMENT_"));
+            default -> wrapper.like(AuditLog::getAction, normalized);
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isBlank();
     }
 }

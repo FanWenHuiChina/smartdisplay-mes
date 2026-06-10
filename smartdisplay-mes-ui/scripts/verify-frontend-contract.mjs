@@ -365,6 +365,9 @@ check('page:views/system/index.vue:summary-driven-roles', hasAll(systemView, ['g
 check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
 check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
 check('page:views/system/index.vue:audit-snapshot-review', hasAll(systemView, ['requestSnapshot', 'selectedAuditLog', 'auditSnapshotSections', 'showAuditSnapshot', 'formatSnapshotBlock']), 'System audit logs must expose structured request snapshots for review')
+check('page:views/system/index.vue:audit-pagination', hasAll(systemView, ['auditPagination', 'auditQueryParams', 'applyAuditPage', 'handleAuditSizeChange', 'handleAuditPageChange']), 'System audit logs must use backend pagination state')
+check('page:views/system/index.vue:audit-filters', hasAll(systemView, ['v-model="filters.result"', 'v-model.trim="filters.source"', 'v-model.trim="filters.operator"', 'v-model="filters.startTime"', 'v-model="filters.endTime"', 'queryAuditLogs']), 'System audit logs must expose result/source/operator/date filters')
+check('page:views/system/index.vue:audit-context-export', hasAll(systemView, ['requestMethod', 'requestUri', 'clientIp', 'userAgent', 'createdTime', 'bizType']), 'System audit export must include request context fields')
 
 const lotView = read('src/views/lot/index.vue')
 const recipeView = read('src/views/recipe/index.vue')

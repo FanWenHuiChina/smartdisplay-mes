@@ -1568,6 +1568,46 @@ public class PilotMesService {
         return fallbackAuditLogs(bizNo);
     }
 
+    public Page<Map<String, Object>> pageAuditLogs(Long current,
+                                                   Long size,
+                                                   String bizNo,
+                                                   String action,
+                                                   String result,
+                                                   String source,
+                                                   String operator,
+                                                   String startTime,
+                                                   String endTime) {
+        long safeCurrent = Math.max(1L, current == null ? 1L : current);
+        long safeSize = Math.min(Math.max(1L, size == null ? 20L : size), 100L);
+        LocalDateTime parsedStartTime = parseAuditTime(startTime, false);
+        LocalDateTime parsedEndTime = parseAuditTime(endTime, true);
+        try {
+            Page<AuditLog> page = auditLogService.page(
+                    safeCurrent,
+                    safeSize,
+                    bizNo,
+                    action,
+                    result,
+                    source,
+                    operator,
+                    parsedStartTime,
+                    parsedEndTime
+            );
+            Page<Map<String, Object>> mapped = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+            mapped.setRecords(page.getRecords().stream().map(this::auditRow).collect(Collectors.toList()));
+            return mapped;
+        } catch (Exception ignored) {
+            List<Map<String, Object>> fallback = fallbackAuditLogs(bizNo).stream()
+                    .filter(row -> auditFallbackMatches(row, action, result, source, operator))
+                    .toList();
+            Page<Map<String, Object>> page = new Page<>(safeCurrent, safeSize, fallback.size());
+            int from = (int) Math.min((safeCurrent - 1) * safeSize, fallback.size());
+            int to = (int) Math.min(from + safeSize, fallback.size());
+            page.setRecords(fallback.subList(from, to));
+            return page;
+        }
+    }
+
     public List<ProcessStep> processSteps() {
         return processStepMapper.selectList(null);
     }
@@ -2425,15 +2465,55 @@ public class PilotMesService {
     }
 
     private Map<String, Object> auditRow(AuditLog log) {
-        return Map.of(
-                "time", log.getCreatedTime() == null ? "" : log.getCreatedTime().toLocalTime().withNano(0).toString(),
-                "user", valueOr(log.getOperator(), "system"),
-                "object", valueOr(log.getBizNo(), "-"),
-                "action", valueOr(log.getAction(), "-"),
-                "result", valueOr(log.getResult(), "-"),
-                "source", valueOr(log.getSource(), "-"),
-                "requestSnapshot", valueOr(log.getRequestSnapshot(), "")
-        );
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("time", log.getCreatedTime() == null ? "" : log.getCreatedTime().toLocalTime().withNano(0).toString());
+        row.put("createdTime", log.getCreatedTime() == null ? "" : log.getCreatedTime().toString());
+        row.put("user", valueOr(log.getOperator(), "system"));
+        row.put("object", valueOr(log.getBizNo(), "-"));
+        row.put("bizType", valueOr(log.getBizType(), "-"));
+        row.put("action", valueOr(log.getAction(), "-"));
+        row.put("result", valueOr(log.getResult(), "-"));
+        row.put("source", valueOr(log.getSource(), "-"));
+        row.put("description", valueOr(log.getDescription(), ""));
+        row.put("requestMethod", valueOr(log.getRequestMethod(), ""));
+        row.put("requestUri", valueOr(log.getRequestUri(), ""));
+        row.put("clientIp", valueOr(log.getClientIp(), ""));
+        row.put("userAgent", valueOr(log.getUserAgent(), ""));
+        row.put("requestSnapshot", valueOr(log.getRequestSnapshot(), ""));
+        return row;
+    }
+
+    private LocalDateTime parseAuditTime(String value, boolean endOfDay) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String text = value.trim();
+        try {
+            if (text.length() == 10) {
+                LocalDate date = LocalDate.parse(text);
+                return endOfDay ? date.atTime(23, 59, 59) : date.atStartOfDay();
+            }
+            return LocalDateTime.parse(text);
+        } catch (Exception e) {
+            throw new BusinessException("审计时间格式不正确: " + value);
+        }
+    }
+
+    private boolean auditFallbackMatches(Map<String, Object> row, String action, String result, String source, String operator) {
+        if (hasText(action) && !String.valueOf(row.getOrDefault("action", "")).toUpperCase(Locale.ROOT)
+                .contains(action.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        if (hasText(result) && !String.valueOf(row.getOrDefault("result", "")).toUpperCase(Locale.ROOT)
+                .contains(result.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        if (hasText(source) && !String.valueOf(row.getOrDefault("source", "")).toUpperCase(Locale.ROOT)
+                .contains(source.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        return !hasText(operator) || String.valueOf(row.getOrDefault("user", "")).toUpperCase(Locale.ROOT)
+                .contains(operator.trim().toUpperCase(Locale.ROOT));
     }
 
     private List<Map<String, Object>> fallbackAuditLogs(String bizNo) {

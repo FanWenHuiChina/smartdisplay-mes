@@ -1,10 +1,15 @@
 package com.visionox.mes.system.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.visionox.mes.auth.security.AuthContext;
 import com.visionox.mes.auth.security.AuthUser;
 import com.visionox.mes.system.audit.AuditRequestContext;
 import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.mapper.AuditLogMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,7 +18,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -92,5 +100,40 @@ class AuditLogServiceTest {
         assertThat(saved.getRequestMethod()).isEqualTo("POST");
         assertThat(saved.getRequestUri()).isEqualTo("/api/v1/orders/MO001/release");
         assertThat(saved.getClientIp()).isEqualTo("10.10.1.8");
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void pageShouldApplyAuditFiltersAndClampPageSize() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), AuditLog.class);
+
+        auditLogService.page(
+                0,
+                500,
+                "MLT",
+                "WMS",
+                "success",
+                "material",
+                "wms1001",
+                LocalDateTime.of(2026, 6, 9, 0, 0),
+                LocalDateTime.of(2026, 6, 9, 23, 59)
+        );
+
+        ArgumentCaptor<Page> pageCaptor = ArgumentCaptor.forClass(Page.class);
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(auditLogMapper).selectPage(pageCaptor.capture(), wrapperCaptor.capture());
+
+        assertThat(pageCaptor.getValue().getCurrent()).isEqualTo(1);
+        assertThat(pageCaptor.getValue().getSize()).isEqualTo(100);
+        LambdaQueryWrapper<AuditLog> wrapper = wrapperCaptor.getValue();
+        assertThat(wrapper.getSqlSegment())
+                .contains("biz_no")
+                .contains("action")
+                .contains("result")
+                .contains("source")
+                .contains("operator")
+                .contains("created_time");
+        assertThat(wrapper.getParamNameValuePairs().values())
+                .contains("%MLT%", "SUCCESS", "%material%", "%wms1001%");
     }
 }
