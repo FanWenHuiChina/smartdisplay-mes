@@ -214,7 +214,7 @@ public class PilotV1Controller {
 
     @PostMapping("/recipes/{id}/publish")
     public Result<Void> publishRecipe(@PathVariable Long id) {
-        recipeService.activateRecipe(id);
+        recipeService.publishRecipe(id);
         return Result.success();
     }
 

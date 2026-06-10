@@ -294,3 +294,14 @@
 | AI 安全边界 | AI 结果只做辅助分析，不自动 Hold、Release、停机或派工 | 已落地，输出和留痕均标记 `writeActionAllowed=false` |
 | 回归验证 | 后端全量、前端契约、生产构建和生产包扫描必须通过 | 已通过：后端 226 项、前端契约 404 项、生产包 14 个 JS 产物 clean |
 | Docker 冒烟 | Docker 运行态必须能经前端反代生成设备异常分析并查询到 AI 留痕 | 已通过：`EVAP_01` 返回 `P1/HIGH`，留痕 1 条 |
+
+## 2026-06-10 补充验收：Recipe 发布审计
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| Recipe 创建审计 | 创建 Recipe 草稿必须写 `RECIPE_CREATE`，并保存参数数量、产品、工序、设备和版本快照 | 已落地，`RecipeServiceTest` 覆盖 |
+| Recipe 发布审计 | `POST /api/v1/recipes/{id}/publish` 成功必须写 `RECIPE_PUBLISH`，不能只复用泛化激活动作 | 已落地，V1 接口已切到 `publishRecipe` |
+| 结构化快照 | 发布、激活、停用审计必须包含 `before/after/changedFields/request`，可看出 `DRAFT -> ACTIVE` 或 `ACTIVE -> INACTIVE` | 已落地，单元测试断言快照 |
+| 失败审计口径 | Recipe 发布失败必须归类到 `RECIPE_PUBLISH`，与成功审计动作一致 | 已落地，`AuditFailureResolverTest` 覆盖 |
+| 回归验证 | Recipe 定向、失败审计定向和后端全量测试必须通过 | 已通过：定向 43 项、后端全量 227 项 |
+| Docker 冒烟 | Docker 运行态必须能创建 DRAFT Recipe、发布并查询到 `RECIPE_PUBLISH` 审计 | 已通过：`RCP_AUDIT_20260610121152` 发布后管理员查询到 1 条 `RECIPE_PUBLISH`，快照含 `DRAFT -> ACTIVE` |

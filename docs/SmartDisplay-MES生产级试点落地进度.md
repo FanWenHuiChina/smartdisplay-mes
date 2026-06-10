@@ -794,3 +794,11 @@
 - 前端契约新增 AI 页设备异常分析检查，要求页面必须包含 `analyzeEquipment`、`runEquipmentAnalyze`、`ai:equipment-analyze` 权限、关联 Lot 和引用来源展示，防止后续退回 API 封装未接线状态。
 - 已验证：后端 AI/RBAC 定向 44 项通过，后端全量 226 项通过，前端契约 404 项通过，前端生产构建通过，生产包扫描 14 个 JS 产物通过。
 - 已部署到当前 Docker 运行环境：继续采用本地 jar/dist 覆盖现有容器；经 `http://127.0.0.1:8888/api` 冒烟确认 `EVAP_01` 设备异常分析返回 `riskLevel=P1`、`writeActionAllowed=false`，并写入 1 条 `EQUIPMENT_ANALYSIS` AI 留痕。
+
+## 2026-06-10 增量：Recipe 发布结构化审计
+
+- `RecipeService` 已补齐 Recipe 创建、发布、激活和停用成功审计，统一写入 `RECIPE_CREATE`、`RECIPE_PUBLISH`、`RECIPE_ACTIVATE`、`RECIPE_DEACTIVATE`，审计来源为 `recipe-service`。
+- V1 工作台接口 `POST /api/v1/recipes/{id}/publish` 已从通用激活语义切换为 `publishRecipe`，成功审计动作明确为 `RECIPE_PUBLISH`，与失败审计映射 `RECIPE_PUBLISH` 对齐。
+- Recipe 审计快照统一包含 `before`、`after`、`changedFields` 和 `request`，可在系统审计页回看发布前后的状态、操作人、产品、工序、设备、版本和请求 ID。
+- `RecipeServiceTest` 补充创建、发布、激活、停用审计断言，并覆盖重复编码、重复产品工序设备版本、缺失 Recipe 和已激活 Recipe 不写成功审计。
+- 已验证：后端 Recipe/审计定向 43 项通过，后端全量 227 项通过；本轮未改前端页面，前端工作台继续调用既有 `publishRecipe` API。

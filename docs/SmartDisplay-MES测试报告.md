@@ -452,3 +452,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
 | Docker 运行态 | 本地 jar/dist 覆盖现有 `smartdisplay-mes-api`、`smartdisplay-mes-ui` 容器 | 通过 | 三服务运行正常；完整镜像重建仍待本机 Docker 代理恢复 |
 | 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 登录 QE 后调用 `POST /api/v1/ai/equipment/analyze` | 通过 | `EVAP_01` 返回 `EQUIPMENT_ANALYSIS`、`riskLevel=P1`、`eventCount=2`、`lotCount=2`、`defectCount=7`、`writeActionAllowed=false`、`evidenceLevel=HIGH`，AI 留痕查询返回 1 条 |
+
+## 2026-06-10 Recipe 发布结构化审计复验
+
+本轮补齐计划中“Recipe 发布必须写审计”的硬性要求。V1 发布接口现在调用 `publishRecipe`，成功动作写 `RECIPE_PUBLISH`，并保存 `before/after/changedFields/request` 结构化快照；旧激活/停用接口保留 `RECIPE_ACTIVATE` 与 `RECIPE_DEACTIVATE` 审计。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 Recipe/审计定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RecipeServiceTest,AuditFailureResolverTest" test` | 通过 | 43 项通过；覆盖 Recipe 创建、发布、激活、停用成功审计和发布失败审计归类 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 227 项通过 |
+| 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` |
+| Docker 运行态 | 本地 jar 覆盖现有 `smartdisplay-mes-api` 容器并重启 | 通过 | 后端容器重启成功，Flyway 当前版本 `1.43`，前端容器无需替换 |
+| 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 创建 DRAFT Recipe、发布并查询审计 | 通过 | 创建 `RCP_AUDIT_20260610121152` 后发布成功；管理员查询 `RECIPE_PUBLISH` 返回 1 条，审计操作人为 `pe`，快照包含 `before/after`、`DRAFT -> ACTIVE` 和 `changedFields=["status","updatedBy"]` |

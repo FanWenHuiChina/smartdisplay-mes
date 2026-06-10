@@ -7,6 +7,7 @@ import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.entity.RecipeParam;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
+import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +21,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,6 +36,9 @@ class RecipeServiceTest {
     @Mock
     private RecipeParamMapper recipeParamMapper;
 
+    @Mock
+    private AuditLogService auditLogService;
+
     @InjectMocks
     private RecipeService recipeService;
 
@@ -47,6 +52,7 @@ class RecipeServiceTest {
 
         verify(recipeMapper, never()).insert(any());
         verify(recipeParamMapper, never()).insert(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -59,6 +65,7 @@ class RecipeServiceTest {
 
         verify(recipeMapper, never()).insert(any());
         verify(recipeParamMapper, never()).insert(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -94,6 +101,15 @@ class RecipeServiceTest {
         assertThat(param.getLowerLimit()).isEqualByComparingTo("60.0");
         assertThat(param.getUpperLimit()).isEqualByComparingTo("70.0");
         assertThat(param.getIsKeyParam()).isEqualTo(1);
+
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("RECIPE_CREATE"), eq("RCP-COAT-V1"), eq("RECIPE"),
+                eq("创建Recipe草稿"), eq("system"), eq("recipe-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"status\":\"DRAFT\"")
+                .contains("\"paramCount\":1")
+                .contains("\"changedFields\"");
     }
 
     @Test
@@ -127,6 +143,7 @@ class RecipeServiceTest {
                 .hasMessageContaining("100");
 
         verify(recipeMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -138,6 +155,7 @@ class RecipeServiceTest {
                 .hasMessageContaining("Recipe");
 
         verify(recipeMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -150,6 +168,20 @@ class RecipeServiceTest {
         assertThat(recipe.getStatus()).isEqualTo("ACTIVE");
         assertThat(recipe.getUpdatedBy()).isEqualTo("system");
         verify(recipeMapper).updateById(recipe);
+        verifyRecipeStatusAudit("RECIPE_ACTIVATE", "激活Recipe", "DRAFT", "ACTIVE");
+    }
+
+    @Test
+    void publishRecipeShouldSetRecipeActiveAndAuditPublishAction() {
+        Recipe recipe = recipe("RCP-COAT-V1", "V1", "DRAFT");
+        when(recipeMapper.selectById(100L)).thenReturn(recipe);
+
+        recipeService.publishRecipe(100L);
+
+        assertThat(recipe.getStatus()).isEqualTo("ACTIVE");
+        assertThat(recipe.getUpdatedBy()).isEqualTo("system");
+        verify(recipeMapper).updateById(recipe);
+        verifyRecipeStatusAudit("RECIPE_PUBLISH", "发布Recipe版本", "DRAFT", "ACTIVE");
     }
 
     @Test
@@ -162,6 +194,7 @@ class RecipeServiceTest {
         assertThat(recipe.getStatus()).isEqualTo("INACTIVE");
         assertThat(recipe.getUpdatedBy()).isEqualTo("system");
         verify(recipeMapper).updateById(recipe);
+        verifyRecipeStatusAudit("RECIPE_DEACTIVATE", "停用Recipe", "ACTIVE", "INACTIVE");
     }
 
     private RecipeCreateRequest createRequest() {
@@ -202,5 +235,16 @@ class RecipeServiceTest {
         recipe.setRecipeVersion(version);
         recipe.setStatus(status);
         return recipe;
+    }
+
+    private void verifyRecipeStatusAudit(String action, String description, String beforeStatus, String afterStatus) {
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq(action), eq("RCP-COAT-V1"), eq("RECIPE"),
+                eq(description), eq("system"), eq("recipe-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"status\":\"" + beforeStatus + "\"")
+                .contains("\"status\":\"" + afterStatus + "\"")
+                .contains("\"changedFields\":[\"status\",\"updatedBy\"]")
+                .contains("\"request\":{\"id\":100}");
     }
 }

@@ -1,5 +1,6 @@
 package com.visionox.mes.recipe.service;
 
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -12,13 +13,17 @@ import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.entity.RecipeParam;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
+import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -36,6 +41,7 @@ public class RecipeService {
 
     private final RecipeMapper recipeMapper;
     private final RecipeParamMapper recipeParamMapper;
+    private final AuditLogService auditLogService;
 
     /**
      * 创建Recipe
@@ -83,6 +89,8 @@ public class RecipeService {
                 .collect(Collectors.toList());
 
         params.forEach(recipeParamMapper::insert);
+        audit("RECIPE_CREATE", recipe.getRecipeCode(), "创建Recipe草稿",
+                auditSnapshot(null, recipeSnapshot(recipe), createRequestSnapshot(request, params.size())));
 
         log.info("Recipe创建成功, ID: {}", recipe.getId());
         return recipe.getId();
@@ -173,6 +181,18 @@ public class RecipeService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void activateRecipe(Long id) {
+        activateRecipe(id, "RECIPE_ACTIVATE", "激活Recipe");
+    }
+
+    /**
+     * 发布Recipe版本。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void publishRecipe(Long id) {
+        activateRecipe(id, "RECIPE_PUBLISH", "发布Recipe版本");
+    }
+
+    private void activateRecipe(Long id, String auditAction, String actionLabel) {
         Recipe recipe = recipeMapper.selectById(id);
         if (recipe == null) {
             throw new BusinessException("Recipe不存在: " + id);
@@ -182,9 +202,12 @@ public class RecipeService {
             throw new BusinessException("Recipe已经是激活状态");
         }
 
+        Map<String, Object> before = recipeSnapshot(recipe);
         recipe.setStatus("ACTIVE");
         recipe.setUpdatedBy(AuthContext.username());
         recipeMapper.updateById(recipe);
+        audit(auditAction, recipe.getRecipeCode(), actionLabel,
+                auditSnapshot(before, recipeSnapshot(recipe), Map.of("id", id)));
 
         log.info("Recipe已激活: {}", recipe.getRecipeCode());
     }
@@ -199,10 +222,69 @@ public class RecipeService {
             throw new BusinessException("Recipe不存在: " + id);
         }
 
+        Map<String, Object> before = recipeSnapshot(recipe);
         recipe.setStatus("INACTIVE");
         recipe.setUpdatedBy(AuthContext.username());
         recipeMapper.updateById(recipe);
+        audit("RECIPE_DEACTIVATE", recipe.getRecipeCode(), "停用Recipe",
+                auditSnapshot(before, recipeSnapshot(recipe), Map.of("id", id)));
 
         log.info("Recipe已停用: {}", recipe.getRecipeCode());
+    }
+
+    private void audit(String action, String bizNo, String description, String requestSnapshot) {
+        try {
+            auditLogService.record(action, bizNo, "RECIPE", description, AuthContext.username(),
+                    "recipe-service", requestSnapshot);
+        } catch (Exception e) {
+            log.warn("Recipe审计写入失败，已降级不阻断主流程: action={}, bizNo={}, reason={}",
+                    action, bizNo, e.getMessage());
+        }
+    }
+
+    private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("before", before == null ? Map.of() : before);
+        snapshot.put("after", after == null ? Map.of() : after);
+        snapshot.put("changedFields", changedFields(before, after));
+        snapshot.put("request", request == null ? Map.of() : request);
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private List<String> changedFields(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> safeBefore = before == null ? Map.of() : before;
+        Map<String, Object> safeAfter = after == null ? Map.of() : after;
+        return safeAfter.keySet().stream()
+                .filter(key -> !Objects.equals(safeBefore.get(key), safeAfter.get(key)))
+                .sorted()
+                .toList();
+    }
+
+    private Map<String, Object> recipeSnapshot(Recipe recipe) {
+        if (recipe == null) {
+            return null;
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("id", recipe.getId());
+        snapshot.put("recipeCode", recipe.getRecipeCode());
+        snapshot.put("recipeName", recipe.getRecipeName());
+        snapshot.put("productCode", recipe.getProductCode());
+        snapshot.put("stepCode", recipe.getStepCode());
+        snapshot.put("equipmentCode", recipe.getEquipmentCode());
+        snapshot.put("recipeVersion", recipe.getRecipeVersion());
+        snapshot.put("status", recipe.getStatus());
+        snapshot.put("updatedBy", recipe.getUpdatedBy());
+        return snapshot;
+    }
+
+    private Map<String, Object> createRequestSnapshot(RecipeCreateRequest request, int paramCount) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("recipeCode", request.getRecipeCode());
+        snapshot.put("productCode", request.getProductCode());
+        snapshot.put("stepCode", request.getStepCode());
+        snapshot.put("equipmentCode", request.getEquipmentCode());
+        snapshot.put("recipeVersion", request.getRecipeVersion());
+        snapshot.put("paramCount", paramCount);
+        return snapshot;
     }
 }
