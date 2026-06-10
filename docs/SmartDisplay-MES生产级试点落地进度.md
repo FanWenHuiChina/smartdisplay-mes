@@ -817,3 +817,11 @@
 - 新增 Flyway `V1.45__Enforce_Single_Active_Route.sql`，迁移时先按 `updated_time/effective_time/created_time + route_version + id` 保留每个产品最新一条 `ACTIVE`，再创建部分唯一索引 `uk_route_single_active_product`，数据库侧兜底同产品单一 `ACTIVE`。
 - `init.sql` 已同步补齐 `uk_route_single_active_product`，保证新库初始化时就具备 Route 生效唯一性约束。
 - 已验证：Route 定向测试 9 项通过，后端全量 230 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.45`；`/api/v1/routes` 返回 `AMOLED_65` 与 `AMOLED_67` 各一条 ACTIVE Route；数据库插入同产品第二条 ACTIVE Route 被唯一索引拒绝。
+
+## 2026-06-10 增量：BOM 单一生效版本治理
+
+- `MaterialService.activeBom` 已从“多条 ACTIVE 时按生效时间取第一条”改为显式拒绝，返回“产品存在多条生效BOM，请先完成版本治理”，避免工单释放和 Track In 物料齐套校验读取到不确定 BOM。
+- `MaterialService.publishBomChange` 发布目标 BOM 时会自动停用同产品旧 `ACTIVE` BOM，并写 `BOM_AUTO_DEACTIVATE` 审计；`BOM_PUBLISH` 快照新增 `singleActiveContext`、`replacedActiveCount` 和 `replacedActiveBoms`，可追溯本次发布替换了哪些旧版本。
+- 新增 Flyway `V1.46__Enforce_Single_Active_Bom.sql`，迁移时先按 `updated_time/effective_time/created_time + bom_version + id` 保留每个产品最新一条 `ACTIVE`，再创建部分唯一索引 `uk_bom_single_active_product`，数据库侧兜底同产品单一 `ACTIVE`。
+- `init.sql` 已同步补齐 `uk_bom_single_active_product`，保证新库初始化时就具备 BOM 生效唯一性约束。
+- 已验证：Material 定向测试 44 项通过，后端全量 231 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.46`；当前数据库不存在同产品多条 ACTIVE BOM；数据库插入同产品第二条 ACTIVE BOM 被唯一索引拒绝。

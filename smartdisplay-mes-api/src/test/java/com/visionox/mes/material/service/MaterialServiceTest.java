@@ -127,7 +127,7 @@ class MaterialServiceTest {
     @Test
     void validateReadinessShouldRejectWhenActiveBomIsMissing() {
         Lot lot = lot();
-        when(bomMapper.selectOne(any())).thenReturn(null);
+        when(bomMapper.selectList(any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> materialService.validateReadiness(lot, "COATING"))
                 .isInstanceOf(BusinessException.class)
@@ -138,9 +138,27 @@ class MaterialServiceTest {
     }
 
     @Test
+    void validateReadinessShouldRejectWhenMultipleActiveBomsExist() {
+        Lot lot = lot();
+        Bom v1 = activeBom();
+        Bom v2 = activeBom(11L, "BOM-OLED-02", "V02", "ACTIVE");
+        when(bomMapper.selectList(any())).thenReturn(List.of(v2, v1));
+
+        assertThatThrownBy(() -> materialService.validateReadiness(lot, "COATING"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("多条生效BOM")
+                .hasMessageContaining("OLED_PANEL")
+                .hasMessageContaining("BOM-OLED-01")
+                .hasMessageContaining("BOM-OLED-02");
+
+        verify(bomItemMapper, never()).selectList(any());
+        verify(batchMapper, never()).selectList(any());
+    }
+
+    @Test
     void validateReadinessShouldRejectWhenRequiredKeyMaterialHasNoAvailableBatch() {
         Lot lot = lot();
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(bomItem("PI_INK", "PI液", "COATING", "0.5")));
         when(batchMapper.selectList(any())).thenReturn(List.of());
 
@@ -156,7 +174,7 @@ class MaterialServiceTest {
         Lot lot = lot();
         MaterialBatch batch = batch("PI_INK_B001", "100", "0", "0", "AVAILABLE");
         when(loadingMapper.selectCount(any())).thenReturn(0L);
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(bomItem("PI_INK", "PI液", "COATING", "0.5")));
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK"), any(), any())).thenReturn(batch);
 
@@ -202,7 +220,7 @@ class MaterialServiceTest {
         substituteBatch.setMaterialName("PI替代液");
 
         when(loadingMapper.selectCount(any())).thenReturn(0L);
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(primary, substitute));
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK"), any(), any())).thenReturn(null);
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK_ALT"), any(), any())).thenReturn(substituteBatch);
@@ -310,10 +328,7 @@ class MaterialServiceTest {
     @Test
     void reviewAndPublishBomChangeShouldActivateTargetAndDisableOldActiveBom() {
         BomChangeRequest change = bomChange("BCR001", "APPROVED");
-        Bom target = activeBom();
-        target.setId(20L);
-        target.setBomCode("BOM-OLED-02");
-        target.setBomVersion("V02");
+        Bom target = activeBom(20L, "BOM-OLED-02", "V02", "DRAFT");
         target.setStatus("DRAFT");
         Bom oldActive = activeBom();
         oldActive.setId(10L);
@@ -331,7 +346,23 @@ class MaterialServiceTest {
         verify(bomMapper).updateById(oldActive);
         verify(bomMapper).updateById(target);
         verify(bomChangeRequestMapper).updateById(change);
-        verify(auditLogService).record(eq("BOM_PUBLISH"), eq("BOM-OLED-02"), eq("BOM"), any(), eq("pe1001"), eq("material-service"), any());
+
+        ArgumentCaptor<String> actionCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bizNoCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService, times(2)).record(actionCaptor.capture(), bizNoCaptor.capture(), eq("BOM"),
+                any(), eq("pe1001"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(actionCaptor.getAllValues()).containsExactly("BOM_AUTO_DEACTIVATE", "BOM_PUBLISH");
+        assertThat(bizNoCaptor.getAllValues()).containsExactly("BOM-OLED-01", "BOM-OLED-02");
+        assertThat(snapshotCaptor.getAllValues().get(0))
+                .contains("\"triggerBomCode\":\"BOM-OLED-02\"")
+                .contains("\"status\":\"ACTIVE\"")
+                .contains("\"status\":\"INACTIVE\"");
+        assertThat(snapshotCaptor.getAllValues().get(1))
+                .contains("\"replacedActiveCount\":1")
+                .contains("\"replacedActiveBoms\"")
+                .contains("\"bomCode\":\"BOM-OLED-01\"")
+                .contains("\"singleActiveContext\"");
     }
 
     @Test
@@ -1344,11 +1375,16 @@ class MaterialServiceTest {
     }
 
     private Bom activeBom() {
+        return activeBom(10L, "BOM-OLED-01", "V01", "ACTIVE");
+    }
+
+    private Bom activeBom(Long id, String bomCode, String bomVersion, String status) {
         Bom bom = new Bom();
-        bom.setId(10L);
-        bom.setBomCode("BOM-OLED-01");
+        bom.setId(id);
+        bom.setBomCode(bomCode);
+        bom.setBomVersion(bomVersion);
         bom.setProductCode("OLED_PANEL");
-        bom.setStatus("ACTIVE");
+        bom.setStatus(status);
         return bom;
     }
 

@@ -575,6 +575,8 @@ CREATE TABLE IF NOT EXISTS md_bom (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_bom_product_version
 ON md_bom(product_code, bom_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bom_single_active_product
+ON md_bom(product_code) WHERE deleted = 0 AND status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_bom_product_status ON md_bom(product_code, status);
 
 CREATE TABLE IF NOT EXISTS md_bom_item (

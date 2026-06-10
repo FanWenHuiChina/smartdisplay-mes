@@ -410,16 +410,21 @@ public class MaterialService {
             throw new BusinessException("目标BOM不存在: " + change.getTargetBomCode());
         }
 
+        String publisher = text(request, "publisher", AuthContext.username());
+        Map<String, Object> targetBefore = bomSnapshot(targetBom);
         List<Bom> activeBoms = bomMapper.selectList(new LambdaQueryWrapper<Bom>()
                 .eq(Bom::getProductCode, targetBom.getProductCode())
                 .eq(Bom::getStatus, "ACTIVE"));
+        List<BomStatusChange> replacedChanges = new ArrayList<>();
         for (Bom active : activeBoms) {
             if (active.getId() != null && active.getId().equals(targetBom.getId())) {
                 continue;
             }
+            Map<String, Object> before = bomSnapshot(active);
             active.setStatus("INACTIVE");
             active.setUpdatedTime(LocalDateTime.now());
             bomMapper.updateById(active);
+            replacedChanges.add(new BomStatusChange(before, bomSnapshot(active)));
         }
 
         targetBom.setStatus("ACTIVE");
@@ -427,14 +432,24 @@ public class MaterialService {
         targetBom.setUpdatedTime(targetBom.getEffectiveTime());
         bomMapper.updateById(targetBom);
 
+        replacedChanges.forEach(changeSnapshot -> audit("BOM_AUTO_DEACTIVATE",
+                String.valueOf(changeSnapshot.after().get("bomCode")),
+                "BOM",
+                "自动停用同产品旧版BOM trigger=" + targetBom.getBomCode(),
+                publisher,
+                auditSnapshot(changeSnapshot.before(), changeSnapshot.after(),
+                        autoDeactivateBomRequest(targetBom, changeNo))));
+
         change.setStatus("PUBLISHED");
-        change.setPublishedBy(text(request, "publisher", AuthContext.username()));
+        change.setPublishedBy(publisher);
         change.setPublishedTime(LocalDateTime.now());
         change.setUpdatedTime(change.getPublishedTime());
         bomChangeRequestMapper.updateById(change);
 
         audit("BOM_PUBLISH", targetBom.getBomCode(), "BOM",
-                "BOM发布 changeNo=" + changeNo + ", product=" + targetBom.getProductCode(), change.getPublishedBy());
+                "BOM发布 changeNo=" + changeNo + ", product=" + targetBom.getProductCode(), change.getPublishedBy(),
+                auditSnapshot(targetBefore, bomSnapshot(targetBom),
+                        publishBomRequest(changeNo, publisher, targetBom, replacedChanges)));
         return change;
     }
 
@@ -1657,12 +1672,22 @@ public class MaterialService {
     }
 
     private Bom activeBom(String productCode) {
-        return bomMapper.selectOne(new LambdaQueryWrapper<Bom>()
+        List<Bom> activeBoms = bomMapper.selectList(new LambdaQueryWrapper<Bom>()
                 .eq(Bom::getProductCode, productCode)
                 .eq(Bom::getStatus, "ACTIVE")
                 .orderByDesc(Bom::getEffectiveTime)
-                .orderByDesc(Bom::getId)
-                .last("LIMIT 1"));
+                .orderByDesc(Bom::getId));
+        if (activeBoms == null || activeBoms.isEmpty()) {
+            return null;
+        }
+        if (activeBoms.size() > 1) {
+            String bomCodes = activeBoms.stream()
+                    .map(Bom::getBomCode)
+                    .collect(Collectors.joining(","));
+            throw new BusinessException("产品存在多条生效BOM，请先完成版本治理: product="
+                    + productCode + ", boms=" + bomCodes);
+        }
+        return activeBoms.get(0);
     }
 
     private MaterialBatch findAvailableBatch(String materialCode, BigDecimal requiredQty) {
@@ -1826,6 +1851,52 @@ public class MaterialService {
         row.put("status", bom.getStatus());
         row.put("items", items.stream().map(this::bomItemSnapshot).collect(Collectors.toList()));
         return row;
+    }
+
+    private Map<String, Object> bomSnapshot(Bom bom) {
+        if (bom == null) {
+            return null;
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("id", bom.getId());
+        snapshot.put("bomCode", bom.getBomCode());
+        snapshot.put("bomName", bom.getBomName());
+        snapshot.put("productCode", bom.getProductCode());
+        snapshot.put("bomVersion", bom.getBomVersion());
+        snapshot.put("status", bom.getStatus());
+        snapshot.put("effectiveTime", bom.getEffectiveTime());
+        return snapshot;
+    }
+
+    private Map<String, Object> publishBomRequest(String changeNo,
+                                                  String publisher,
+                                                  Bom targetBom,
+                                                  List<BomStatusChange> replacedChanges) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("changeNo", changeNo);
+        request.put("publisher", publisher);
+        request.put("singleActiveContext", singleActiveBomContext(targetBom));
+        request.put("replacedActiveCount", replacedChanges.size());
+        request.put("replacedActiveBoms", replacedChanges.stream()
+                .map(BomStatusChange::before)
+                .toList());
+        return request;
+    }
+
+    private Map<String, Object> autoDeactivateBomRequest(Bom triggerBom, String changeNo) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("changeNo", changeNo);
+        request.put("triggerBomId", triggerBom.getId());
+        request.put("triggerBomCode", triggerBom.getBomCode());
+        request.put("triggerBomVersion", triggerBom.getBomVersion());
+        request.put("singleActiveContext", singleActiveBomContext(triggerBom));
+        return request;
+    }
+
+    private Map<String, Object> singleActiveBomContext(Bom bom) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("productCode", bom.getProductCode());
+        return context;
     }
 
     private Map<String, Object> bomItemSnapshot(BomItem item) {
@@ -3661,5 +3732,8 @@ public class MaterialService {
 
     private record QualificationDecision(String status, String riskLevel, double score, double passRate,
                                          int nextAuditDays, String reason) {
+    }
+
+    private record BomStatusChange(Map<String, Object> before, Map<String, Object> after) {
     }
 }

@@ -326,3 +326,16 @@
 | 历史数据收敛 | 对已有多条 `ACTIVE` Route 的库，迁移必须先保留最新一条并停用其他版本，避免建索引失败 | 已落地，迁移按更新时间、生效时间、版本和 ID 排序收敛 |
 | 回归验证 | Route 定向和后端全量测试必须通过 | 已通过：Route 定向 9 项、后端全量 230 项 |
 | Docker 冒烟 | Docker 运行态必须完成 V1.45 迁移，并验证 API 与唯一索引 | 已通过：`/api/v1/routes` 每产品仅返回一条 ACTIVE；插入同产品第二条 ACTIVE 被唯一索引拒绝 |
+
+## 2026-06-10 补充验收：BOM 单一生效版本治理
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 单一 ACTIVE 业务规则 | 同一产品任意时刻只能有一个 `ACTIVE` BOM，工单释放和物料齐套校验不能依赖歧义 BOM | 已落地，服务层发现多条 `ACTIVE` 时明确拒绝 |
+| 发布自动停用旧版 | 新 BOM 发布后必须自动停用同产品旧 `ACTIVE` BOM，避免人工遗漏导致多版本并存 | 已落地，`publishBomChange` 自动置旧版为 `INACTIVE` |
+| 自动停用审计 | 自动停用旧版 BOM 必须能追溯触发变更单、触发 BOM 和单一生效上下文 | 已落地，写 `BOM_AUTO_DEACTIVATE`，快照包含触发 BOM 和 `productCode` |
+| 发布替换快照 | `BOM_PUBLISH` 审计必须能看出本次发布替换了多少旧版本、替换了哪些 BOM | 已落地，快照包含 `singleActiveContext`、`replacedActiveCount`、`replacedActiveBoms` |
+| 数据库一致性 | 即使绕过服务层，也不能在未删除数据中产生同产品多条 `ACTIVE` BOM | 已落地，`V1.46__Enforce_Single_Active_Bom.sql` 创建 `uk_bom_single_active_product` |
+| 历史数据收敛 | 对已有多条 `ACTIVE` BOM 的库，迁移必须先保留最新一条并停用其他版本，避免建索引失败 | 已落地，迁移按更新时间、生效时间、版本和 ID 排序收敛 |
+| 回归验证 | Material 定向和后端全量测试必须通过 | 已通过：Material 定向 44 项、后端全量 231 项 |
+| Docker 冒烟 | Docker 运行态必须完成 V1.46 迁移，并验证数据库唯一索引 | 已通过：`flyway_schema_history` 记录 `version=1.46`；插入同产品第二条 ACTIVE BOM 被唯一索引拒绝 |

@@ -489,3 +489,16 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.44` 迁移到 `1.45 - Enforce Single Active Route`；数据库记录 `version=1.45, success=t` |
 | Route API 冒烟 | 经 `http://127.0.0.1:8888/api/v1/routes` 查询生效路线 | 通过 | 返回 `AMOLED_65/RTE_G6_AMOLED65_V08` 和 `AMOLED_67/RTE_G6_AMOLED67_V05`，每个产品仅一条 `ACTIVE` |
 | 数据库约束冒烟 | 在事务中尝试插入 `AMOLED_65` 第二条 `ACTIVE` Route | 通过 | PostgreSQL 返回 `duplicate key value violates unique constraint "uk_route_single_active_product"`，证明数据库侧兜底生效 |
+
+## 2026-06-10 BOM 单一生效版本治理复验
+
+本轮补齐 BOM 版本确定性：同一产品只能存在一条 `ACTIVE` BOM。物料齐套校验读取生效 BOM 时，如果发现同产品多条 `ACTIVE`，不再按时间排序静默取第一条，而是明确返回业务异常，避免工单释放和 Track In 物料锁定依赖歧义 BOM。BOM 发布目标版本时会自动停用同产品旧 `ACTIVE` BOM，并写 `BOM_AUTO_DEACTIVATE` 审计；发布审计 `BOM_PUBLISH` 同时记录 `singleActiveContext`、`replacedActiveCount` 和 `replacedActiveBoms`。数据库侧新增 `V1.46__Enforce_Single_Active_Bom.sql`，先收敛历史重复生效 BOM，再创建部分唯一索引 `uk_bom_single_active_product`。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 Material 定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest" test` | 通过 | 44 项通过；新增覆盖多条 `ACTIVE` BOM 拒绝、发布新版本自动停用旧 BOM 和发布替换快照 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 231 项通过 |
+| 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成并覆盖 Docker 后端容器中的 `app.jar` |
+| Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.45` 迁移到 `1.46 - Enforce Single Active Bom`；数据库记录 `version=1.46, success=t` |
+| 数据库状态检查 | 查询 `pg_indexes` 和重复 `ACTIVE` BOM 分组 | 通过 | `uk_bom_single_active_product` 已存在；当前数据库不存在同产品多条 `ACTIVE` BOM |
+| 数据库约束冒烟 | 在异常捕获块中尝试插入 `AMOLED_65` 第二条 `ACTIVE` BOM | 通过 | PostgreSQL 返回 `duplicate key value violates unique constraint "uk_bom_single_active_product"`，证明数据库侧兜底生效 |
