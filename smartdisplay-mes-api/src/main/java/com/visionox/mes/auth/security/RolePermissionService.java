@@ -92,6 +92,12 @@ public class RolePermissionService {
         if (path.startsWith("/v1/orders") || path.startsWith("/orders")) {
             return path.contains("/release") ? buttons.contains("order:release") : buttons.contains("order:create");
         }
+        if (path.contains("/batch-hold")) {
+            return buttons.contains("lot:hold");
+        }
+        if (path.contains("/batch-release")) {
+            return buttons.contains("lot:release");
+        }
         if (path.contains("/track-in")) {
             return buttons.contains("lot:track-in");
         }

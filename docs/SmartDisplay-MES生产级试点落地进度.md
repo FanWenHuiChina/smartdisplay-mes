@@ -19,7 +19,7 @@
   - Auth/System：`POST /api/v1/auth/login`、`GET /api/v1/system/users`、`GET /api/v1/system/audit-logs`。
   - Master：`/api/v1/master/products`、`/api/v1/master/process-steps`、`/api/v1/master/equipments`、`/api/v1/master/defect-codes`。
   - Route/BOM/Recipe：`/api/v1/routes`、`/api/v1/boms`、`/api/v1/boms/change-requests`、`/api/v1/boms/eco-approvals`、`POST /api/v1/boms/eco-approvals/{taskNo}/decision`、`POST /api/v1/boms/change-requests/{changeNo}/review`、`POST /api/v1/boms/change-requests/{changeNo}/publish`、`/api/v1/recipes`、`POST /api/v1/recipes/{id}/publish`。
-  - Order/Lot/Execution：`/api/v1/orders`、`GET /api/v1/orders/{orderNo}/release-checks`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、`GET /api/v1/lots/{lotNo}/track-in-checks`、Track In/Out、Hold、Release、Rework、Scrap。
+  - Order/Lot/Execution：`/api/v1/orders`、`GET /api/v1/orders/{orderNo}/release-checks`、`POST /api/v1/orders/{orderNo}/release`、`/api/v1/lots`、`POST /api/v1/lots/batch-hold`、`POST /api/v1/lots/batch-release`、`GET /api/v1/lots/{lotNo}/track-in-checks`、Track In/Out、Hold、Release、Rework、Scrap。
   - ERP Adapter：`POST /api/v1/adapters/erp/orders`，支持模拟 ERP 工单数组下发和 `count=1000` 批量生成试点工单。
   - Quality/Exception：`/api/v1/quality/inspections`、`/api/v1/quality/exceptions`、`/api/v1/quality/exceptions/{eventNo}/mrb-records`、`/api/v1/quality/mrb-records/{mrbNo}/minutes`、`/api/v1/quality/mrb-approvals`、`POST /api/v1/quality/mrb-approvals/refresh-sla`。
   - Equipment/EAP：`/api/v1/equipment/events`、`POST /api/v1/equipment/events`、`POST /api/v1/equipment/events/{eventNo}/close`、`/api/v1/equipment/oee`、`/api/v1/equipment/status-history`、`POST /api/v1/equipment/status/report`、`/api/v1/equipment/cycle-samples`、`POST /api/v1/equipment/cycle-samples/report`、`/api/v1/equipment/standard-cycles`、`POST /api/v1/equipment/standard-cycles`、`/api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways`、`POST /api/v1/equipment/gateways/{gatewayCode}/heartbeat`、`POST /api/v1/equipment/gateways/{gatewayCode}/health-check`、`/api/v1/equipment/gateway-health-checks`、`/api/v1/equipment/gateway-drivers`、`/api/v1/equipment/gateway-messages`、`/api/v1/equipment/parameters`、`POST /api/v1/equipment/parameters/report`、`/api/v1/equipment/pm-tasks`、`POST /api/v1/equipment/pm-tasks/{taskNo}/complete`、`/api/v1/equipment/recipe-downloads`、`POST /api/v1/equipment/recipe-downloads`、`POST /api/v1/adapters/eap/messages`。
@@ -78,7 +78,7 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 406 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 413 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - OpenAPI/Swagger 合同回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` 通过，`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；Docker 后端覆盖新 jar 并重启后，`GET http://127.0.0.1:8080/api/v3/api-docs/pilot-v1` 已验证 title、server、JWT Bearer、`Result/PageResult` schema、标准错误响应、`/v1/lots` 路径、登录免鉴权和 Lot 列表鉴权均符合预期。
 - 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
@@ -98,7 +98,7 @@
 
 ## 仍未达到生产级落地标准的缺口
 
-- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 已写入 `before/after/changedFields/request` 结构化差异快照；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出；批量操作差异快照和新增写接口审计映射仍需持续治理。
+- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Lot 批量 Hold/Release、Rework/Scrap 已写入结构化快照或批量汇总快照；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出；后续新增批量写接口的差异快照和失败审计映射仍需持续治理。
 - 质量：基础检验、缺陷、异常事件、NG/参数超限自动 Hold、MRB复判、异常关闭、结构化处置结论、MRB履历、会议号、参与人、审批状态、附件元数据、会议纪要正文版本管理、多角色会签待办、按角色/风险/处置动作的审批 SLA、逾期升级策略和关闭前会签校验已落地。
 - 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取、复核和多库位拆批任务。
 - 设备：设备主数据、能力矩阵、事件队列、EAP 参数采样、参数越限自动设备事件、PM任务、Recipe下发/回读命令履历、事件关闭、OEE拆解、停机原因TopN、设备状态历史、标准/实际节拍采样、标准节拍主数据、EAP 统一适配器、网关连接配置、协议驱动抽象、网关心跳、健康检查和消息履历已落地；仍缺真实 SECS/GEM、OPC UA、厂商 HTTP 驱动真机联调和毫秒级设备状态采集。
@@ -115,7 +115,7 @@
 2. 在固定硬件和更接近试点数据规模下持续采集性能趋势，并将手动基线结果纳入交付复验归档。
 3. 继续推进真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动适配、真机联调和毫秒级设备状态采集。
 4. 继续推进真实 pgvector 向量检索、真实外部模型联调、引用召回率评估和 AI 安全评审，形成生产级试点验收报告。
-5. 继续推进供应商门户协同、多库位拆批任务和更严格的批量操作差异快照治理。
+5. 继续推进供应商门户协同、多库位拆批任务，以及 Lot 批量处置之外的其他批量写接口差异快照治理。
 
 ## 2026-06-09 增量：CI 浏览器 E2E 交付门禁
 
@@ -873,3 +873,13 @@
 - 浏览器 E2E 同时校验消息详情接口和审计：`processStatus=FAILED`、`diagnostic.failureCategory=PROTOCOL_FRAME`、原始快照/响应快照存在，并命中 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 审计。
 - 修正质量页 E2E 与当前双来源表单的行为偏差：提交 QMS Adapter OK 上报前显式选择 `来源=QMS`，避免默认 `MES 手工录入` 模式导致按钮文案不一致。
 - 已验证：`node --check smartdisplay-mes-ui/scripts/run-browser-e2e.mjs` 通过，`npm.cmd run verify:frontend-contract` 406 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`npm.cmd run e2e:browser` 在当前 Docker 前端 `http://127.0.0.1:8888` 通过 20 步，报告 `docs/SmartDisplay-MES-browser-e2e-20260610-182527.md/json`。
+
+## 2026-06-10 增量：Lot 批量 Hold/Release
+
+- V1 新增 `POST /api/v1/lots/batch-hold` 和 `POST /api/v1/lots/batch-release`，单次最多 50 个 Lot，支持 `lotNos`、逗号分隔字符串或兼容字段 `lots` 输入。
+- 批量接口逐 Lot 调用既有 `hold()` / `release()`，保留单 Lot 状态机、Hold 记录和 `LOT_HOLD` / `LOT_RELEASE` 审计；某个 Lot 失败时仅写入该 Lot 失败结果，不影响同批其他 Lot 继续执行。
+- 批量层额外写入 `LOT_BATCH_HOLD` / `LOT_BATCH_RELEASE` 汇总审计，快照包含原始请求、批次号、总数、成功数、失败数、Lot 清单和逐 Lot 结果，解决批量操作只有单条动作、缺少整批留痕的问题。
+- RBAC 已补齐 `/batch-hold` 和 `/batch-release` 路径权限，质量工程师可执行批量 Hold/Release，操作员仍不能越权执行批量质量处置；失败审计映射已补齐两个批量路径。
+- Lot 管理页新增多选列、当前筛选页全选、已选/可 Hold/可放行统计、批量 Hold 和批量放行按钮，以及批量结果回显；操作后刷新真实后端列表。
+- 前端契约脚本新增 `batchHoldLots`、`batchReleaseLots` API 和 Lot 页批量处置接线检查，防止页面退回只支持单 Lot 处置。
+- 已验证：`PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 86 项通过，`npm.cmd run verify:frontend-contract` 413 项通过，`npm.cmd run build` 通过。

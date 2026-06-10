@@ -10,6 +10,8 @@
         <button v-if="hasAnyTrackIn" class="mes-btn primary" :disabled="!firstTrackInLot" @click="openTrackIn(firstTrackInLot)">Track In</button>
         <button v-if="hasAnyTrackOut" class="mes-btn primary" :disabled="!firstProcessingLot" @click="openTrackOut(firstProcessingLot)">Track Out</button>
         <button v-if="hasAnyHold" class="mes-btn warn" :disabled="!firstHoldableLot" @click="openHold(firstHoldableLot)">Hold</button>
+        <button v-if="hasAnyHold" class="mes-btn" :disabled="batchOperating || !batchHoldableLots.length" @click="submitBatchHold">批量Hold</button>
+        <button v-if="hasAnyRelease" class="mes-btn" :disabled="batchOperating || !batchReleasableLots.length" @click="submitBatchRelease">批量放行</button>
       </div>
     </div>
 
@@ -55,9 +57,21 @@
           </button>
         </div>
 
+        <div class="batch-toolbar">
+          <span class="status-tag blue">已选 {{ selectedLots.length }}</span>
+          <span class="status-tag amber">可Hold {{ batchHoldableLots.length }}</span>
+          <span class="status-tag green">可放行 {{ batchReleasableLots.length }}</span>
+          <span v-if="batchActionResult" class="status-tag" :class="batchActionResult.failedCount > 0 ? 'amber' : 'green'">
+            {{ batchActionResult.batchNo }} 成功 {{ batchActionResult.successCount }}/{{ batchActionResult.total }}
+          </span>
+        </div>
+
         <table class="mes-table lot-table">
           <thead>
             <tr>
+              <th class="select-col">
+                <input type="checkbox" :checked="allDisplaySelected" @change="toggleAllDisplay($event.target.checked)" />
+              </th>
               <th>Lot</th>
               <th>产品</th>
               <th>工序</th>
@@ -76,6 +90,14 @@
               :class="{ danger: isHeld(lot), selected: selectedLot?.lotNo === lot.lotNo }"
               @click="selectedLot = lot"
             >
+              <td class="select-col">
+                <input
+                  type="checkbox"
+                  :checked="selectedLotNos.includes(lot.lotNo)"
+                  @click.stop
+                  @change="toggleLotSelection(lot.lotNo, $event.target.checked)"
+                />
+              </td>
               <td>{{ lot.lotNo }}</td>
               <td>{{ lot.productCode || '-' }}</td>
               <td>{{ lot.currentStepCode || '-' }}</td>
@@ -100,7 +122,7 @@
               </td>
             </tr>
             <tr v-if="!displayLots.length">
-              <td colspan="9">没有符合条件的 Lot</td>
+              <td colspan="10">没有符合条件的 Lot</td>
             </tr>
           </tbody>
         </table>
@@ -130,8 +152,8 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getLotList } from '@/api/lot'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { batchHoldLots, batchReleaseLots, getLotList } from '@/api/lot'
 import { hasButton } from '@/utils/permissions'
 import HoldDialog from './components/HoldDialog.vue'
 import ReleaseDialog from './components/ReleaseDialog.vue'
@@ -145,6 +167,9 @@ const statusOptions = ['CREATED', 'READY', 'PROCESSING', 'HOLD', 'COMPLETED', 'R
 const loading = ref(false)
 const lotList = ref([])
 const selectedLot = ref(null)
+const selectedLotNos = ref([])
+const batchOperating = ref(false)
+const batchActionResult = ref(null)
 const trackInVisible = ref(false)
 const trackOutVisible = ref(false)
 const holdVisible = ref(false)
@@ -168,6 +193,7 @@ const pagination = reactive({
 const hasAnyTrackIn = computed(() => hasButton('lot:track-in'))
 const hasAnyTrackOut = computed(() => hasButton('lot:track-out'))
 const hasAnyHold = computed(() => hasButton('lot:hold'))
+const hasAnyRelease = computed(() => hasButton('lot:release'))
 const stepOptions = computed(() => [...new Set(lotList.value.map(lot => lot.currentStepCode).filter(Boolean))])
 const displayLots = computed(() => {
   const product = queryForm.productCode.trim().toLowerCase()
@@ -182,6 +208,10 @@ const displayLots = computed(() => {
 const firstTrackInLot = computed(() => displayLots.value.find(canTrackIn))
 const firstProcessingLot = computed(() => displayLots.value.find(canTrackOut))
 const firstHoldableLot = computed(() => displayLots.value.find(canHold))
+const selectedLots = computed(() => displayLots.value.filter(lot => selectedLotNos.value.includes(lot.lotNo)))
+const batchHoldableLots = computed(() => selectedLots.value.filter(canHold))
+const batchReleasableLots = computed(() => selectedLots.value.filter(canRelease))
+const allDisplaySelected = computed(() => displayLots.value.length > 0 && displayLots.value.every(lot => selectedLotNos.value.includes(lot.lotNo)))
 
 const statusMetrics = computed(() => {
   const rows = displayLots.value
@@ -207,6 +237,7 @@ async function fetchLotList() {
     const data = await getLotList(params)
     lotList.value = data?.records || []
     pagination.total = data?.total || 0
+    selectedLotNos.value = selectedLotNos.value.filter(lotNo => lotList.value.some(lot => lot.lotNo === lotNo))
     if (!selectedLot.value || !lotList.value.some(lot => lot.lotNo === selectedLot.value?.lotNo)) {
       selectedLot.value = displayLots.value[0] || lotList.value[0] || null
     }
@@ -273,6 +304,28 @@ function canScrap(lot) {
   return hasButton('lot:scrap') && isHeld(lot)
 }
 
+function toggleLotSelection(lotNo, checked) {
+  const next = new Set(selectedLotNos.value)
+  if (checked) {
+    next.add(lotNo)
+  } else {
+    next.delete(lotNo)
+  }
+  selectedLotNos.value = [...next]
+}
+
+function toggleAllDisplay(checked) {
+  const next = new Set(selectedLotNos.value)
+  displayLots.value.forEach(lot => {
+    if (checked) {
+      next.add(lot.lotNo)
+    } else {
+      next.delete(lot.lotNo)
+    }
+  })
+  selectedLotNos.value = [...next]
+}
+
 function requireLot(lot) {
   if (!lot) {
     ElMessage.warning('当前没有可操作的 Lot')
@@ -306,6 +359,71 @@ function openScrap(lot) {
   if (requireLot(lot)) scrapVisible.value = true
 }
 
+async function submitBatchHold() {
+  const lotNos = batchHoldableLots.value.map(lot => lot.lotNo)
+  if (!lotNos.length) {
+    ElMessage.warning('请选择可Hold的Lot')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认批量Hold ${lotNos.length} 个Lot？`, '批量Hold', {
+      confirmButtonText: '确认Hold',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await runBatchAction(() => batchHoldLots({
+    lotNos,
+    holdType: 'QUALITY',
+    holdReason: '批量质量Hold'
+  }), '批量Hold')
+}
+
+async function submitBatchRelease() {
+  const lotNos = batchReleasableLots.value.map(lot => lot.lotNo)
+  if (!lotNos.length) {
+    ElMessage.warning('请选择可放行的Lot')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认批量放行 ${lotNos.length} 个Lot？`, '批量放行', {
+      confirmButtonText: '确认放行',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await runBatchAction(() => batchReleaseLots({
+    lotNos,
+    disposition: '批量复判通过，允许继续流转'
+  }), '批量放行')
+}
+
+async function runBatchAction(action, label) {
+  batchOperating.value = true
+  try {
+    const result = await action()
+    batchActionResult.value = result
+    selectedLotNos.value = []
+    const failed = Number(result?.failedCount || 0)
+    if (failed > 0) {
+      ElMessage.warning(`${label}完成，${failed} 个Lot失败`)
+    } else {
+      ElMessage.success(`${label}成功`)
+    }
+    await fetchLotList()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error(`${label}失败:`, error)
+    }
+  } finally {
+    batchOperating.value = false
+  }
+}
+
 function handleOperationSuccess() {
   fetchLotList()
 }
@@ -314,9 +432,22 @@ onMounted(fetchLotList)
 </script>
 
 <style scoped>
-.lot-table th:nth-child(9),
-.lot-table td:nth-child(9) {
+.lot-table th:nth-child(10),
+.lot-table td:nth-child(10) {
   width: 360px;
+}
+
+.lot-table .select-col {
+  width: 38px;
+  text-align: center;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 0 10px;
 }
 
 .row-actions {

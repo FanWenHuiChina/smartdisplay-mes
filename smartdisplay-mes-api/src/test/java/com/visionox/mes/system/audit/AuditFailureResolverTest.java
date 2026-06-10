@@ -24,6 +24,23 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapLotBatchHoldAndReleaseFailure() {
+        Optional<AuditFailureTarget> holdTarget = resolver.resolve(
+                new MockHttpServletRequest("POST", "/api/v1/lots/batch-hold"));
+        Optional<AuditFailureTarget> releaseTarget = resolver.resolve(
+                new MockHttpServletRequest("POST", "/api/v1/lots/batch-release"));
+
+        assertThat(holdTarget).isPresent();
+        assertThat(holdTarget.get().action()).isEqualTo("LOT_BATCH_HOLD");
+        assertThat(holdTarget.get().bizNo()).isNull();
+        assertThat(holdTarget.get().bizType()).isEqualTo("LOT");
+        assertThat(releaseTarget).isPresent();
+        assertThat(releaseTarget.get().action()).isEqualTo("LOT_BATCH_RELEASE");
+        assertThat(releaseTarget.get().bizNo()).isNull();
+        assertThat(releaseTarget.get().bizType()).isEqualTo("LOT");
+    }
+
+    @Test
     void resolveShouldRemoveContextPathBeforeMapping() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/orders/MO001/release");
         request.setContextPath("/api");

@@ -17,7 +17,7 @@
 | 审计请求上下文 | 关键审计记录自动保存请求方法、URI、客户端IP和User-Agent | 已落地 |
 | 系统审计分页筛选 | 系统审计支持分页查询，按业务对象、动作分组、结果、来源、操作人和日期范围过滤，并可导出请求上下文与快照字段 | 已落地，后端定向测试 34 项通过，前端契约已覆盖分页筛选和上下文导出 |
 | 关键写接口失败审计 | 业务异常、参数校验异常和系统异常按关键写接口动作写入 `result=FAIL` 审计记录 | 已落地 |
-| 核心执行审计差异快照 | 工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 审计快照包含 before、after、changedFields 和 request | 已落地 |
+| 核心执行审计差异快照 | 工单创建/释放、Track In/Out、Hold/Release、Rework/Scrap 审计快照包含 before、after、changedFields 和 request；Lot 批量 Hold/Release 包含整批汇总快照 | 已落地 |
 | 数据范围 SQL | 按 ALL/LINE/SELF_SHIFT/SELF 生成安全 SQL 条件，工单、Lot、质量、异常、物料消耗、载具等列表按域过滤 | 已落地，组织/产线/班次主数据已补 |
 | 组织/产线/班次主数据 | 基地、产线、班次有正式表、种子数据和 `/api/v1/master/**` 查询接口 | 已落地 |
 | ERP模拟工单导入 | 支持 `/api/v1/adapters/erp/orders` 下发工单、批量查重、1000 条模拟导入、成功/失败审计和角色权限控制 | 已落地，工单页已提供 Adapter 批次、样例工单和审计动作回执 |
@@ -49,7 +49,7 @@
 | EAP网关健康检查 | 支持手动健康检查、PASS/WARN/FAIL履历、延迟与错误说明、状态联动和审计留痕；`SHADOW` 返回待真机握手的 WARN，`EXTERNAL` 未配置真实链路返回 FAIL | 已落地 |
 | Track Out | 记录参数快照、人员、设备、结果并推动 Lot 流转 | 已落地 |
 | 质量异常 | NG/关键参数超限生成质检、缺陷、异常并 Hold Lot | 已落地 |
-| Hold/Release | 记录原因、处置结论、责任角色、人员和时间 | 已落地，支持 MRB 结论联动 |
+| Hold/Release | 记录原因、处置结论、责任角色、人员和时间，支持单 Lot 与批量处置 | 已落地，支持 MRB 结论联动和 Lot 批量 Hold/Release 汇总审计 |
 | Rework/Scrap | Rework 必须选择返工 Route 和允许返工的起始工序；Scrap 必须二次确认并记录原因、责任模块、审批人和审计快照 | 已落地，支持异常关闭联动 |
 | 追溯 | Lot 查询返回工单、Route、设备、Recipe、质量、Hold、物料、审计 | 已落地 |
 | 看板 | WIP、良率、异常、缺陷 TopN、设备异常 TopN | 已落地 |
@@ -72,7 +72,7 @@
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | API文档合同 | Swagger/OpenAPI 必须提供 `/api/v3/api-docs/pilot-v1` 分组，声明 `/api/v1/**`、JWT Bearer、统一响应、分页模型和标准错误响应 | 已落地，`OpenApiConfigTest` 5 项通过；Docker 运行态已验证 `Result/PageResult`、400/401/403/500、登录免 Bearer 和业务接口 Bearer 安全要求 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，406 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，413 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
@@ -103,7 +103,7 @@
 | --- | --- | --- |
 | Lot 页 Rework 操作 | `HOLD` Lot 可在前端选择返工 Route、返工起始工序、原因与操作人，并调用 `POST /api/v1/lots/{lotNo}/rework` | 已落地，受 `lot:rework` 按钮权限控制 |
 | Lot 页 Scrap 操作 | `HOLD` Lot 可在前端填写原因、责任模块、审批人、操作人，并输入 `SCRAP:{lotNo}` 二次确认后调用 `POST /api/v1/lots/{lotNo}/scrap` | 已落地，受 `lot:scrap` 按钮权限控制 |
-| Lot 页 API 口径 | Lot 列表、Track In/Out、Hold/Release、Rework/Scrap 使用 `/api/v1/lots` 试点接口 | 已统一 |
+| Lot 页 API 口径 | Lot 列表、Track In/Out、Hold/Release、批量 Hold/Release、Rework/Scrap 使用 `/api/v1/lots` 试点接口 | 已统一 |
 | 前端验证 | 契约检查、生产构建、生产包样例标识扫描通过 | 已通过：302 项契约检查，14 个 JS 产物扫描 |
 
 # 2026-06-08 补充验收：质量页 MRB 报废处置入口
@@ -369,6 +369,18 @@
 | 失败消息不丢失 | EAP 入站失败时必须保留 `equipment_gateway_message` 的 `FAILED` 记录、错误信息和失败响应快照 | 已落地，`EapGatewayServiceTest` 覆盖 |
 | 失败审计 | EAP 入站失败必须写 `EAP_GATEWAY_MESSAGE_FAILED`，审计结果为 `FAIL` | 已落地，单元测试断言 `recordFailure` |
 | 消息详情接口 | `/api/v1/equipment/gateway-messages/{messageNo}` 必须返回原始快照、归一化快照、响应快照和诊断建议 | 已落地，详情测试覆盖 |
-| 前端诊断入口 | 设备页消息履历必须可打开诊断抽屉，展示失败分类、处置建议和三类快照 | 已落地，前端契约 406 项和浏览器 E2E 覆盖 |
-| 回归验证 | EAP 定向、前端契约、生产构建、生产包扫描和浏览器 E2E 必须通过 | 已通过：EAP 15 项、前端契约 406 项、生产包 14 个 JS 产物 clean、浏览器 E2E 20 步 |
+| 前端诊断入口 | 设备页消息履历必须可打开诊断抽屉，展示失败分类、处置建议和三类快照 | 已落地，前端契约当前 413 项和浏览器 E2E 覆盖 |
+| 回归验证 | EAP 定向、前端契约、生产构建、生产包扫描和浏览器 E2E 必须通过 | 已通过：EAP 15 项、前端契约当前 413 项、生产包 14 个 JS 产物 clean、浏览器 E2E 20 步 |
 | Docker 冒烟 | Docker 运行态必须能提交一条失败 EAP 入站、查询消息详情和失败审计 | 已通过：`EGM-DIAG-20260610181059` 返回 `FAILED/PROTOCOL_FRAME`，审计 `EAP_GATEWAY_MESSAGE_FAILED/FAIL` 命中 1 条 |
+
+## 2026-06-10 补充验收：Lot 批量 Hold/Release
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 批量 Hold 接口 | `POST /api/v1/lots/batch-hold` 必须支持最多 50 个 Lot，逐 Lot 执行既有 Hold 状态机，并返回每个 Lot 的成功/失败原因 | 已落地，`PilotMesServiceTest` 覆盖 |
+| 批量 Release 接口 | `POST /api/v1/lots/batch-release` 必须支持最多 50 个 Lot，逐 Lot 执行既有 Release 状态机，并返回每个 Lot 的成功/失败原因 | 已落地，`PilotMesServiceTest` 覆盖 |
+| 汇总审计 | 批量处置必须额外写 `LOT_BATCH_HOLD` / `LOT_BATCH_RELEASE`，快照包含请求、批次号、总数、成功数、失败数和逐 Lot 明细 | 已落地，单元测试断言汇总快照 |
+| 权限边界 | 批量 Hold/Release 必须分别受 `lot:hold` / `lot:release` 控制，操作员不可越权执行批量质量处置 | 已落地，`RolePermissionServiceTest` 覆盖 |
+| 失败审计映射 | 批量路径发生业务异常、参数异常或系统异常时必须归类到对应批量动作 | 已落地，`AuditFailureResolverTest` 覆盖 |
+| 前端批量处置入口 | Lot 管理页必须提供多选、当前页全选、可 Hold/可放行统计、批量按钮和批量结果回显 | 已落地，前端契约 413 项覆盖 |
+| 回归验证 | 后端批量处置定向、前端契约和前端生产构建必须通过 | 已通过：后端定向 86 项、前端契约 413 项、前端构建通过 |

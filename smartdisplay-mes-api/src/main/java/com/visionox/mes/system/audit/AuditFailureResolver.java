@@ -44,7 +44,16 @@ public class AuditFailureResolver {
                 return target("ORDER_RELEASE", parts[offset + 1], "ORDER");
             }
         }
-        if ("lots".equals(domain) && parts.length >= offset + 3) {
+        if ("lots".equals(domain)) {
+            if (matches(parts, offset, "lots", "batch-hold")) {
+                return target("LOT_BATCH_HOLD", null, "LOT");
+            }
+            if (matches(parts, offset, "lots", "batch-release")) {
+                return target("LOT_BATCH_RELEASE", null, "LOT");
+            }
+            if (parts.length < offset + 3) {
+                return Optional.empty();
+            }
             String lotNo = parts[offset + 1];
             return switch (parts[offset + 2]) {
                 case "track-in" -> target("TRACK_IN", lotNo, "LOT");

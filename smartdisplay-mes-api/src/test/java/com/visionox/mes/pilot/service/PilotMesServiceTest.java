@@ -933,6 +933,82 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void batchHoldShouldReturnPerLotSummaryAndWriteBatchAudit() {
+        Lot lot = lot("LOT001", "READY");
+        when(lotMapper.selectOne(any())).thenReturn(lot, lot, null);
+
+        Map<String, Object> result = pilotMesService.batchHold(Map.of(
+                "lotNos", List.of("LOT001", "LOT_MISSING"),
+                "holdReason", "批量质量Hold",
+                "holdBy", "qe1001",
+                "batchNo", "LOT-BATCH-HOLD-001"
+        ));
+
+        assertThat(result)
+                .containsEntry("batchNo", "LOT-BATCH-HOLD-001")
+                .containsEntry("action", "HOLD")
+                .containsEntry("total", 2)
+                .containsEntry("successCount", 1L)
+                .containsEntry("failedCount", 1L);
+        assertThat((List<Map<String, Object>>) result.get("results"))
+                .extracting(row -> row.get("lotNo") + ":" + row.get("success"))
+                .containsExactly("LOT001:true", "LOT_MISSING:false");
+        verify(holdService).holdLot(any());
+        verify(auditLogService).record(eq("LOT_HOLD"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_BATCH_HOLD"), eq("LOT-BATCH-HOLD-001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"successCount\":1")
+                .contains("\"failedCount\":1")
+                .contains("LOT_MISSING");
+    }
+
+    @Test
+    void batchReleaseShouldRejectEmptyLotSelection() {
+        assertThatThrownBy(() -> pilotMesService.batchRelease(Map.of("lotNos", List.of())))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("至少需要选择1个Lot");
+
+        verify(holdService, never()).releaseLot(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void batchReleaseShouldReturnPerLotSummaryAndWriteBatchAudit() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot, lot, null);
+
+        Map<String, Object> result = pilotMesService.batchRelease(Map.of(
+                "lotNos", List.of("LOT001", "LOT_MISSING"),
+                "disposition", "批量复判通过",
+                "releaseBy", "qe1001",
+                "batchNo", "LOT-BATCH-RELEASE-001"
+        ));
+
+        assertThat(result)
+                .containsEntry("batchNo", "LOT-BATCH-RELEASE-001")
+                .containsEntry("action", "RELEASE")
+                .containsEntry("total", 2)
+                .containsEntry("successCount", 1L)
+                .containsEntry("failedCount", 1L);
+        assertThat((List<Map<String, Object>>) result.get("results"))
+                .extracting(row -> row.get("lotNo") + ":" + row.get("success"))
+                .containsExactly("LOT001:true", "LOT_MISSING:false");
+        verify(holdService).releaseLot(any());
+        verify(auditLogService).record(eq("LOT_RELEASE"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_BATCH_RELEASE"), eq("LOT-BATCH-RELEASE-001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"successCount\":1")
+                .contains("\"failedCount\":1")
+                .contains("LOT_MISSING");
+    }
+
+    @Test
     void reworkShouldMoveLotToReworkStepAndWriteAudit() {
         Lot lot = lot("LOT001", "HOLD");
         HoldRecord holdRecord = holdRecord("LOT001");

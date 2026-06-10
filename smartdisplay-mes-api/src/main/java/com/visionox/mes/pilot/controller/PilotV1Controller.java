@@ -282,11 +282,21 @@ public class PilotV1Controller {
         return Result.success();
     }
 
+    @PostMapping("/lots/batch-hold")
+    public Result<Map<String, Object>> batchHold(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.batchHold(request));
+    }
+
     @PostMapping("/lots/{lotNo}/release")
     public Result<Void> release(@PathVariable String lotNo,
                                 @RequestBody(required = false) Map<String, Object> request) {
         pilotMesService.release(lotNo, request);
         return Result.success();
+    }
+
+    @PostMapping("/lots/batch-release")
+    public Result<Map<String, Object>> batchRelease(@RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.batchRelease(request));
     }
 
     @PostMapping("/lots/{lotNo}/rework")

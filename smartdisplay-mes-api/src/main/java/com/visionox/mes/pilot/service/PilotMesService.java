@@ -560,6 +560,27 @@ public class PilotMesService {
                 auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
     }
 
+    public Map<String, Object> batchHold(Map<String, Object> request) {
+        Map<String, Object> safeRequest = safeRequest(request);
+        List<String> lotNos = batchLotNos(safeRequest);
+        String operator = text(safeRequest, "holdBy", text(safeRequest, "operator", currentUser()));
+        String batchNo = text(safeRequest, "batchNo", batchNo("HOLD"));
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String lotNo : lotNos) {
+            Map<String, Object> lotRequest = batchLotRequest(safeRequest, batchNo, operator, "holdBy", "BATCH_HOLD");
+            try {
+                hold(lotNo, lotRequest);
+                results.add(batchLotResult(lotNo, true, "HELD", ""));
+            } catch (Exception e) {
+                results.add(batchLotResult(lotNo, false, "FAILED", exceptionMessage(e)));
+            }
+        }
+        Map<String, Object> summary = batchSummary(batchNo, "HOLD", lotNos, results);
+        audit("LOT_BATCH_HOLD", batchNo, "批量Hold成功 " + summary.get("successCount") + "，失败 " + summary.get("failedCount"),
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest, "summary", summary)));
+        return summary;
+    }
+
     public void release(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);
@@ -571,6 +592,27 @@ public class PilotMesService {
         closeExceptionIfProvided(lotNo, request, "RELEASE", release.getDisposition());
         audit("LOT_RELEASE", lotNo, release.getDisposition(), release.getReleaseBy(),
                 auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
+    }
+
+    public Map<String, Object> batchRelease(Map<String, Object> request) {
+        Map<String, Object> safeRequest = safeRequest(request);
+        List<String> lotNos = batchLotNos(safeRequest);
+        String operator = text(safeRequest, "releaseBy", text(safeRequest, "operator", currentUser()));
+        String batchNo = text(safeRequest, "batchNo", batchNo("RELEASE"));
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String lotNo : lotNos) {
+            Map<String, Object> lotRequest = batchLotRequest(safeRequest, batchNo, operator, "releaseBy", "BATCH_RELEASE");
+            try {
+                release(lotNo, lotRequest);
+                results.add(batchLotResult(lotNo, true, "RELEASED", ""));
+            } catch (Exception e) {
+                results.add(batchLotResult(lotNo, false, "FAILED", exceptionMessage(e)));
+            }
+        }
+        Map<String, Object> summary = batchSummary(batchNo, "RELEASE", lotNos, results);
+        audit("LOT_BATCH_RELEASE", batchNo, "批量Release成功 " + summary.get("successCount") + "，失败 " + summary.get("failedCount"),
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest, "summary", summary)));
+        return summary;
     }
 
     public void rework(String lotNo, Map<String, Object> request) {
@@ -2762,6 +2804,80 @@ public class PilotMesService {
         holdRecord.setStatus("RELEASED");
         holdRecordMapper.updateById(holdRecord);
         lot.setHoldFlag(0);
+    }
+
+    private List<String> batchLotNos(Map<String, Object> request) {
+        Object rawLotNos = value(request, "lotNos");
+        if (rawLotNos == null) {
+            rawLotNos = value(request, "lots");
+        }
+        List<String> lotNos = new ArrayList<>();
+        if (rawLotNos instanceof Iterable<?> iterable) {
+            iterable.forEach(item -> addBatchLotNo(lotNos, item));
+        } else if (rawLotNos instanceof Object[] array) {
+            for (Object item : array) {
+                addBatchLotNo(lotNos, item);
+            }
+        } else if (rawLotNos != null) {
+            for (String item : String.valueOf(rawLotNos).split(",")) {
+                addBatchLotNo(lotNos, item);
+            }
+        }
+        if (lotNos.isEmpty()) {
+            throw new BusinessException("批量操作至少需要选择1个Lot");
+        }
+        if (lotNos.size() > 50) {
+            throw new BusinessException("批量操作单次最多支持50个Lot");
+        }
+        return lotNos;
+    }
+
+    private void addBatchLotNo(List<String> lotNos, Object value) {
+        String lotNo = objectText(value, "").trim();
+        if (!lotNo.isBlank() && !lotNos.contains(lotNo)) {
+            lotNos.add(lotNo);
+        }
+    }
+
+    private Map<String, Object> batchLotRequest(Map<String, Object> request, String batchNo,
+                                                String operator, String operatorField, String sourceAction) {
+        Map<String, Object> lotRequest = new LinkedHashMap<>(request);
+        lotRequest.put("batchNo", batchNo);
+        lotRequest.put("sourceAction", sourceAction);
+        lotRequest.put("operator", operator);
+        lotRequest.put(operatorField, operator);
+        return lotRequest;
+    }
+
+    private Map<String, Object> batchLotResult(String lotNo, boolean success, String status, String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("lotNo", lotNo);
+        result.put("success", success);
+        result.put("status", status);
+        result.put("message", message);
+        return result;
+    }
+
+    private Map<String, Object> batchSummary(String batchNo, String action, List<String> lotNos,
+                                             List<Map<String, Object>> results) {
+        long successCount = results.stream().filter(row -> Boolean.TRUE.equals(row.get("success"))).count();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("batchNo", batchNo);
+        summary.put("action", action);
+        summary.put("total", lotNos.size());
+        summary.put("successCount", successCount);
+        summary.put("failedCount", lotNos.size() - successCount);
+        summary.put("lotNos", lotNos);
+        summary.put("results", results);
+        return summary;
+    }
+
+    private String batchNo(String action) {
+        return "LOT-BATCH-" + action + "-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
+    }
+
+    private String exceptionMessage(Exception e) {
+        return e.getMessage() == null || e.getMessage().isBlank() ? e.getClass().getSimpleName() : e.getMessage();
     }
 
     private Object value(Map<String, Object> request, String key) {

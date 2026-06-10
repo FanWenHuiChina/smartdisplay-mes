@@ -115,7 +115,9 @@ const requiredApiExports = [
   ['trackInLot', '/v1/lots/${lotNo}/track-in'],
   ['trackOutLot', '/v1/lots/${lotNo}/track-out'],
   ['holdLot', '/v1/lots/${lotNo}/hold'],
+  ['batchHoldLots', '/v1/lots/batch-hold'],
   ['releaseLot', '/v1/lots/${lotNo}/release'],
+  ['batchReleaseLots', '/v1/lots/batch-release'],
   ['reworkLot', '/v1/lots/${lotNo}/rework'],
   ['scrapLot', '/v1/lots/${lotNo}/scrap'],
   ['getProducts', '/v1/master/products'],
@@ -233,7 +235,9 @@ const requiredLotApiExports = [
   ['trackIn', '/v1/lots/${lotNo}/track-in'],
   ['trackOut', '/v1/lots/${lotNo}/track-out'],
   ['holdLot', '/v1/lots/${lotNo}/hold'],
+  ['batchHoldLots', '/v1/lots/batch-hold'],
   ['releaseLot', '/v1/lots/${lotNo}/release'],
+  ['batchReleaseLots', '/v1/lots/batch-release'],
   ['reworkLot', '/v1/lots/${lotNo}/rework'],
   ['scrapLot', '/v1/lots/${lotNo}/scrap']
 ]
@@ -301,7 +305,7 @@ const pageContracts = [
   ['views/overview/index.vue', ['getOverview'], []],
   ['views/order/index.vue', ['getOrders', 'getLots', 'importErpOrders', 'releaseOrder'], ['order:create', 'order:release']],
   ['views/master/index.vue', ['getSites', 'getProductionLines', 'getShifts', 'getBoms', 'getBomChangeRequests', 'getRecipes', 'publishRecipe', 'publishBomChange'], ['recipe:publish', 'bom:change']],
-  ['views/lot/index.vue', ['getLotList'], ['lot:track-in', 'lot:track-out', 'lot:hold', 'lot:release', 'lot:rework', 'lot:scrap']],
+  ['views/lot/index.vue', ['getLotList', 'batchHoldLots', 'batchReleaseLots'], ['lot:track-in', 'lot:track-out', 'lot:hold', 'lot:release', 'lot:rework', 'lot:scrap']],
   ['views/recipe/index.vue', ['getRecipeList', 'getRecipeDetail', 'publishRecipe'], ['recipe:publish']],
   ['views/execution/index.vue', ['getLots', 'getTrackInChecks', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth', 'getEquipmentGatewayMessageDetail'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
@@ -379,6 +383,7 @@ const recipeView = read('src/views/recipe/index.vue')
 const executionView = read('src/views/execution/index.vue')
 check('page:views/lot/index.vue:workbench-style', hasAll(lotView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Lot page must use current light workbench components')
 check('page:views/lot/index.vue:track-in-rework-status', lotView.includes("['READY', 'REWORK'].includes(row.status)"), 'Lot page Track In action must allow rework lots')
+check('page:views/lot/index.vue:batch-disposition', hasAll(lotView, ['selectedLotNos', 'batchHoldLots', 'batchReleaseLots', 'submitBatchHold', 'submitBatchRelease', 'batchActionResult']), 'Lot page must expose batch Hold/Release actions with backend audit batch result')
 check('page:views/recipe/index.vue:workbench-style', hasAll(recipeView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Recipe page must use current light workbench components')
 check('page:views/recipe/index.vue:v1-api-import', recipeView.includes("@/api/recipe") && !recipeView.includes("@/api/pilot"), 'Recipe page must use dedicated v1 recipe API wrapper')
 check('page:views/recipe/index.vue:publish-action', hasAll(recipeView, ['handlePublish', 'publishRecipe', "hasButton('recipe:publish')"]), 'Recipe page must expose permission-gated publish action')

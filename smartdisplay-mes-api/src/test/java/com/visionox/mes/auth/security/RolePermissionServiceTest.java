@@ -47,6 +47,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/track-in"))).isTrue();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/track-out"))).isTrue();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/hold"))).isFalse();
+        assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/batch-hold"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/adapters/erp/orders"))).isFalse();
     }
 
@@ -54,6 +55,8 @@ class RolePermissionServiceTest {
     void shouldAllowQualityEngineerToDispositionLots() {
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/hold"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/release"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/batch-hold"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/batch-release"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/scrap"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/inspections"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/mrb-approvals/MRBT001/approve"))).isTrue();

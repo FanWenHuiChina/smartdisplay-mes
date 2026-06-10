@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E 和 `pilot-v1` OpenAPI 分组文档生产化；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
+当前后端单元/服务级闭环测试、OpenAPI/Swagger 合同回归、Track In 预校验矩阵、Lot 批量 Hold/Release、系统审计分页筛选、EAP 影子协议驱动、EAP 消息失败留痕与诊断详情、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、消息详情诊断接口、Docker `V1.47` 迁移、SECS/GEM 影子入站接口冒烟、设备页 EAP 失败消息诊断抽屉浏览器 E2E、`pilot-v1` OpenAPI 分组文档生产化和 Lot 批量 Hold/Release 汇总审计接线；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
 
 ## 测试环境
 
@@ -33,10 +33,11 @@
 | Track In预校验回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -Dtest=TrackInServiceTest test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；覆盖无副作用校验矩阵、设备能力失败阻断、正式 Track In 写接口复用同一套阻断逻辑 |
 | 核心执行审计差异快照回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` | 通过 | `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`；验证审计快照包含 `before/after/changedFields/request`，并覆盖 Rework Route/起始工序校验、Scrap 二次确认和 Recipe 筛选 |
 | RBAC权限口径回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；验证 PE/EE 质量菜单口径、操作员 Track In/Out 写权限和跨域写操作拒绝 |
+| Lot批量处置回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | `Tests run: 86, Failures: 0, Errors: 0, Skipped: 0`；覆盖批量 Hold/Release 逐 Lot 结果、汇总审计、RBAC 权限和失败审计映射 |
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | OpenAPI/Swagger合同回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=OpenApiConfigTest" test` | 通过 | `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `pilot-v1` 分组、`/api` 服务器路径、JWT Bearer、统一 `Result/PageResult` schema、标准 400/401/403/500 响应和登录接口免 Bearer |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
-| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 406 项检查 |
+| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release 处置入口、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 413 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
@@ -85,7 +86,7 @@
 - EAP 协议驱动：驱动能力列表、驱动配置快照、SECS/GEM `stream/function` 帧校验与消息归一化、OPC UA 数据变化归一化、厂商 HTTP 请求元数据保留、归一化 payload 快照和驱动编码留痕。
 - BOM 变更提交、审批驳回、发布生效、旧版本失效、替代料自动选择、替代料验证报告附件元数据、ECO 包快照、风险等级、跨部门会签任务、会签通过前禁止发布、会签驳回阻断发布和 BOM 写接口失败审计。
 - 质量 NG/参数超限自动异常、缺陷记录和自动 Hold。
-- Hold/Release、Rework/Scrap 基础状态转换。
+- Hold/Release、批量 Hold/Release、Rework/Scrap 基础状态转换。
 - MRB 复判/关闭履历、会议号、参与人、审批状态、附件元数据、会议纪要版本、会签待办、审批通过/驳回、按风险/角色/处置动作计算 SLA、逾期升级和关闭前会签校验。
 - Lot 数据范围、质量/异常/物料/载具列表数据范围。
 - 基地、产线、班次主数据查询和前端主数据页接口化。
@@ -530,3 +531,13 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 236 项通过 |
 | 后端打包与部署 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` 后覆盖 Docker 后端 jar 并重启 | 通过 | 后端容器启动成功，Flyway 当前版本仍为 `1.46` |
 | Docker 追溯冒烟 | 登录后查询 `GET /api/v1/trace/lots/LOTSCP20260610010414-001` | 通过 | `lot.productCode=AMOLED_65`，`route.routeCode=RTE_G6_AMOLED65_V08`，`route.productCode=AMOLED_65`，产品匹配结果为 `true` |
+
+## 2026-06-10 Lot 批量 Hold/Release 复验
+
+本轮新增 `POST /api/v1/lots/batch-hold` 和 `POST /api/v1/lots/batch-release`，用于质量工程师在 Lot 管理页对当前筛选结果中的多选 Lot 执行批量处置。批量接口逐 Lot 复用既有单 Lot `hold` / `release` 状态机和审计链，单个 Lot 失败不会拖垮整批；接口返回每个 Lot 的成功/失败原因，并额外写入 `LOT_BATCH_HOLD` / `LOT_BATCH_RELEASE` 汇总审计，便于审计整批操作的总数、成功数、失败数和失败明细。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端批量处置定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 86 项通过；覆盖批量 Hold/Release 逐 Lot 汇总、空选择拒绝、汇总审计、RBAC 权限和失败审计映射 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 413 项通过；覆盖 `batchHoldLots`、`batchReleaseLots` API 封装和 Lot 页多选批量处置接线 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |

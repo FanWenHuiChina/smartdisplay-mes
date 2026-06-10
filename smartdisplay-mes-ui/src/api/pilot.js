@@ -13,7 +13,9 @@ export const getTrackInChecks = (lotNo, params = {}) => request.get(`/v1/lots/${
 export const trackInLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/track-in`, data)
 export const trackOutLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/track-out`, data)
 export const holdLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/hold`, data)
+export const batchHoldLots = (data = {}) => request.post('/v1/lots/batch-hold', data)
 export const releaseLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/release`, data)
+export const batchReleaseLots = (data = {}) => request.post('/v1/lots/batch-release', data)
 export const reworkLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/rework`, data)
 export const scrapLot = (lotNo, data = {}) => request.post(`/v1/lots/${lotNo}/scrap`, data)
 
