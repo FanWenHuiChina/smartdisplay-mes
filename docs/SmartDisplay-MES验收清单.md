@@ -316,3 +316,13 @@
 | 数据库一致性 | 即使绕过服务层，也不能在未删除数据中产生同上下文多条 `ACTIVE` | 已落地，`V1.44__Enforce_Single_Active_Recipe.sql` 创建 `uk_recipe_single_active_context` |
 | 回归验证 | Recipe 定向和后端全量测试必须通过 | 已通过：Recipe 定向 12 项、后端全量 229 项 |
 | Docker 冒烟 | Docker 运行态必须完成 V1.44 迁移，并验证两个同上下文版本发布后的状态和审计 | 已通过：`RCP_SINGLE_20260610124831_V1` 自动失效，`RCP_SINGLE_20260610124831_V2` 生效；发布和自动停用审计各 1 条 |
+
+## 2026-06-10 补充验收：Route 单一生效版本治理
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 单一 ACTIVE 业务规则 | 同一产品任意时刻只能有一个 `ACTIVE` Route，工单释放和执行校验不能依赖歧义路线 | 已落地，服务层发现多条 `ACTIVE` 时明确拒绝 |
+| 数据库一致性 | 即使绕过服务层，也不能在未删除数据中产生同产品多条 `ACTIVE` Route | 已落地，`V1.45__Enforce_Single_Active_Route.sql` 创建 `uk_route_single_active_product` |
+| 历史数据收敛 | 对已有多条 `ACTIVE` Route 的库，迁移必须先保留最新一条并停用其他版本，避免建索引失败 | 已落地，迁移按更新时间、生效时间、版本和 ID 排序收敛 |
+| 回归验证 | Route 定向和后端全量测试必须通过 | 已通过：Route 定向 9 项、后端全量 230 项 |
+| Docker 冒烟 | Docker 运行态必须完成 V1.45 迁移，并验证 API 与唯一索引 | 已通过：`/api/v1/routes` 每产品仅返回一条 ACTIVE；插入同产品第二条 ACTIVE 被唯一索引拒绝 |

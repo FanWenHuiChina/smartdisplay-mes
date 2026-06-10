@@ -476,3 +476,16 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成并覆盖 Docker 后端容器中的 `app.jar` |
 | Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.43` 迁移到 `1.44 - Enforce Single Active Recipe`；数据库记录 `version=1.44, success=t` |
 | 前端反代 HTTP 冒烟 | 经 `http://127.0.0.1:8888/api` 创建并发布两个同上下文不同版本 Recipe | 通过 | `RCP_SINGLE_20260610124831_V1` 自动变 `INACTIVE`，`RCP_SINGLE_20260610124831_V2` 为 `ACTIVE`；`RECIPE_PUBLISH` 和 `RECIPE_AUTO_DEACTIVATE` 审计各 1 条，发布快照含 `replacedActiveCount=1` |
+
+## 2026-06-10 Route 单一生效版本治理复验
+
+本轮补齐 Route 版本确定性：同一产品只能存在一条 `ACTIVE` 工艺路线。服务层读取生效 Route 时，如果发现同产品多条 `ACTIVE`，不再按版本排序静默取第一条，而是明确返回业务异常，避免工单释放、Rework 和 Track In 防跳站依赖歧义路线。数据库侧新增 `V1.45__Enforce_Single_Active_Route.sql`，先收敛历史重复生效 Route，再创建部分唯一索引 `uk_route_single_active_product`。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 Route 定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RouteServiceTest" test` | 通过 | 9 项通过；新增覆盖同产品多条 `ACTIVE` Route 时拒绝并提示需版本治理 |
+| 后端全量回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | 230 项通过 |
+| 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" -DskipTests package` | 通过 | 已生成并覆盖 Docker 后端容器中的 `app.jar` |
+| Docker Flyway 迁移 | 重启 `smartdisplay-mes-api` 并查询 `flyway_schema_history` | 通过 | 日志显示从 `1.44` 迁移到 `1.45 - Enforce Single Active Route`；数据库记录 `version=1.45, success=t` |
+| Route API 冒烟 | 经 `http://127.0.0.1:8888/api/v1/routes` 查询生效路线 | 通过 | 返回 `AMOLED_65/RTE_G6_AMOLED65_V08` 和 `AMOLED_67/RTE_G6_AMOLED67_V05`，每个产品仅一条 `ACTIVE` |
+| 数据库约束冒烟 | 在事务中尝试插入 `AMOLED_65` 第二条 `ACTIVE` Route | 通过 | PostgreSQL 返回 `duplicate key value violates unique constraint "uk_route_single_active_product"`，证明数据库侧兜底生效 |

@@ -45,6 +45,23 @@ class RouteServiceTest {
     }
 
     @Test
+    void findActiveRouteShouldRejectDuplicateActiveRoutesForSameProduct() {
+        when(routeMapper.selectList(any())).thenReturn(List.of(
+                route(10L, "RTE-OLED-V2", "V2"),
+                route(9L, "RTE-OLED-V1", "V1")
+        ));
+
+        assertThatThrownBy(() -> routeService.findActiveRoute("OLED_PANEL"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("多条生效Route")
+                .hasMessageContaining("OLED_PANEL")
+                .hasMessageContaining("RTE-OLED-V2")
+                .hasMessageContaining("RTE-OLED-V1");
+
+        verify(routeStepMapper, never()).selectList(any());
+    }
+
+    @Test
     void activeStepsShouldRejectRouteWithoutSteps() {
         when(routeMapper.selectList(any())).thenReturn(List.of(route(10L, "RTE-OLED-V2", "V2")));
         when(routeStepMapper.selectList(any())).thenReturn(List.of());

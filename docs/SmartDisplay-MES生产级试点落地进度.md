@@ -810,3 +810,10 @@
 - 新增 Flyway `V1.44__Enforce_Single_Active_Recipe.sql`，迁移时先按 `updated_time/created_time + recipe_version + id` 保留每个上下文最新一条 `ACTIVE`，再创建部分唯一索引 `uk_recipe_single_active_context`，数据库侧兜底同上下文单一 `ACTIVE`。
 - `schema.sql` 和 `init.sql` 已同步补齐单一 `ACTIVE` 基线索引，保证新库初始化和升级库的约束一致。
 - 已验证：Recipe 定向测试 12 项通过，后端全量 229 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.44`；HTTP 冒烟中 `RCP_SINGLE_20260610124831_V2` 发布后自动停用 `RCP_SINGLE_20260610124831_V1`，并查到发布/自动停用两类审计。
+
+## 2026-06-10 增量：Route 单一生效版本治理
+
+- `RouteService.findActiveRoute` 已从“多条 ACTIVE 时按版本/生效时间取第一条”改为显式拒绝，返回“产品存在多条生效Route，请先完成版本治理”，避免工单释放、Rework 和 Track In 防跳站读取到不确定路线。
+- 新增 Flyway `V1.45__Enforce_Single_Active_Route.sql`，迁移时先按 `updated_time/effective_time/created_time + route_version + id` 保留每个产品最新一条 `ACTIVE`，再创建部分唯一索引 `uk_route_single_active_product`，数据库侧兜底同产品单一 `ACTIVE`。
+- `init.sql` 已同步补齐 `uk_route_single_active_product`，保证新库初始化时就具备 Route 生效唯一性约束。
+- 已验证：Route 定向测试 9 项通过，后端全量 230 项通过；Docker 后端重启后 Flyway 已成功迁移到 `1.45`；`/api/v1/routes` 返回 `AMOLED_65` 与 `AMOLED_67` 各一条 ACTIVE Route；数据库插入同产品第二条 ACTIVE Route 被唯一索引拒绝。

@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS md_route (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_route_product_version
 ON md_route(product_code, route_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_route_single_active_product
+ON md_route(product_code) WHERE deleted = 0 AND status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_route_product_status ON md_route(product_code, status);
 
 -- 工艺路线工序明细

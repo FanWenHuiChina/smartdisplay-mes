@@ -33,6 +33,13 @@ public class RouteService {
         if (routes.isEmpty()) {
             throw new BusinessException("未找到产品生效Route: product=" + productCode);
         }
+        if (routes.size() > 1) {
+            String routeCodes = routes.stream()
+                    .map(Route::getRouteCode)
+                    .collect(Collectors.joining(","));
+            throw new BusinessException("产品存在多条生效Route，请先完成版本治理: product="
+                    + productCode + ", routes=" + routeCodes);
+        }
         return routes.get(0);
     }
 
