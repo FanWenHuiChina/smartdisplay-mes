@@ -43,10 +43,10 @@
 | 设备OEE/停机原因 | 支持近24小时 OEE 拆解、计划/非计划停机、停机原因TopN、事件关闭回填时长和审计 | 已落地 |
 | 设备状态历史/节拍采样 | 支持 EAP 状态上报、设备状态变化历史、标准/实际节拍采样、良品/产出数量和 OEE 性能率样本口径 | 已落地 |
 | 标准节拍主数据 | 支持产品+工序+设备+Recipe+版本的标准节拍、上下限窗口、ACTIVE发布、旧版本失效和审计；节拍样本可自动匹配主数据 | 已落地 |
-| EAP统一适配器 | `/api/v1/adapters/eap/messages` 支持状态、节拍、参数、Recipe下发标准化消息，预留真实协议驱动替换点 | 已落地，占位适配 |
-| EAP网关连接 | 支持网关注册/更新、心跳、连接状态、消息入站履历、处理成功/失败状态和失败降级留痕 | 已落地，占位网关 |
-| EAP协议驱动配置 | 支持模拟HTTP、厂商HTTP、SECS/GEM、OPC UA驱动能力列表、协议帧归一化、驱动配置快照和消息归一化快照 | 已落地，占位驱动 |
-| EAP网关健康检查 | 支持手动健康检查、PASS/WARN/FAIL履历、延迟与错误说明、状态联动和审计留痕 | 已落地，占位检查 |
+| EAP统一适配器 | `/api/v1/adapters/eap/messages` 支持状态、节拍、参数、Recipe下发标准化消息，外部协议先经网关驱动归一化后进入模拟适配器 | 已落地，模拟适配 + 影子协议入口 |
+| EAP网关连接 | 支持网关注册/更新、心跳、连接状态、消息入站履历、处理成功/失败状态和失败降级留痕；SECS/GEM、OPC UA、厂商HTTP默认以 `SHADOW` 模式接入 | 已落地，影子协议网关 |
+| EAP协议驱动配置 | 支持模拟HTTP、厂商HTTP、SECS/GEM、OPC UA驱动能力列表、协议帧必填校验、驱动配置快照和消息归一化快照 | 已落地，影子协议驱动 |
+| EAP网关健康检查 | 支持手动健康检查、PASS/WARN/FAIL履历、延迟与错误说明、状态联动和审计留痕；`SHADOW` 返回待真机握手的 WARN，`EXTERNAL` 未配置真实链路返回 FAIL | 已落地 |
 | Track Out | 记录参数快照、人员、设备、结果并推动 Lot 流转 | 已落地 |
 | 质量异常 | NG/关键参数超限生成质检、缺陷、异常并 Hold Lot | 已落地 |
 | Hold/Release | 记录原因、处置结论、责任角色、人员和时间 | 已落地，支持 MRB 结论联动 |
@@ -68,17 +68,17 @@
 
 | 验收项 | 标准 | 当前状态 |
 | --- | --- | --- |
-| Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.43`，容器库最新迁移为 `1.43` |
+| Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.47`，容器库已迁移到 `1.47` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，396 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，404 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
 | 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，19 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260610-010414.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
-| Flyway | `db/migration/V1.1-V1.43` 打包并自动迁移 | 已落地 |
-| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 V1.43 已通过静态验收 |
+| Flyway | `db/migration/V1.1-V1.47` 打包并自动迁移 | 已落地 |
+| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.47` 静态验收通过 |
 | 真实数据库 API 闭环 | 在 Docker Compose PostgreSQL 上完成登录、工单创建/释放、Lot Track In/Out、NG 自动 Hold、Release、追溯、看板、AI 报告和审计落库校验 | 已通过 `tools\run-real-db-api-flow.ps1`，报告 `SmartDisplay-MES-real-db-api-flow-20260608-060901.md` |
 | README | 启动、账号、API 示例、Docker 说明齐全 | 已更新 |
 | 演示脚本 | 5分钟和15分钟脚本 | 已新增 |

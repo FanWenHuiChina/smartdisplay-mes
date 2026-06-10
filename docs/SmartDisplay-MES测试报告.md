@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前后端单元/服务级闭环测试、Track In 预校验矩阵、系统审计分页筛选、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已重新完成 Docker Compose 三服务重建，容器数据库已迁移到 `V1.43`，前端反代分页审计接口验证通过；当前迁移静态验收已升级到 `V1.43`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
+当前后端单元/服务级闭环测试、Track In 预校验矩阵、系统审计分页筛选、EAP 影子协议驱动、Flyway 迁移静态校验、Flyway 全新库迁移演练、后端打包、前端生产构建、前端契约验收、前端生产 mock fallback 收口、生产包样例业务标识扫描、Codex app 风格视觉冒烟、真实浏览器 E2E、Docker Compose 容器级启动、HTTP 冒烟、性能冒烟、三轮性能基线、BOM/ECO 跨部门会签 API 冒烟、供应商准入/8D整改、供应商月度评分趋势和供应商准入周期复审任务均已通过相应验证。2026-06-10 已完成 EAP `SHADOW` 模式协议帧校验、Docker `V1.47` 迁移和 SECS/GEM 影子入站接口冒烟；当前迁移静态验收已升级到 `V1.47`。此前使用临时 PostgreSQL 容器完成全新数据库迁移演练，后端重新打包后自动迁移到 `V1.38`，并完成 `pg_dump/pg_restore` 恢复校验。
 
 ## 测试环境
 
@@ -18,7 +18,8 @@
 
 | 验证项 | 命令 | 结果 | 说明 |
 | --- | --- | --- | --- |
-| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 223, Failures: 0, Errors: 0, Skipped: 0` |
+| 后端全量测试 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` | 通过 | `Tests run: 241, Failures: 0, Errors: 0, Skipped: 0` |
+| EAP影子协议驱动回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=EapGatewayServiceTest" test` | 通过 | `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`；覆盖 `SHADOW/EXTERNAL` 健康检查、SECS/GEM 帧校验、OPC UA 数据变化归一化和厂商 HTTP 元数据保留 |
 | V1.31 AI定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKnowledgeServiceTest,AiModelConfigServiceTest,AiRecordServiceTest,PilotMesServiceTest,PilotMesFlowIntegrationTest" test` | 通过 | `Tests run: 20, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.32 AI留痕查询回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiRecordServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0` |
 | V1.33 知识库索引任务回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AiKbIndexServiceTest,AiKnowledgeServiceTest,RolePermissionServiceTest,PilotMesServiceTest" test` | 通过 | `Tests run: 31, Failures: 0, Errors: 0, Skipped: 0` |
@@ -34,13 +35,13 @@
 | RBAC权限口径回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=RolePermissionServiceTest" test` | 通过 | `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`；验证 PE/EE 质量菜单口径、操作员 Track In/Out 写权限和跨域写操作拒绝 |
 | 执行闭环与审计上下文回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesFlowIntegrationTest,AuditLogServiceTest" test` | 通过 | `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` |
 | 后端打包 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` | 通过 | 生成普通 jar，Spring Boot repackage 阶段通过 |
-| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 396 项检查 |
+| 前端契约验收 | `npm.cmd run verify:frontend-contract` | 通过 | 静态覆盖关键路由、`/api/v1` API 封装、请求拦截、RBAC 菜单/按钮权限、页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计快照查看入口、审计分页筛选与上下文导出、执行页禁止静态校验数和生产环境 mock fallback 禁用约束，共 404 项检查 |
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅存在第三方 pure annotation 和 chunk size 警告 |
 | 前端生产包样例标识扫描 | `npm.cmd run verify:production-bundle` | 通过 | 扫描 `dist/assets/*.js` 共 14 个产物，未发现典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 |
 | 前端视觉冒烟 | `smartdisplay-mes-ui/visual-check/visual-check-summary.json` | 通过 | `/login`、`/overview`、`/material`、`/equipment`、`/system` 无横向溢出、按钮文字溢出、文本裁切和控制台错误；视觉基线为浅色 Codex app 风格 |
 | 前端真实浏览器 E2E | `npm.cmd run e2e:browser` | 通过 | 19 步通过；覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报和网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-010414.md` |
 | CI 浏览器 E2E 门禁 | `.github/workflows/ci.yml` 的 `Docker browser E2E` job | 已接入 | 在 `ubuntu-latest` 中启动 Docker Compose 三服务，等待前端和后端代理就绪后运行 `node scripts/run-browser-e2e.mjs`，并上传浏览器 E2E 报告 |
-| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.43` 共 43 个迁移文件 |
+| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.47` 共 47 个迁移文件 |
 | Flyway 全新库迁移演练 | `powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` | 通过 | 临时 PostgreSQL 容器全新库迁移到 `V1.38`，应用启动成功；52 张 public 表、7 个种子用户、16 条 Route Step；`pg_dump/pg_restore` 恢复库最新版本仍为 `V1.38`，报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md` |
 | 性能冒烟脚本语法 | PowerShell Parser 解析 `tools\run-pilot-performance-smoke.ps1` | 通过 | 脚本支持阈值参数、Markdown/JSON 报告输出和失败退出码 |
 | 性能冒烟实测 | `powershell -ExecutionPolicy Bypass -File tools\run-pilot-performance-smoke.ps1 -BaseUrl http://127.0.0.1:8888/api -Username planner -Password 123456 -ImportCount 1000 -Samples 20` | 通过 | 经前端反代导入 1000 条模拟工单成功；订单列表 P95 15.67ms、Lot 列表 P95 13.72ms、良率看板 P95 17.28ms、Lot 追溯 P95 60.08ms；报告见 `docs/SmartDisplay-MES-performance-smoke-20260608-030053.md` |
@@ -51,7 +52,8 @@
 | Docker Compose 子目录配置 | `docker compose -f smartdisplay-mes-api\docker-compose.yml config` | 通过 | 兼容旧入口，三服务配置可解析 |
 | Docker Compose 状态 | `docker compose -f smartdisplay-mes-api\docker-compose.yml ps` | 通过 | `smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 监听 `8080`，`smartdisplay-mes-ui` 监听 `8888` |
 | Docker Compose 启动 | `docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` | 通过 | 三服务构建并启动成功，后端启动时执行 Flyway 自动迁移 |
-| Docker Flyway 迁移 | `docker compose -f smartdisplay-mes-api\docker-compose.yml exec -T postgres psql -U postgres -d smartdisplay_mes -c "select version, description, success from flyway_schema_history order by installed_rank desc limit 5;"` | 通过 | 最新迁移为 `1.43 Add Hybrid Local Rag Config`，`success=t` |
+| Docker Flyway 迁移 | `docker compose -f smartdisplay-mes-api\docker-compose.yml exec -T postgres psql -U postgres -d smartdisplay_mes -c "select version, description, success from flyway_schema_history order by installed_rank desc limit 5;"` | 通过 | 最新迁移为 `1.47 Harden Eap Shadow Protocol Drivers`，`success=t` |
+| EAP影子协议Docker冒烟 | `Invoke-RestMethod` 调用网关驱动、网关健康检查和 `/adapters/eap/messages` | 通过 | 前端反代返回 `SECS_GEM driverMode=SHADOW`、`protocolFrameValidation=true`；`GW-SECSGEM-SHADOW` 健康检查 `WARN`；SECS/GEM `S6F11` 入站归一为 `STATUS` 并 `PROCESSED` |
 | HTTP 冒烟 | `Invoke-RestMethod` 调用登录、Dashboard、库位任务和分页审计接口 | 通过 | 前端反代登录、`/dashboard/overview`、`/material/location-tasks` 均返回业务码 200；`/system/audit-logs?current=1&size=5&action=WMS&result=SUCCESS` 返回 `total=360`、本页 5 条且包含请求上下文字段 |
 | V1.38 库位任务状态流 | 经 `http://127.0.0.1:8888/api` 创建、领取、完成、取消库位任务 | 通过 | 盘点任务验证 `CREATED -> ASSIGNED -> DONE` 和 `CREATED -> CANCELLED`；完成任务 `MLT-20260608040941126-0001`，取消任务 `MLT-20260608040941417-0003` |
 | V1.39 BOM/ECO 会签状态流 | 经 `http://127.0.0.1:8080/api` 提交 BOM 变更、查询 ECO 会签任务、逐个会签通过、发布 BOM | 通过 | 变更单 `BCR-20260608064003841-0001` 生成 3 个任务并全部 `APPROVED`，发布后数据库为 `PUBLISHED\|APPROVED\|PE,QE,PLANNER`、任务统计 `3\|3` |
@@ -73,11 +75,11 @@
 - 供应商绩效评分与趋势：基于物料批次、来料 IQC 和8D整改记录聚合 PASS/HOLD/NG、通过率、风险批次、评分、月度趋势和风险等级，覆盖高风险排序、超期8D扣分且不额外读取 COA 附件。
 - 供应商准入复审任务：覆盖复审任务创建、重复 OPEN 任务拦截、复审通过/驳回决策、供应商状态回写、前端物料页复审工作区和失败审计映射。
 - 设备事件创建/关闭、EAP 参数越限自动事件、Recipe下发/回读不一致自动事件、设备状态联动、状态历史落库、EAP节拍采样、PM任务完成、OEE停机原因聚合、OEE性能率优先按标准/实际节拍采样计算、设备写接口权限和失败审计映射。
-- EAP 统一适配器占位：标准化消息入口、状态/节拍/参数/Recipe下发分发、`equipment:eap-ingest` 权限和 `EAP_ADAPTER_MESSAGE` 失败审计映射。
+- EAP 统一适配器与影子协议入口：标准化消息入口、状态/节拍/参数/Recipe下发分发、`equipment:eap-ingest` 权限和 `EAP_ADAPTER_MESSAGE` 失败审计映射。
 - 标准节拍主数据：产品+工序+设备+Recipe+版本发布、旧ACTIVE版本失效、节拍样本自动匹配标准秒、`EQUIPMENT_STANDARD_CYCLE_PUBLISH` 审计和失败审计映射。
 - EAP 网关连接：网关注册/更新、心跳、健康检查、入站消息先落履历、成功 `PROCESSED`、失败 `FAILED` 并降级网关、`equipment:eap-gateway` 权限和网关失败审计映射。
-- EAP 网关健康检查：覆盖模拟 HTTP `PASS`、真实协议占位 `WARN`、检查履历落库、网关状态联动和 `EQUIPMENT_GATEWAY_HEALTH_CHECK` 审计。
-- EAP 协议驱动：驱动能力列表、驱动配置快照、SECS/GEM `stream/function` 消息归一化、归一化 payload 快照和驱动编码留痕。
+- EAP 网关健康检查：覆盖模拟 HTTP `PASS`、影子协议 `WARN`、外部真实链路未配置 `FAIL`、检查履历落库、网关状态联动和 `EQUIPMENT_GATEWAY_HEALTH_CHECK` 审计。
+- EAP 协议驱动：驱动能力列表、驱动配置快照、SECS/GEM `stream/function` 帧校验与消息归一化、OPC UA 数据变化归一化、厂商 HTTP 请求元数据保留、归一化 payload 快照和驱动编码留痕。
 - BOM 变更提交、审批驳回、发布生效、旧版本失效、替代料自动选择、替代料验证报告附件元数据、ECO 包快照、风险等级、跨部门会签任务、会签通过前禁止发布、会签驳回阻断发布和 BOM 写接口失败审计。
 - 质量 NG/参数超限自动异常、缺陷记录和自动 Hold。
 - Hold/Release、Rework/Scrap 基础状态转换。

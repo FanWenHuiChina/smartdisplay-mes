@@ -110,7 +110,7 @@
               <select v-model="gatewayForm.driverMode" class="mes-select">
                 <option value="SIMULATED">SIMULATED</option>
                 <option value="SHADOW">SHADOW</option>
-                <option value="LIVE">LIVE</option>
+                <option value="EXTERNAL">EXTERNAL</option>
               </select>
             </div>
             <div class="mes-field">
@@ -793,8 +793,8 @@ const fallbackStandardCycles = [
 
 const fallbackGateways = [
   { gatewayCode: 'GW-SIM-HTTP-01', gatewayName: '试点模拟EAP网关', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02","EVAP_01","INSPECT_01"]', status: 'CONNECTED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastHeartbeatTime: new Date().toISOString(), type: 'green' },
-  { gatewayCode: 'GW-SECSGEM-PLACEHOLDER', gatewayName: 'SECS/GEM预留网关', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SIMULATED', endpointUri: 'secs://192.168.10.20:5000', lineCode: 'LINE_01', equipmentCodes: '["EVAP_01"]', status: 'DISCONNECTED', heartbeatIntervalMs: 500, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, type: 'red' },
-  { gatewayCode: 'GW-OPCUA-PLACEHOLDER', gatewayName: 'OPC UA预留网关', protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SIMULATED', endpointUri: 'opc.tcp://192.168.10.30:4840', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02"]', status: 'DISCONNECTED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, type: 'red' }
+  { gatewayCode: 'GW-SECSGEM-SHADOW', gatewayName: 'SECS/GEM影子协议网关', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', endpointUri: 'secs://192.168.10.20:5000', lineCode: 'LINE_01', equipmentCodes: '["EVAP_01"]', status: 'DEGRADED', heartbeatIntervalMs: 500, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' },
+  { gatewayCode: 'GW-OPCUA-SHADOW', gatewayName: 'OPC UA影子协议网关', protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', endpointUri: 'opc.tcp://192.168.10.30:4840', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02"]', status: 'DEGRADED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' }
 ]
 
 const fallbackGatewayMessages = [
@@ -804,14 +804,14 @@ const fallbackGatewayMessages = [
 
 const fallbackGatewayHealthChecks = [
   { checkNo: 'EGH-FALLBACK-001', gatewayCode: 'GW-SIM-HTTP-01', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', checkType: 'SEED', resultStatus: 'PASS', latencyMs: 12, errorMessage: '', checkedTime: new Date().toISOString(), type: 'green' },
-  { checkNo: 'EGH-FALLBACK-002', gatewayCode: 'GW-SECSGEM-PLACEHOLDER', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', endpointUri: 'secs://192.168.10.20:5000', checkType: 'SEED', resultStatus: 'WARN', latencyMs: 0, errorMessage: '真实 SECS/GEM 握手待联调', checkedTime: new Date().toISOString(), type: 'amber' }
+  { checkNo: 'EGH-FALLBACK-002', gatewayCode: 'GW-SECSGEM-SHADOW', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', endpointUri: 'secs://192.168.10.20:5000', checkType: 'SEED', resultStatus: 'WARN', latencyMs: 0, errorMessage: '影子协议帧校验可用，未配置真机握手', checkedTime: new Date().toISOString(), type: 'amber' }
 ]
 
 const fallbackGatewayDrivers = [
   { protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'VENDOR_HTTP', driverCode: 'vendor-http-driver', driverMode: 'SIMULATED' }
+  { protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
+  { protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
+  { protocolType: 'VENDOR_HTTP', driverCode: 'vendor-http-driver', driverMode: 'SHADOW', protocolFrameValidation: true }
 ]
 
 const fallbackEquipmentOee = {

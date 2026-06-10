@@ -100,7 +100,7 @@ public class EapGatewayService {
         gateway.setProtocolType(normalizeProtocol(requiredText(safeRequest, "protocolType")));
         EapProtocolDriver driver = protocolDriverRegistry.resolve(gateway.getProtocolType());
         gateway.setDriverCode(text(safeRequest, "driverCode", driver.driverCode()));
-        gateway.setDriverMode(text(safeRequest, "driverMode", "SIMULATED").toUpperCase(Locale.ROOT));
+        gateway.setDriverMode(text(safeRequest, "driverMode", defaultDriverMode(driver)).toUpperCase(Locale.ROOT));
         gateway.setEndpointUri(requiredText(safeRequest, "endpointUri"));
         gateway.setLineCode(text(safeRequest, "lineCode", "LINE_01"));
         gateway.setEquipmentCodes(equipmentCodesJson(value(safeRequest, "equipmentCodes")));
@@ -423,6 +423,11 @@ public class EapGatewayService {
             snapshot.put("driverConfig", String.valueOf(extraConfig));
         }
         return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private String defaultDriverMode(EapProtocolDriver driver) {
+        Object mode = driver.capabilities().get("driverMode");
+        return mode == null || String.valueOf(mode).isBlank() ? "SIMULATED" : String.valueOf(mode);
     }
 
     private Integer booleanFlag(Object value, int fallback) {

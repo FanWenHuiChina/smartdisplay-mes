@@ -34,10 +34,10 @@
 - `equipment_event` 已扩展停机原因、计划/非计划、开始/结束时间、持续分钟和影响等级；新增 `/api/v1/equipment/oee` 按近 24 小时聚合设备 OEE、可用率、性能率、质量率、计划/非计划停机和停机原因 TopN；事件关闭会回填结束时间、持续分钟并写 `EQUIPMENT_EVENT_CLOSE` 审计。
 - 新增 `equipment_status_history` 和 `equipment_cycle_sample`，EAP 状态上报、设备状态变化历史、标准节拍/实际节拍采样、良品/产出数量已落正式表；OEE 性能率优先使用节拍样本计算，缺少样本时才回退到设备状态估算。
 - 新增 `equipment_standard_cycle`，标准节拍主数据按产品、工序、设备、Recipe和版本治理；EAP节拍样本未上报标准秒时会自动匹配 ACTIVE 标准节拍，匹配不到才拒绝。
-- 新增 `EapAdapter` 和 `SimulatedEapAdapter`，状态、节拍、参数和 Recipe 下发写动作已收口到统一 EAP 适配器边界；新增 `/api/v1/adapters/eap/messages` 标准化消息入口，为真实设备协议驱动替换预留扩展点。
+- 新增 `EapAdapter` 和 `SimulatedEapAdapter`，状态、节拍、参数和 Recipe 下发写动作已收口到统一 EAP 适配器边界；新增 `/api/v1/adapters/eap/messages` 标准化消息入口，外部协议先经网关驱动归一化后进入模拟适配器。
 - 新增 `equipment_gateway_connection` 和 `equipment_gateway_message`，支持 EAP 网关连接配置、心跳状态、消息入站履历、处理成功/失败状态和错误留痕；统一消息入口已先写网关消息履历再调用模拟适配器。
-- 新增 `EapProtocolDriver`、`EapProtocolDriverRegistry`、模拟 HTTP、厂商 HTTP、SECS/GEM、OPC UA 四类协议驱动边界；网关连接保存驱动编码、模式、TLS、连接/读取超时和配置快照，入站消息保存原始快照与归一化快照。
-- 新增 `equipment_gateway_health_check`，支持手动网关健康检查、协议驱动健康结果、PASS/WARN/FAIL 履历、网关状态联动和审计留痕；真实 SECS/GEM、OPC UA、厂商 HTTP 当前明确返回待真机联调的 WARN 口径。
+- 新增 `EapProtocolDriver`、`EapProtocolDriverRegistry`、模拟 HTTP、厂商 HTTP、SECS/GEM、OPC UA 四类协议驱动边界；网关连接保存驱动编码、模式、TLS、连接/读取超时和配置快照，入站消息保存原始快照与归一化快照；SECS/GEM、OPC UA、厂商 HTTP 默认以 `SHADOW` 模式执行协议帧校验，不声明真机联调完成。
+- 新增 `equipment_gateway_health_check`，支持手动网关健康检查、协议驱动健康结果、PASS/WARN/FAIL 履历、网关状态联动和审计留痕；模拟 HTTP 返回 `PASS`，影子协议返回待真机握手配置的 `WARN`，`EXTERNAL` 未配置真实链路时返回 `FAIL`。
 - 新增 JWT 拦截器和轻量级 RBAC：除登录、Swagger、API Docs 外，`/api/**` 默认要求 Bearer Token；写操作按管理员、计划员、操作员、质量工程师、工艺工程师、设备工程师做角色控制。
 - 新增 `ErpOrderAdapterService`，模拟 ERP 下发工单并落 `prod_order`；接口支持单批最多 1000 条、批量查重、重复工单跳过、导入汇总审计 `ERP_ORDER_IMPORT` 和失败审计映射，默认只有具备 `order:create` 权限的角色可调用。
 - 新增工单释放预校验闭环：`GET /api/v1/orders/{orderNo}/release-checks` 返回工单状态、产品编码、Route首站、生效BOM、目标产线设备能力、Recipe覆盖、Lot拆分和权限审计结果；`POST /api/v1/orders/{orderNo}/release` 复用同一套阻断校验，前端工单页已移除静态 `7/8 通过` 并按真实接口动态展示。
@@ -77,17 +77,17 @@
 
 - 前端：`npm.cmd run build` 通过。
   - 仅有第三方 `@vueuse/core` pure annotation 和 chunk size 警告，不是本次代码错误。
-- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 396 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
+- 前端契约验收：`npm.cmd run verify:frontend-contract` 通过，静态覆盖路由、请求拦截、`/api/v1` 封装、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、V1.38 库位任务、V1.41 供应商准入/复审/8D、供应商月度评分趋势、供应商到期复审生成接口、工单页 ERP Adapter 审计回执、工单释放预校验接线、Track In 预校验接线、系统审计分页筛选、上下文导出和生产 mock fallback 禁用约束，共 404 项检查；`npm.cmd run verify:production-bundle` 通过，生产包 14 个 JS 产物未发现典型 mock/fallback 样例业务标识。
 - 系统审计分页筛选回归：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=AuditLogServiceTest,PilotMesServiceTest" test` 通过，`Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`；覆盖分页、动作分组、结果、来源、操作人、日期范围、请求上下文字段映射和非法日期拒绝。
 - 前端视觉冒烟：当前 UI 已调整为参考 Codex app 的浅色、中性灰、轻边框、低阴影和低饱和按钮风格；`/login`、`/overview`、`/material`、`/equipment`、`/system` 已完成截图检查，无横向溢出、按钮文字溢出、文本裁切和控制台错误。
 - 前端真实浏览器 E2E：`npm.cmd run e2e:browser` 通过，19 步覆盖登录、导航权限、工单页 UI 调用 ERP Adapter 下发/审计/释放并生成 Lot、Lot 管理二级工作台 Hold/Release/Rework/Scrap、Recipe 管理二级工作台与参数详情、UI Track In/Out 及 Track In 预校验矩阵、QMS Adapter 上报、WMS Adapter 齐套/入库事务、物料 V1.38 库位任务操作台和状态流、供应商到期准入复审生成审计、设备页 EAP 参数上报与网关健康检查、质量 MRB/缺陷证据、主流程 Lot 追溯查询、AI 报告生成留痕、系统审计入口、操作员菜单收敛与越权工单释放 403；Console/Network 错误数为 0，最新报告见 `docs/SmartDisplay-MES-browser-e2e-20260610-010414.md`。
-- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 223, Failures: 0, Errors: 0, Skipped: 0`。
+- 后端单元测试：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 通过，`Tests run: 241, Failures: 0, Errors: 0, Skipped: 0`。
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
   - 普通 jar、源码编译和 Spring Boot repackage 均已通过。
-- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.43` 共 43 个迁移文件。
-- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39-V1.43 已补充静态验收，当前容器数据库已完成 V1.43 迁移复验；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
+- Flyway 静态验收：`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 通过，识别 `V1.1-V1.47` 共 47 个迁移文件。
+- Flyway 全新库迁移演练：`powershell -ExecutionPolicy Bypass -File tools\run-flyway-rehearsal.ps1 -StartupTimeoutSec 180` 通过；该演练报告生成于 `V1.38 Add Material Location Task Workflow`，后续 V1.39-V1.47 已补充静态验收；报告见 `docs/SmartDisplay-MES-flyway-rehearsal-20260608-052419.md`。
 - Docker交付配置：`docker compose config` 通过；根目录已新增 `docker-compose.yml` 作为交付入口；后端可执行包 `mvn.cmd "-DskipTests" package` 通过并生成 `target/smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar`。
-- Docker容器级复验：`docker compose -f smartdisplay-mes-api\docker-compose.yml up -d --build` 通过；`smartdisplay-mes-postgres` healthy，`smartdisplay-mes-api` 暴露 `8080`，`smartdisplay-mes-ui` 暴露 `8888`；容器数据库 Flyway 已迁移到 `V1.43 Add Hybrid Local Rag Config`。
+- Docker运行态复验：当前使用本地 jar/dist 覆盖现有后端和前端容器；后端重启后 Flyway 已从 `1.46` 迁移到 `1.47 Harden Eap Shadow Protocol Drivers`，`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 可用；EAP 影子协议接口冒烟通过。
 - HTTP状态流冒烟：经 `http://127.0.0.1:8888/api` 反代登录、总览、库位任务和分页审计查询均返回业务码 200；`/system/audit-logs?current=1&size=5&action=WMS&result=SUCCESS` 返回 `total=360`、本页 5 条且包含请求上下文字段；V1.38 盘点任务已验证 `CREATED -> ASSIGNED -> DONE` 和 `CREATED -> CANCELLED`。
 - BOM/ECO 会签 API 冒烟：经 `http://127.0.0.1:8080/api` 提交 BOM 变更、查询 ECO 会签任务、逐个会签通过并发布目标 BOM；变更单 `BCR-20260608064003841-0001` 生成 3 个任务并全部 `APPROVED`，发布后数据库为 `PUBLISHED|APPROVED|PE,QE,PLANNER`、任务统计 `3|3`。
 - HTTP冒烟：后端直连登录、前端首页、Swagger、前端 Nginx `/api` 反代登录、Dashboard 和库位任务接口均返回 200；`GET /api/v1/material/location-tasks` 当前返回 2 条记录。
@@ -413,7 +413,7 @@
 - 后端打包：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-DskipTests" "-Dspring-boot.repackage.skip=true" package` 通过。
 - 已完成该增量 Flyway 静态验收；最新迁移范围见上方“验证结果”和下一节 V1.27 增量。
 
-## 2026-06-07 增量：EAP 统一适配器占位
+## 2026-06-07 增量：EAP 统一适配器边界
 
 - 新增 `EapAdapter` 接口和 `SimulatedEapAdapter` 默认实现，将 EAP 状态、节拍、参数和 Recipe 下发统一收口到可替换适配器边界。
 - 新增 `POST /api/v1/adapters/eap/messages` 标准化消息入口，支持 `STATUS`、`CYCLE`、`PARAMETER`、`RECIPE_DOWNLOAD` 消息类型和常用别名。
@@ -841,3 +841,15 @@
 - 追溯返回的 `route` 现在包含 `routeCode`、`productCode`、`version`、`status` 和工序序列；当 Route 主数据缺失时返回 `status=MISSING` 与错误说明，避免空列表下标异常。
 - 这项修正和 Route 单一生效版本治理配套，保证 Lot/SN/工单/设备/物料/缺陷多入口追溯中的工艺路线证据与当前 Lot 产品一致。
 - 已验证：`PilotMesServiceTest,PilotMesFlowIntegrationTest` 定向 38 项通过，后端全量测试 236 项通过；Docker 追溯 `LOTSCP20260610010414-001` 返回 `lot.productCode=AMOLED_65`、`route.routeCode=RTE_G6_AMOLED65_V08`、`route.productCode=AMOLED_65`。
+
+## 2026-06-10 增量：EAP 影子协议驱动加固
+
+- `AbstractEapProtocolDriver` 增加协议帧校验钩子、驱动模式能力输出和健康检查模式分支：模拟 HTTP 返回 `PASS`，`SHADOW` 返回“帧校验可用、真机握手未配置”的 `WARN`，`EXTERNAL` 未提供真实链路配置时返回 `FAIL`。
+- SECS/GEM 驱动从仅归一化升级为影子协议帧校验：入站消息必须提供 `secsMessage` 或 `stream/function`，并保留 `ceid`、`rptId`、`systemBytes`、`transactionId` 等关键证据；`S6F11` 可归一为 `STATUS`。
+- OPC UA 驱动要求 `nodeId` 和 `equipmentCode`，`DATA_CHANGE` 默认归一为 `PARAMETER`，并保留 `namespaceIndex`、`monitoredItemId`、`qualityCode`、时间戳等节点证据。
+- 厂商 HTTP 驱动要求消息标识或签名类字段以及设备标识，保留 `httpMethod`、`requestPath`、`requestId`、`signature`、`vendorMessageId`、`vendorCode` 和 headers 元数据。
+- `EapGatewayService.registerGateway` 未显式传入 `driverMode` 时会使用驱动能力默认值，SECS/GEM、OPC UA、厂商 HTTP 默认进入 `SHADOW`，避免误把真实协议边界当成简单模拟。
+- 新增 Flyway `V1.47__Harden_Eap_Shadow_Protocol_Drivers.sql`，把运行库中的 `GW-SECSGEM-PLACEHOLDER`、`GW-OPCUA-PLACEHOLDER` 升级为 `GW-SECSGEM-SHADOW`、`GW-OPCUA-SHADOW`，并重写驱动配置快照和健康检查说明。
+- 前端设备页开发 fallback 已同步改为 `GW-SECSGEM-SHADOW`、`GW-OPCUA-SHADOW`，驱动模式显示 `SHADOW`，驱动模式选项使用 `EXTERNAL`，不再显示旧网关口径。
+- 已验证：`EapGatewayServiceTest` 14 项通过，后端全量 241 项通过，Flyway 静态验收 47 个迁移通过，前端契约 404 项通过，前端生产构建和生产包扫描通过。
+- 已部署到当前 Docker 运行环境：本地 jar/dist 已覆盖后端和前端容器；后端重启后 Flyway 已迁移到 `1.47 Harden Eap Shadow Protocol Drivers`；前端反代冒烟确认 `SECS_GEM driverMode=SHADOW`、`protocolFrameValidation=true`，`GW-SECSGEM-SHADOW` 健康检查返回 `WARN`，SECS/GEM `S6F11` 入站归一为 `STATUS` 并处理为 `PROCESSED`。
