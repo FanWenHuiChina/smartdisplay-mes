@@ -1304,6 +1304,10 @@ public class PilotMesService {
         return materialService.completeLocationTask(taskNo, safeRequest(request));
     }
 
+    public Map<String, Object> reviewMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.reviewLocationTask(taskNo, safeRequest(request));
+    }
+
     public Map<String, Object> cancelMaterialLocationTask(String taskNo, Map<String, Object> request) {
         return materialService.cancelLocationTask(taskNo, safeRequest(request));
     }

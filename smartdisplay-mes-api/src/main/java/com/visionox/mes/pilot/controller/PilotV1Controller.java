@@ -664,6 +664,12 @@ public class PilotV1Controller {
         return Result.success(pilotMesService.completeMaterialLocationTask(taskNo, request));
     }
 
+    @PostMapping("/material/location-tasks/{taskNo}/review")
+    public Result<Map<String, Object>> reviewMaterialLocationTask(@PathVariable String taskNo,
+                                                                  @RequestBody(required = false) Map<String, Object> request) {
+        return Result.success(pilotMesService.reviewMaterialLocationTask(taskNo, request));
+    }
+
     @PostMapping("/material/location-tasks/{taskNo}/cancel")
     public Result<Map<String, Object>> cancelMaterialLocationTask(@PathVariable String taskNo,
                                                                   @RequestBody(required = false) Map<String, Object> request) {

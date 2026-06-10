@@ -33,7 +33,7 @@
 | 替代料验证报告附件 | BOM 变更提交/审批可保存验证报告附件元数据，BOM 变更列表返回附件数量和附件明细 | 已落地，首版附件元数据 |
 | WMS库存事务 | 支持入库、冻结、解冻、退料、盘点、事务履历、审计和批次行锁 | 已落地 |
 | WMS库位策略 | 支持库位主数据、存储类型、物料类别、容量、环境窗口、优先级、锁定状态；入库校验库位状态/容量/类别/单位并更新占用 | 已落地，首版策略 |
-| WMS库位任务 | 支持上架、整批移库、拆批、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消分步状态流；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED`；2026-06-09 已补齐创建/领取/完成/取消审计 `before/after/changedFields/request` 快照；2026-06-10 已补齐多库位拆批任务 |
+| WMS库位任务 | 支持上架、整批移库、拆批、盘点任务，记录任务单、库存事务和审计；支持创建、领取、完成、取消、完成后复核分步状态流；物料页提供任务操作台和最近任务表 | 已落地，V1.38 已验证 `CREATED/ASSIGNED/DONE/CANCELLED`；2026-06-09 已补齐创建/领取/完成/取消审计 `before/after/changedFields/request` 快照；2026-06-10 已补齐多库位拆批任务和完成后复核闭环 |
 | 来料IQC/COA | 支持供应商批次来料判定、COA编号、附件元数据、批次质量状态联动和审计 | 已落地 |
 | 供应商绩效评分/趋势 | 基于物料批次、来料IQC与8D记录聚合批次数、PASS/HOLD/NG、通过率、风险批次、评分、风险等级和最近6个月月度趋势，并提供物料页只读看板 | 已落地，首版聚合评分和趋势 |
 | 供应商准入/8D整改 | 支持供应商主数据、准入状态评估、8D整改单创建/关闭、IQC NG/HOLD 自动开8D、供应商风险降级、审计与前端处置工作区 | 已落地，V1.40 已通过后端/前端/Flyway 验收 |
@@ -72,7 +72,7 @@
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | API文档合同 | Swagger/OpenAPI 必须提供 `/api/v3/api-docs/pilot-v1` 分组，声明 `/api/v1/**`、JWT Bearer、统一响应、分页模型和标准错误响应 | 已落地，`OpenApiConfigTest` 5 项通过；Docker 运行态已验证 `Result/PageResult`、400/401/403/500、登录免 Bearer 和业务接口 Bearer 安全要求 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，414 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批任务入口、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、WMS 库位任务复核、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，417 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批和复核任务入口、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
@@ -91,8 +91,8 @@
 
 ## 未完成的生产级增强
 
-- 替代料验证报告附件、BOM/ECO跨部门会签、供应商绩效评分/趋势、供应商准入/复审/8D整改、供应商复审自动提醒、库位策略和库位任务已具备首版能力，多库位拆批任务已落地。
-- 后续可扩展供应商门户协同，以及异步领取/复核式 WMS 任务流。
+- 替代料验证报告附件、BOM/ECO跨部门会签、供应商绩效评分/趋势、供应商准入/复审/8D整改、供应商复审自动提醒、库位策略和库位任务已具备首版能力，多库位拆批任务和完成后复核已落地。
+- 后续可扩展供应商门户协同，以及 WMS 任务异步队列、抽检复核、驳回复核后的异常处置和库存冲正流程。
 - 真实 SECS/GEM、OPC UA 或厂商 HTTP 协议驱动真机联调和毫秒级设备状态采集。
 - 真实 pgvector 向量检索、真实外部模型联调和引用召回率评估。
 - 真实数据库 API 闭环集成验证已补；Flyway 全新库迁移演练、前端静态契约验收、Codex app 风格视觉冒烟、真实浏览器 E2E、生产 mock fallback 收口、生产包样例标识扫描、Docker Compose 容器级启动复验和一轮性能冒烟实测已补。

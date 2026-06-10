@@ -107,6 +107,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("PLANNER", request("POST", "/api/v1/material/receive"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/freeze"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks"))).isFalse();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/review"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/incoming-inspection"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/SUP-A/qualification/evaluate"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/corrective-actions"))).isTrue();
@@ -127,6 +128,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/inventory-count"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/complete"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/review"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/corrective-actions"))).isFalse();
     }
 

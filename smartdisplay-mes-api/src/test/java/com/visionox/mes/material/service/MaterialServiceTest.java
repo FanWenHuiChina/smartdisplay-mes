@@ -902,6 +902,56 @@ class MaterialServiceTest {
     }
 
     @Test
+    void reviewLocationTaskShouldUpdateReviewerAndWriteAudit() {
+        MaterialLocationTask task = locationTask("MLT-REVIEW-001", "MOVE", "PI_INK_B010");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.reviewLocationTask("MLT-REVIEW-001", Map.of(
+                "reviewer", "wms-lead",
+                "reviewConclusion", "执行数量、库位和批次一致"
+        ));
+
+        assertThat(task.getReviewer()).isEqualTo("wms-lead");
+        assertThat(task.getReviewedTime()).isNotNull();
+        assertThat(result.get("task")).isInstanceOf(Map.class);
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> reviewSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), eq("MLT-REVIEW-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), reviewSnapshotCaptor.capture());
+        assertThat(reviewSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"reviewer\":\"wms-lead\"")
+                .contains("\"reviewConclusion\":\"执行数量、库位和批次一致\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void reviewLocationTaskShouldRejectNonDoneOrReviewedTask() {
+        MaterialLocationTask executing = locationTask("MLT-REVIEW-002", "MOVE", "PI_INK_B010");
+        executing.setStatus("EXECUTING");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-002")).thenReturn(executing);
+
+        assertThatThrownBy(() -> materialService.reviewLocationTask("MLT-REVIEW-002", Map.of("reviewer", "wms-lead")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("状态不允许复核");
+
+        MaterialLocationTask reviewed = locationTask("MLT-REVIEW-003", "MOVE", "PI_INK_B010");
+        reviewed.setStatus("DONE");
+        reviewed.setReviewer("wms-lead");
+        reviewed.setReviewedTime(LocalDateTime.now());
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-003")).thenReturn(reviewed);
+
+        assertThatThrownBy(() -> materialService.reviewLocationTask("MLT-REVIEW-003", Map.of("reviewer", "wms-lead-2")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已复核");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void materialLocationTasksShouldExposeTaskRows() {
         MaterialLocationTask task = locationTask("MLT-001", "MOVE", "PI_INK_B007");
         when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));

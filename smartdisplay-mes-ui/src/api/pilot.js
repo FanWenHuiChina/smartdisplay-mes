@@ -108,6 +108,7 @@ export const getMaterialLocationTasks = (params = {}) => request.get('/v1/materi
 export const createMaterialLocationTask = (data = {}) => request.post('/v1/material/location-tasks', data)
 export const assignMaterialLocationTask = (taskNo, data = {}) => request.post(`/v1/material/location-tasks/${taskNo}/assign`, data)
 export const completeMaterialLocationTask = (taskNo, data = {}) => request.post(`/v1/material/location-tasks/${taskNo}/complete`, data)
+export const reviewMaterialLocationTask = (taskNo, data = {}) => request.post(`/v1/material/location-tasks/${taskNo}/review`, data)
 export const cancelMaterialLocationTask = (taskNo, data = {}) => request.post(`/v1/material/location-tasks/${taskNo}/cancel`, data)
 export const getCarriers = () => request.get('/v1/carriers')
 export const bindCarrier = (carrierNo, data = {}) => request.post(`/v1/carriers/${carrierNo}/bind`, data)

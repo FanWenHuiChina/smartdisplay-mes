@@ -90,6 +90,18 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapMaterialLocationTaskReviewFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/location-tasks/MLT-001/review");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("MATERIAL_LOCATION_TASK_REVIEW");
+        assertThat(target.get().bizNo()).isEqualTo("MLT-001");
+        assertThat(target.get().bizType()).isEqualTo("MATERIAL_LOCATION_TASK");
+    }
+
+    @Test
     void resolveShouldMapSupplierQualificationEvaluateFailure() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/suppliers/SUP-A/qualification/evaluate");
 

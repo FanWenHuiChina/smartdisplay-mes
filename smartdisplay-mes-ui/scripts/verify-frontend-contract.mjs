@@ -204,6 +204,7 @@ const requiredApiExports = [
   ['createMaterialLocationTask', '/v1/material/location-tasks'],
   ['assignMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/assign'],
   ['completeMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/complete'],
+  ['reviewMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/review'],
   ['cancelMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/cancel'],
   ['getCarriers', '/v1/carriers'],
   ['bindCarrier', '/v1/carriers/${carrierNo}/bind'],
@@ -310,7 +311,7 @@ const pageContracts = [
   ['views/execution/index.vue', ['getLots', 'getTrackInChecks', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
   ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth', 'getEquipmentGatewayMessageDetail'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
   ['views/quality/index.vue', ['getQualityInspections', 'createQualityInspection', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
-  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
+  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'reviewMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['searchTrace'], []],
   ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'analyzeEquipment', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:equipment-analyze', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
   ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
@@ -366,6 +367,7 @@ check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['s
 
 const materialView = read('src/views/material/index.vue')
 check('page:views/material/index.vue:wms-split-location-task', hasAll(materialView, ['SPLIT', '拆批', 'childBatchNo', '拆出数量', 'createMaterialLocationTask', 'completeMaterialLocationTask']), 'Material page must expose WMS split batch location task with child batch evidence')
+check('page:views/material/index.vue:wms-location-task-review', hasAll(materialView, ['reviewMaterialLocationTask', 'reviewLocationTask', 'canReview', 'reviewer', 'reviewedTime', '待复核']), 'Material page must expose WMS location task review evidence and action')
 
 const layoutView = read('src/views/layout/MainLayout.vue')
 check('layout:dashboard-badges-api-driven', hasAll(layoutView, ['getOverview', 'dashboardBadges', 'badgeKey', 'loadNavigationSummary']), 'Layout dashboard badges must be driven by /dashboard/overview')

@@ -894,3 +894,13 @@
 - RBAC 继续复用 `material:wms` 权限，质量角色默认不能越权创建/完成库位任务，应用权限快照后才允许 WMS 写操作。
 - 前端契约脚本新增拆批任务检查，防止后续页面退回到仅后端支持、前端无入口状态。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest` 定向 59 项通过，`npm.cmd run verify:frontend-contract` 414 项通过，`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
+
+## 2026-06-10 增量：WMS 库位任务复核闭环
+
+- 新增 `POST /api/v1/material/location-tasks/{taskNo}/review`，在既有库位任务执行完成后补复核动作；仅允许 `DONE` 且未复核的任务复核，非完成状态和重复复核会被拒绝。
+- 复核写入 `reviewer`、`reviewedTime` 和 `updatedTime`，不反向修改库存事务，避免把已经完成的上架、移库、拆批或盘点动作变成隐式冲正。
+- 新增 `MATERIAL_LOCATION_TASK_REVIEW` 成功审计，快照包含 `before`、`after`、`changedFields` 和 `request`；失败审计映射已覆盖 `/material/location-tasks/{taskNo}/review`。
+- RBAC 继续复用 `material:wms` 写权限，质量角色默认不能越权复核库位任务，应用权限快照后才允许调用复核接口。
+- 前端物料页最近库位任务表新增“执行/复核”列，显示 `待复核`、复核人和复核时间；`DONE` 且未复核任务提供“复核”按钮，沿用浅色 Codex app 工作台风格。
+- 前端契约脚本新增 `reviewMaterialLocationTask` API、物料页复核状态和按钮接线检查，防止后续只保留后端接口而页面无入口。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 96 项通过，`npm.cmd run verify:frontend-contract` 417 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过；构建仅保留既有第三方 pure annotation 和 chunk size 警告。

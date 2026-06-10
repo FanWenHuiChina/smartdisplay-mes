@@ -1172,6 +1172,34 @@ public class MaterialService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> reviewLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        if (!"DONE".equals(valueOr(task.getStatus(), ""))) {
+            throw new BusinessException("当前库位任务状态不允许复核: " + task.getStatus());
+        }
+        if (task.getReviewedTime() != null || !valueOr(task.getReviewer(), "").isBlank()) {
+            throw new BusinessException("库位任务已复核: " + valueOr(task.getReviewer(), "-"));
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String reviewer = text(request, "reviewer",
+                text(request, "reviewedBy", text(request, "operator", AuthContext.username())));
+        if (reviewer.isBlank()) {
+            throw new BusinessException("库位任务复核人不能为空");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        task.setReviewer(reviewer);
+        task.setReviewedTime(now);
+        task.setUpdatedTime(now);
+        materialLocationTaskMapper.updateById(task);
+        String conclusion = text(request, "reviewConclusion", text(request, "conclusion", "库位任务执行记录已复核"));
+        audit("MATERIAL_LOCATION_TASK_REVIEW", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "复核库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
+                        + ", conclusion=" + conclusion,
+                reviewer, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
+        return Map.of("task", locationTaskRow(task));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> cancelLocationTask(String taskNo, Map<String, Object> request) {
         MaterialLocationTask task = lockedLocationTask(taskNo);
         if (!List.of("CREATED", "ASSIGNED").contains(valueOr(task.getStatus(), ""))) {

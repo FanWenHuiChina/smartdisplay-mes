@@ -439,7 +439,7 @@
                   <th>源/目标库位</th>
                   <th>数量</th>
                   <th>状态</th>
-                  <th>执行人</th>
+                  <th>执行/复核</th>
                   <th>时间</th>
                   <th>操作</th>
                 </tr>
@@ -457,7 +457,12 @@
                   <td>{{ task.sourceLocation }} → {{ task.targetLocation }}</td>
                   <td>{{ task.qty }}</td>
                   <td><span class="status-tag" :class="task.type">{{ task.status }}</span></td>
-                  <td>{{ task.assignedTo || task.operator }}</td>
+                  <td>
+                    <div class="task-main">
+                      <span>{{ task.assigneeLabel }}</span>
+                      <span class="task-review" :class="task.reviewType">{{ task.reviewText }}</span>
+                    </div>
+                  </td>
                   <td>{{ task.time }}</td>
                   <td>
                     <div class="task-actions">
@@ -476,6 +481,14 @@
                         @click="completeLocationTask(task)"
                       >
                         完成
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canReview"
+                        class="mes-btn tiny"
+                        :disabled="locationTaskSubmitting"
+                        @click="reviewLocationTask(task)"
+                      >
+                        复核
                       </button>
                       <button
                         v-if="canWmsAction && task.canCancel"
@@ -799,6 +812,7 @@ import {
   generateDueSupplierQualificationReviews,
   ingestWmsInventoryTransaction,
   receiveMaterial,
+  reviewMaterialLocationTask,
   returnMaterial,
   unbindCarrier,
   unfreezeMaterial
@@ -1334,6 +1348,9 @@ function mapMaterialLocation(item) {
 function mapLocationTask(item, index = 0) {
   const status = item.status || 'CREATED'
   const timeSource = item.completedTime || item.executedTime || item.assignedTime || item.createdTime
+  const reviewer = item.reviewer || ''
+  const reviewedTime = item.reviewedTime || ''
+  const reviewed = Boolean(reviewer || reviewedTime)
   return {
     key: item.taskNo || `${item.batchNo}-${item.taskType}-${index}`,
     taskNo: item.taskNo || '-',
@@ -1352,11 +1369,17 @@ function mapLocationTask(item, index = 0) {
     reason: item.reason || '-',
     operator: item.operator || 'system',
     assignedTo: item.assignedTo || '',
+    assigneeLabel: item.assignedTo || item.operator || 'system',
+    reviewer,
+    reviewedTime,
+    reviewText: reviewed ? `已复核 ${reviewer || '-'}${reviewedTime ? ` / ${formatTime(reviewedTime)}` : ''}` : (status === 'DONE' ? '待复核' : '未完成'),
+    reviewType: reviewed ? 'green' : (status === 'DONE' ? 'amber' : 'gray'),
     time: formatTime(timeSource),
     type: item.type || statusType(status),
     canAssign: status === 'CREATED',
     canComplete: ['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status),
-    canCancel: ['CREATED', 'ASSIGNED'].includes(status)
+    canCancel: ['CREATED', 'ASSIGNED'].includes(status),
+    canReview: status === 'DONE' && !reviewed
   }
 }
 
@@ -1733,6 +1756,24 @@ async function completeLocationTask(task) {
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务完成失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
+async function reviewLocationTask(task) {
+  try {
+    locationTaskSubmitting.value = true
+    const reviewer = locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    await reviewMaterialLocationTask(task.taskNo, {
+      reviewer,
+      operator: reviewer,
+      reviewConclusion: '库位任务执行记录、数量和库位已复核'
+    })
+    ElMessage.success('库位任务已复核')
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '库位任务复核失败')
   } finally {
     locationTaskSubmitting.value = false
   }
@@ -2185,6 +2226,32 @@ onMounted(loadMaterialData)
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-review {
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid var(--mes-line-soft);
+  padding: 1px 7px;
+  background: var(--mes-soft-2);
+  line-height: 17px;
+  font-weight: 600;
+}
+
+.task-review.green {
+  color: var(--mes-green);
+  background: var(--mes-green-soft);
+  border-color: #dbe6dc;
+}
+
+.task-review.amber {
+  color: var(--mes-amber);
+  background: var(--mes-amber-soft);
+  border-color: #eadfc8;
+}
+
+.task-review.gray {
+  color: var(--mes-sub);
 }
 
 .task-actions {
