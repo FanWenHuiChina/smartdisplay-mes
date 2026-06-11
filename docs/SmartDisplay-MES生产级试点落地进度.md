@@ -943,3 +943,13 @@
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 103 项通过，`npm.cmd run verify:frontend-contract` 423 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
 - 已部署到当前 Docker 运行环境：后端 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` 已覆盖 `/app/app.jar` 并重启，前端 `dist` 已覆盖 Nginx 静态目录；`http://127.0.0.1:8888/` 返回 HTTP 200，登录和 `pendingDispositionOnly=true` 接口返回业务码 200。
 - Docker 演示数据已通过正常业务 API 创建一条待处置驳回任务 `MLT-20260611090846806-0001`，当前筛选接口返回 `pendingCount=1`，便于在物料页直接查看新队列效果。
+
+## 2026-06-11 增量：WMS 复核差异升级处置入口
+
+- 前端物料页在“复核差异待处置”队列和最近库位任务表中新增“升级”按钮，复用既有 `POST /api/v1/material/location-tasks/{taskNo}/disposition`，提交 `dispositionResult=ESCALATE`。
+- 升级处置会弹出确认框，结论写为“复核驳回差异已升级异常/MRB 后续处理”；当前只将任务状态推进为 `ESCALATED` 并留审计，不自动执行库存冲正或生产动作。
+- `dispositionLocationTask` 前端逻辑拆出结论和成功提示映射，避免接收差异、调库、升级三类处置共用错误文案。
+- `MaterialServiceTest` 新增升级处置用例，验证 `ESCALATE -> ESCALATED`、不改库存、不写库存事务、返回 `已升级/red` 展示字段，并写 `MATERIAL_LOCATION_TASK_DISPOSITION` 审计快照。
+- 前端契约脚本将 `ESCALATE` 和“升级”纳入 WMS 复核驳回处置检查，防止后续页面退回只支持接收差异和调库。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 104 项通过，`npm.cmd run verify:frontend-contract` 423 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
+- 已部署到当前 Docker 前端容器：`http://127.0.0.1:8888/` 返回 HTTP 200，待处置筛选接口返回 `pendingCount=1`，容器内 `material-CJbEAJQd.js` 已包含 `ESCALATE` 分支。

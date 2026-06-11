@@ -1014,6 +1014,42 @@ class MaterialServiceTest {
     }
 
     @Test
+    void dispositionLocationTaskShouldEscalateRejectedReviewWithoutInventoryChange() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-DISP-ESC-001", "COUNT", "PI_INK_B010");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-ESC-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.dispositionLocationTask("MLT-DISP-ESC-001", Map.of(
+                "operator", "wms-lead",
+                "dispositionResult", "ESCALATE",
+                "dispositionConclusion", "复核差异升级异常/MRB 后续处理"
+        ));
+
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(task.getDispositionStatus()).isEqualTo("ESCALATED");
+        assertThat(task.getDispositionResult()).isEqualTo("ESCALATE");
+        assertThat(task.getDispositionConclusion()).isEqualTo("复核差异升级异常/MRB 后续处理");
+        assertThat(task.getDispositionBy()).isEqualTo("wms-lead");
+        assertThat(task.getDispositionTime()).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("dispositionStatus", "ESCALATED")
+                .containsEntry("dispositionResult", "ESCALATE")
+                .containsEntry("dispositionText", "已升级")
+                .containsEntry("dispositionType", "red");
+
+        verify(batchMapper, never()).selectByBatchNoForUpdate(any());
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+        ArgumentCaptor<String> dispositionSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_DISPOSITION"), eq("MLT-DISP-ESC-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), dispositionSnapshotCaptor.capture());
+        assertThat(dispositionSnapshotCaptor.getValue())
+                .contains("\"dispositionResult\":\"ESCALATE\"")
+                .contains("\"dispositionStatus\":\"ESCALATED\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void dispositionLocationTaskShouldAdjustInventoryWhenExplicitlyRequested() {
         MaterialLocationTask task = rejectedReviewTask("MLT-DISP-ADJ-001", "COUNT", "PI_INK_B010");

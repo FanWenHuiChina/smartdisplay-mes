@@ -587,3 +587,16 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | Docker 演示数据 | 经前端反代 API 创建、领取、完成、复核驳回 `COUNT` 库位任务 | 通过 | 生成 `MLT-20260611090846806-0001`，状态 `DONE`，`reviewResult=REJECTED`，`dispositionStatus=PENDING`，待处置筛选返回 `pendingCount=1` |
 
 说明：Codex app 内置浏览器本轮受 Windows 沙箱权限限制，连接时报 `CreateProcessAsUserW failed: 5`，未作为通过证据；本轮以 Docker 运行态 HTTP/API、容器静态资源和自动化契约/构建扫描作为验收依据。
+
+## 2026-06-11 WMS 复核差异升级处置入口复验
+
+本轮补齐复核驳回处置中的第三个分支：升级处置。页面可从待处置队列或最近库位任务表将差异升级为 `ESCALATED`，让 WMS 班组把无法现场接收或调库关闭的问题留给异常/MRB 后续处理。当前升级动作只留痕和改变处置状态，不自动修改库存、不自动关闭异常。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端升级处置定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 104 项通过；新增覆盖 `ESCALATE -> ESCALATED`、不改库存、不写库存事务、返回 `已升级/red` 和处置审计快照 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 423 项通过；WMS 复核驳回处置检查已包含 `ESCALATE` 和“升级”入口 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
+| Docker 前端覆盖 | 覆盖 `smartdisplay-mes-ui:/usr/share/nginx/html/` 后检查首页和 bundle | 通过 | 首页 HTTP 200；待处置筛选 `pendingCount=1`；容器内 `material-CJbEAJQd.js` 包含 `ESCALATE` |

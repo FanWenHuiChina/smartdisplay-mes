@@ -399,6 +399,15 @@
                 >
                   调库
                 </button>
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny warn"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ESCALATE')"
+                >
+                  升级
+                </button>
               </div>
             </div>
           </div>
@@ -585,6 +594,14 @@
                         @click="dispositionLocationTask(task, 'ADJUST_INVENTORY')"
                       >
                         调库
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny warn"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ESCALATE')"
+                      >
+                        升级
                       </button>
                     </div>
                   </td>
@@ -1978,9 +1995,7 @@ async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATI
     const payload = {
       operator,
       dispositionResult,
-      dispositionConclusion: dispositionResult === 'ADJUST_INVENTORY'
-        ? '复核驳回后按实盘数量完成库存调整'
-        : '复核驳回差异已确认，接受执行记录并关闭差异'
+      dispositionConclusion: locationTaskDispositionConclusion(dispositionResult)
     }
     if (dispositionResult === 'ADJUST_INVENTORY') {
       const { value } = await ElMessageBox.prompt(
@@ -1995,6 +2010,16 @@ async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATI
         }
       )
       payload.countedAvailableQty = value
+    } else if (dispositionResult === 'ESCALATE') {
+      await ElMessageBox.confirm(
+        `确认将库位任务 ${task.taskNo} 的复核差异升级给异常/MRB 后续处理？`,
+        'WMS复核差异升级',
+        {
+          confirmButtonText: '升级',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
     } else {
       await ElMessageBox.confirm(
         `确认接收库位任务 ${task.taskNo} 的复核差异？`,
@@ -2007,7 +2032,7 @@ async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATI
       )
     }
     await dispositionMaterialLocationTask(task.taskNo, payload)
-    ElMessage.success(dispositionResult === 'ADJUST_INVENTORY' ? '复核差异已调库关闭' : '复核差异已接收关闭')
+    ElMessage.success(locationTaskDispositionSuccessText(dispositionResult))
     await loadMaterialData()
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
@@ -2015,6 +2040,18 @@ async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATI
   } finally {
     locationTaskSubmitting.value = false
   }
+}
+
+function locationTaskDispositionConclusion(dispositionResult) {
+  if (dispositionResult === 'ADJUST_INVENTORY') return '复核驳回后按实盘数量完成库存调整'
+  if (dispositionResult === 'ESCALATE') return '复核驳回差异已升级异常/MRB 后续处理'
+  return '复核驳回差异已确认，接受执行记录并关闭差异'
+}
+
+function locationTaskDispositionSuccessText(dispositionResult) {
+  if (dispositionResult === 'ADJUST_INVENTORY') return '复核差异已调库关闭'
+  if (dispositionResult === 'ESCALATE') return '复核差异已升级'
+  return '复核差异已接收关闭'
 }
 
 async function cancelLocationTask(task) {
