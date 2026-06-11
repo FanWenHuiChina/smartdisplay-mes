@@ -447,3 +447,16 @@
 | 审计留痕 | 升级处置必须写 `MATERIAL_LOCATION_TASK_DISPOSITION`，快照包含 `ESCALATE` 和 `ESCALATED` | 已落地，审计快照测试覆盖 |
 | Docker 可看效果 | 当前 Docker 前端产物必须包含升级分支，物料页待处置任务可触发该入口 | 已落地，容器内 `material-CJbEAJQd.js` 包含 `ESCALATE`，待处置接口 `pendingCount=1` |
 | 回归验证 | 后端升级处置定向、前端契约、生产构建、生产包扫描和空白检查必须通过 | 已通过：后端定向 104 项、前端契约 423 项、生产包 14 个 JS 产物 clean、`diff --check` 无错误 |
+
+## 2026-06-11 补充验收：WMS 复核差异升级异常事件
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 异常事件承接 | `ESCALATE` 处置后必须创建 `exception_event`，作为质量异常队列和后续 MRB 编排的承接点 | 已落地，事件 `eventType=MATERIAL`、`sourceModule=WMS_LOCATION_TASK` |
+| 事件分级和归属 | WMS 复核差异升级事件必须有等级、状态和负责人角色 | 已落地，默认 `eventLevel=P2`、`status=OPEN`、`ownerRole=QE` |
+| 响应证据 | 处置接口必须在响应中返回异常事件摘要，便于前端后续跳转异常队列 | 已落地，返回 `exception.eventNo/status/ownerRole/sourceModule` |
+| 处置审计关联 | `MATERIAL_LOCATION_TASK_DISPOSITION` 审计快照必须包含升级生成的 `escalatedEventNo` | 已落地，单元测试覆盖 |
+| 异常审计 | 升级生成异常必须额外写 `EXCEPTION_CREATE` 审计，记录来源任务、批次、事件号和请求上下文 | 已落地，Docker 审计查询命中 1 条 |
+| 自动动作边界 | 生成异常事件不得自动 Hold Lot、自动调库或自动执行 MRB 决策 | 已落地，升级分支只创建异常和审计；库存事务断言未写入 |
+| Docker 运行态证据 | 当前 Docker 后端必须已部署该逻辑，并能通过真实 API 生成异常事件 | 已通过：`MLT-20260611092724738-0001` 升级生成 `EX-20260611092725212-0003` |
+| 回归验证 | 后端异常承接定向、后端打包、Docker 升级冒烟和审计冒烟必须通过 | 已通过：后端定向 104 项、后端打包通过、Docker 事件和审计均命中 |

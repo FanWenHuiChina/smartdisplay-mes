@@ -600,3 +600,15 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
 | 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
 | Docker 前端覆盖 | 覆盖 `smartdisplay-mes-ui:/usr/share/nginx/html/` 后检查首页和 bundle | 通过 | 首页 HTTP 200；待处置筛选 `pendingCount=1`；容器内 `material-CJbEAJQd.js` 包含 `ESCALATE` |
+
+## 2026-06-11 WMS 复核差异升级异常事件复验
+
+本轮把 `ESCALATED` 从单纯处置状态推进为质量异常入口：WMS 复核差异升级时，后端创建 `exception_event` 并写 `EXCEPTION_CREATE` 审计。该事件作为质量/异常/MRB 后续编排的承接点，但升级动作本身仍不自动 Hold、不自动调库、不自动执行 MRB 决策。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端异常承接定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 104 项通过；覆盖 `ESCALATE` 创建 `exception_event`、返回 `exception` 节点、`EXCEPTION_CREATE` 审计和处置审计中的 `escalatedEventNo` |
+| 后端打包 | `mvn.cmd -DskipTests package` | 通过 | 生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` 并覆盖 Docker 后端 `/app/app.jar` |
+| 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
+| Docker 升级冒烟 | 经 `http://127.0.0.1:8888/api/v1` 创建、领取、完成、复核驳回并升级库位任务 | 通过 | `MLT-20260611092724738-0001` 返回 `dispositionStatus=ESCALATED`，异常事件 `EX-20260611092725212-0003` 为 `OPEN/QE` |
+| Docker 审计冒烟 | 查询 `/api/v1/system/audit-logs?action=EXCEPTION_CREATE&bizNo=EX-20260611092725212-0003` | 通过 | 命中 1 条审计；`object=EX-20260611092725212-0003`，`source=material-service`，`requestUri=/api/v1/material/location-tasks/MLT-20260611092724738-0001/disposition` |

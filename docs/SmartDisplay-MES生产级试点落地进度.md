@@ -953,3 +953,12 @@
 - 前端契约脚本将 `ESCALATE` 和“升级”纳入 WMS 复核驳回处置检查，防止后续页面退回只支持接收差异和调库。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 104 项通过，`npm.cmd run verify:frontend-contract` 423 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
 - 已部署到当前 Docker 前端容器：`http://127.0.0.1:8888/` 返回 HTTP 200，待处置筛选接口返回 `pendingCount=1`，容器内 `material-CJbEAJQd.js` 已包含 `ESCALATE` 分支。
+
+## 2026-06-11 增量：WMS 复核差异升级生成异常事件
+
+- `MaterialService.dispositionLocationTask` 的 `ESCALATE` 分支新增异常事件承接：升级后创建 `exception_event`，`eventType=MATERIAL`、`eventLevel=P2`、`sourceModule=WMS_LOCATION_TASK`、`status=OPEN`、`ownerRole=QE`。
+- 升级响应新增 `exception` 节点，返回 `eventNo`、事件类型、等级、来源模块、标题、描述、状态、负责人角色和发生时间，方便前端后续跳转异常队列或 MRB 编排。
+- 升级处置审计快照新增 `escalatedEventNo`；同时新增一条 `EXCEPTION_CREATE` 审计，快照包含来源任务号、批次、任务类型、复核结论、处置状态、事件号和负责人角色。
+- 该增强仍不自动 Hold Lot、不自动调库、不自动执行 MRB 决策；升级只负责把 WMS 差异作为异常事件交给质量/异常队列承接。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 104 项通过，`mvn.cmd -DskipTests package` 通过，`git diff --check` 无空白错误。
+- 已部署到当前 Docker 后端容器：经前端反代创建升级任务 `MLT-20260611092724738-0001`，处置返回 `status=ESCALATED`，生成异常事件 `EX-20260611092725212-0003`，事件状态 `OPEN`、负责人角色 `QE`；审计查询命中 `EXCEPTION_CREATE`，请求路径为 `/api/v1/material/location-tasks/MLT-20260611092724738-0001/disposition`。

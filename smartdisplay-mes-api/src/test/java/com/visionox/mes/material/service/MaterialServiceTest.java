@@ -38,6 +38,8 @@ import com.visionox.mes.material.mapper.MaterialLocationTaskMapper;
 import com.visionox.mes.material.mapper.SupplierCorrectiveActionMapper;
 import com.visionox.mes.material.mapper.SupplierMapper;
 import com.visionox.mes.material.mapper.SupplierQualificationReviewTaskMapper;
+import com.visionox.mes.quality.entity.ExceptionEvent;
+import com.visionox.mes.quality.mapper.ExceptionEventMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +56,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -114,6 +117,9 @@ class MaterialServiceTest {
 
     @Mock
     private SupplierQualificationReviewTaskMapper supplierQualificationReviewTaskMapper;
+
+    @Mock
+    private ExceptionEventMapper exceptionEventMapper;
 
     @Mock
     private AuditLogService auditLogService;
@@ -1037,15 +1043,35 @@ class MaterialServiceTest {
                 .containsEntry("dispositionResult", "ESCALATE")
                 .containsEntry("dispositionText", "已升级")
                 .containsEntry("dispositionType", "red");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> exceptionRow = (Map<String, Object>) result.get("exception");
+        assertThat(exceptionRow)
+                .containsEntry("eventType", "MATERIAL")
+                .containsEntry("eventLevel", "P2")
+                .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("status", "OPEN")
+                .containsEntry("ownerRole", "QE");
 
         verify(batchMapper, never()).selectByBatchNoForUpdate(any());
         verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+        ArgumentCaptor<ExceptionEvent> eventCaptor = ArgumentCaptor.forClass(ExceptionEvent.class);
+        verify(exceptionEventMapper).insert(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventNo()).startsWith("EX-");
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("MATERIAL");
+        assertThat(eventCaptor.getValue().getSourceModule()).isEqualTo("WMS_LOCATION_TASK");
+        assertThat(eventCaptor.getValue().getTitle()).isEqualTo("WMS库位任务复核差异升级");
+        assertThat(eventCaptor.getValue().getDescription())
+                .contains("taskNo=MLT-DISP-ESC-001")
+                .contains("batchNo=PI_INK_B010");
         ArgumentCaptor<String> dispositionSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_DISPOSITION"), eq("MLT-DISP-ESC-001"), eq("MATERIAL_LOCATION_TASK"),
                 any(), eq("wms-lead"), eq("material-service"), dispositionSnapshotCaptor.capture());
+        verify(auditLogService).record(eq("EXCEPTION_CREATE"), eq(eventCaptor.getValue().getEventNo()), eq("EXCEPTION"),
+                any(), eq("wms-lead"), eq("material-service"), contains("WMS_LOCATION_TASK"));
         assertThat(dispositionSnapshotCaptor.getValue())
                 .contains("\"dispositionResult\":\"ESCALATE\"")
                 .contains("\"dispositionStatus\":\"ESCALATED\"")
+                .contains("\"escalatedEventNo\":\"" + eventCaptor.getValue().getEventNo() + "\"")
                 .contains("\"changedFields\"");
     }
 

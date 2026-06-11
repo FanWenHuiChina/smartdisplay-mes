@@ -41,6 +41,8 @@ import com.visionox.mes.material.mapper.MaterialLocationTaskMapper;
 import com.visionox.mes.material.mapper.SupplierCorrectiveActionMapper;
 import com.visionox.mes.material.mapper.SupplierMapper;
 import com.visionox.mes.material.mapper.SupplierQualificationReviewTaskMapper;
+import com.visionox.mes.quality.entity.ExceptionEvent;
+import com.visionox.mes.quality.mapper.ExceptionEventMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +93,7 @@ public class MaterialService {
     private final SupplierMapper supplierMapper;
     private final SupplierCorrectiveActionMapper supplierCorrectiveActionMapper;
     private final SupplierQualificationReviewTaskMapper supplierQualificationReviewTaskMapper;
+    private final ExceptionEventMapper exceptionEventMapper;
     private final AuditLogService auditLogService;
     private final RolePermissionService rolePermissionService;
 
@@ -1288,6 +1291,7 @@ public class MaterialService {
             dispositionRequest.put("adjustedBatchNo", adjustedBatch.getBatchNo());
         }
 
+        ExceptionEvent escalatedEvent = null;
         LocalDateTime now = LocalDateTime.now();
         task.setDispositionResult(dispositionResult);
         task.setDispositionConclusion(conclusion);
@@ -1296,16 +1300,78 @@ public class MaterialService {
         task.setDispositionStatus("ESCALATE".equals(dispositionResult) ? "ESCALATED" : "CLOSED");
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
+        if ("ESCALATE".equals(dispositionResult)) {
+            escalatedEvent = createLocationTaskEscalationEvent(task, operator, conclusion, now);
+            dispositionRequest.put("escalatedEventNo", escalatedEvent.getEventNo());
+        }
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("task", locationTaskRow(task));
         if (adjustedBatch != null) {
             response.put("batch", batchRow(adjustedBatch));
         }
+        if (escalatedEvent != null) {
+            response.put("exception", locationTaskExceptionRow(escalatedEvent));
+        }
         audit("MATERIAL_LOCATION_TASK_DISPOSITION", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "处置库位任务复核差异: " + dispositionResult + ", conclusion=" + conclusion,
                 operator, auditSnapshot(before, locationTaskRow(task), dispositionRequest));
         return response;
+    }
+
+    private ExceptionEvent createLocationTaskEscalationEvent(MaterialLocationTask task, String operator,
+                                                            String conclusion, LocalDateTime occurredTime) {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo(nextNo("EX"));
+        event.setEventType("MATERIAL");
+        event.setEventLevel("P2");
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setTitle("WMS库位任务复核差异升级");
+        event.setDescription(limitText("库位任务复核驳回升级: taskNo=" + task.getTaskNo()
+                + ", batchNo=" + valueOr(task.getBatchNo(), "")
+                + ", taskType=" + valueOr(task.getTaskType(), "")
+                + ", reviewConclusion=" + valueOr(task.getReviewConclusion(), "")
+                + ", dispositionConclusion=" + conclusion, 500));
+        event.setStatus("OPEN");
+        event.setOwnerRole("QE");
+        event.setOccurredTime(occurredTime);
+        event.setCreatedBy(operator);
+        exceptionEventMapper.insert(event);
+        audit("EXCEPTION_CREATE", event.getEventNo(), "EXCEPTION",
+                "WMS复核差异升级生成异常: taskNo=" + task.getTaskNo() + ", batchNo=" + task.getBatchNo(),
+                operator, locationTaskExceptionAuditSnapshot(task, event));
+        return event;
+    }
+
+    private String locationTaskExceptionAuditSnapshot(MaterialLocationTask task, ExceptionEvent event) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("sourceTaskNo", task.getTaskNo());
+        snapshot.put("batchNo", task.getBatchNo());
+        snapshot.put("taskType", task.getTaskType());
+        snapshot.put("reviewResult", task.getReviewResult());
+        snapshot.put("reviewConclusion", task.getReviewConclusion());
+        snapshot.put("dispositionStatus", task.getDispositionStatus());
+        snapshot.put("dispositionResult", task.getDispositionResult());
+        snapshot.put("eventNo", event.getEventNo());
+        snapshot.put("eventType", event.getEventType());
+        snapshot.put("eventLevel", event.getEventLevel());
+        snapshot.put("sourceModule", event.getSourceModule());
+        snapshot.put("ownerRole", event.getOwnerRole());
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private Map<String, Object> locationTaskExceptionRow(ExceptionEvent event) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("eventNo", event.getEventNo());
+        row.put("eventType", event.getEventType());
+        row.put("eventLevel", event.getEventLevel());
+        row.put("sourceModule", event.getSourceModule());
+        row.put("title", event.getTitle());
+        row.put("description", event.getDescription());
+        row.put("status", event.getStatus());
+        row.put("ownerRole", event.getOwnerRole());
+        row.put("occurredTime", event.getOccurredTime());
+        return row;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -4199,6 +4265,13 @@ public class MaterialService {
 
     private String valueOr(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String limitText(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private static class SupplierScore {
