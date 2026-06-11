@@ -1338,6 +1338,19 @@ public class PilotMesService {
         }
     }
 
+    public List<Map<String, Object>> qualityExceptions(String lotNo, String sourceModule, String status) {
+        if (!hasText(sourceModule) && !hasText(status)) {
+            return qualityExceptions(lotNo);
+        }
+        assertLotAccessibleIfPresent(lotNo);
+        try {
+            List<Map<String, Object>> rows = qualityService.exceptionRows(lotNo, sourceModule, status);
+            return rows == null ? List.of() : rows;
+        } catch (Exception e) {
+            return fallbackListOnFailure("异常事件", e, fallbackExceptionEvents(lotNo));
+        }
+    }
+
     public List<Map<String, Object>> qualityMrbRecords(String eventNo) {
         return qualityService.mrbRecords(eventNo);
     }

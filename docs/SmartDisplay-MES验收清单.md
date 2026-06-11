@@ -460,3 +460,16 @@
 | 自动动作边界 | 生成异常事件不得自动 Hold Lot、自动调库或自动执行 MRB 决策 | 已落地，升级分支只创建异常和审计；库存事务断言未写入 |
 | Docker 运行态证据 | 当前 Docker 后端必须已部署该逻辑，并能通过真实 API 生成异常事件 | 已通过：`MLT-20260611092724738-0001` 升级生成 `EX-20260611092725212-0003` |
 | 回归验证 | 后端异常承接定向、后端打包、Docker 升级冒烟和审计冒烟必须通过 | 已通过：后端定向 104 项、后端打包通过、Docker 事件和审计均命中 |
+
+## 2026-06-11 补充验收：质量异常队列来源筛选
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 来源筛选接口 | `/api/v1/quality/exceptions` 必须支持按 `sourceModule` 筛选异常事件 | 已落地，支持 `WMS_LOCATION_TASK` 和 `QUALITY` 等来源 |
+| 状态筛选接口 | `/api/v1/quality/exceptions` 必须支持按异常状态筛选 | 已落地，支持 `OPEN/MRB_PENDING/MRB_REVIEWED/CLOSED` 等状态 |
+| 兼容旧入口 | 旧的仅 `lotNo` 查询不得受新参数影响 | 已落地，`PilotMesService.qualityExceptions(lotNo)` 仍走旧服务方法 |
+| 质量页筛选条 | MRB 待处置区域必须提供“异常来源”和“异常状态”筛选，不依赖全量列表前 5 条碰巧显示 | 已落地，前端质量页使用 `exceptionFilters` 和 `exceptionQuery()` |
+| WMS 来源标识 | WMS 升级事件在质量页卡片中必须显示来源为 `WMS库位任务` | 已落地，卡片 meta 和统计行展示来源标签 |
+| 前端契约 | 自动契约必须覆盖 WMS 来源筛选，避免页面回退为全量异常列表 | 已落地，前端契约 424 项通过 |
+| Docker 运行态证据 | 当前 Docker API 必须能按 `sourceModule=WMS_LOCATION_TASK&status=OPEN` 查到 WMS 升级事件 | 已通过，命中 `EX-20260611092725212-0003` |
+| 回归验证 | 后端定向、前端契约、生产构建、生产包扫描和 Docker 冒烟必须通过 | 已通过：后端 160 项、前端契约 424 项、生产包 14 个 JS 产物 clean、Docker 筛选命中 |

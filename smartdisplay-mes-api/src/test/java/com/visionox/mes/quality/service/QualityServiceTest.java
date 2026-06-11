@@ -396,6 +396,34 @@ class QualityServiceTest {
     }
 
     @Test
+    void exceptionRowsShouldFilterBySourceModuleAndStatus() {
+        ExceptionEvent event = exceptionEvent("EX-WMS-001", "OPEN");
+        event.setEventType("MATERIAL");
+        event.setEventLevel("P2");
+        event.setLotNo(null);
+        event.setStepCode(null);
+        event.setEquipmentCode(null);
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setTitle("WMS库位任务复核差异升级");
+        when(exceptionEventMapper.selectList(any())).thenReturn(List.of(event));
+        when(mrbRecordMapper.selectCount(any())).thenReturn(0L);
+        when(mrbAttachmentMapper.selectCount(any())).thenReturn(0L);
+        when(mrbMinutesMapper.selectCount(any())).thenReturn(0L);
+
+        List<Map<String, Object>> rows = qualityService.exceptionRows(null, "wms_location_task", "open");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("eventNo", "EX-WMS-001")
+                .containsEntry("eventType", "MATERIAL")
+                .containsEntry("eventLevel", "P2")
+                .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("status", "OPEN")
+                .containsEntry("ownerRole", "QE");
+        verify(exceptionEventMapper).selectList(any());
+    }
+
+    @Test
     void closeExceptionShouldRequireConclusion() {
         when(exceptionEventMapper.selectOne(any())).thenReturn(exceptionEvent("EX001", "MRB_REVIEWED"));
 

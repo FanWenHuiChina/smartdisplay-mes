@@ -133,30 +133,53 @@
           <div class="mes-card__title">MRB 待处置</div>
           <span class="status-tag red">{{ openExceptionCount }} 单</span>
         </div>
-        <div class="mes-card__body cards">
-          <div
-            v-for="item in mrbItems"
-            :key="item.eventNo"
-            class="mini-card"
-            :class="{ selected: selectedEventNo === item.eventNo }"
-            @click="selectMrbItem(item)"
-          >
-            <div class="mini-top">
-              <span>{{ item.title }}</span>
-              <span class="status-tag" :class="item.type">{{ item.status }}</span>
+        <div class="mes-card__body">
+          <div class="exception-filters">
+            <div class="mes-field">
+              <label>异常来源</label>
+              <select v-model="exceptionFilters.sourceModule" class="mes-select" @change="loadQualityData">
+                <option value="">全部来源</option>
+                <option value="QUALITY">质量检验</option>
+                <option value="WMS_LOCATION_TASK">WMS库位任务</option>
+              </select>
             </div>
-            <div class="mini-meta">{{ item.meta }}</div>
-            <div class="mini-stock">
-              <span>MRB {{ item.recordCount }}</span>
-              <span>纪要 {{ item.minutesCount }}</span>
-              <span>附件 {{ item.attachmentCount }}</span>
+            <div class="mes-field">
+              <label>异常状态</label>
+              <select v-model="exceptionFilters.status" class="mes-select" @change="loadQualityData">
+                <option value="">全部状态</option>
+                <option value="OPEN">OPEN</option>
+                <option value="MRB_PENDING">MRB_PENDING</option>
+                <option value="MRB_REVIEWED">MRB_REVIEWED</option>
+                <option value="CLOSED">CLOSED</option>
+              </select>
             </div>
-            <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
-            <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
-              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
-              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
-              <button v-if="canReviewAction" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
-              <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
+          </div>
+          <div class="cards">
+            <div
+              v-for="item in mrbItems"
+              :key="item.eventNo"
+              class="mini-card"
+              :class="{ selected: selectedEventNo === item.eventNo }"
+              @click="selectMrbItem(item)"
+            >
+              <div class="mini-top">
+                <span>{{ item.title }}</span>
+                <span class="status-tag" :class="item.type">{{ item.status }}</span>
+              </div>
+              <div class="mini-meta">{{ item.meta }}</div>
+              <div class="mini-stock">
+                <span>{{ item.sourceText }}</span>
+                <span>MRB {{ item.recordCount }}</span>
+                <span>纪要 {{ item.minutesCount }}</span>
+                <span>附件 {{ item.attachmentCount }}</span>
+              </div>
+              <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
+              <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
+                <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
+                <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
+                <button v-if="canReviewAction" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
+                <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
+              </div>
             </div>
           </div>
         </div>
@@ -324,8 +347,9 @@ const fallbackInspections = [
 ]
 
 const fallbackExceptions = [
-  { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
-  { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' }
+  { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', sourceModule: 'QUALITY', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
+  { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', sourceModule: 'EAP', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' },
+  { eventNo: 'EX-FALLBACK-WMS', title: 'WMS复核差异升级', eventType: 'MATERIAL', eventLevel: 'P2', sourceModule: 'WMS_LOCATION_TASK', lotNo: '', stepCode: '', equipmentCode: '', status: 'OPEN', ownerRole: 'QE' }
 ]
 
 const fallbackDefects = [
@@ -357,6 +381,10 @@ const mrbRecords = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbRecords : [])
 const mrbApprovals = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbApprovals : [])
 const qmsSubmitting = ref(false)
 const qmsResult = ref(null)
+const exceptionFilters = reactive({
+  sourceModule: '',
+  status: ''
+})
 
 const mrbForm = reactive({
   meetingNo: 'MRB-DEMO-001',
@@ -411,10 +439,11 @@ const metrics = computed(() => [
 
 const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
   eventNo: item.eventNo,
-  title: `${item.lotNo || '-'} ${item.title || item.eventType}`,
+  title: `${item.lotNo || item.eventNo || '-'} ${item.title || item.eventType}`,
   status: item.status || 'OPEN',
   type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
-  meta: `${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
+  sourceText: exceptionSourceText(item.sourceModule),
+  meta: `${exceptionSourceText(item.sourceModule)} / ${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
   mrbResult: item.mrbResult,
   dispositionAction: item.dispositionAction,
   conclusion: item.closeConclusion,
@@ -446,6 +475,13 @@ const qmsSubmitHint = computed(() => {
   return qmsForm.mode === 'MES' ? 'OK 录入会写检验记录和审计' : 'OK 上报只写检验记录和审计'
 })
 const submitInspectionLabel = computed(() => qmsForm.mode === 'MES' ? '提交 MES 质检' : '提交 QMS 上报')
+
+function exceptionSourceText(sourceModule) {
+  if (sourceModule === 'WMS_LOCATION_TASK') return 'WMS库位任务'
+  if (sourceModule === 'QUALITY') return '质量检验'
+  if (sourceModule === 'EAP') return 'EAP设备'
+  return sourceModule || 'MES异常'
+}
 
 const defects = computed(() => defectTopN.value.map(item => ({
   code: item.defectCode,
@@ -831,7 +867,7 @@ async function loadQualityData() {
   try {
     const [inspectionData, exceptionData, yieldData] = await Promise.all([
       getQualityInspections(),
-      getQualityExceptions(),
+      getQualityExceptions(exceptionQuery()),
       getYieldDashboard()
     ])
     if (Array.isArray(inspectionData) && inspectionData.length) inspections.value = inspectionData
@@ -858,12 +894,26 @@ async function loadQualityData() {
   }
 }
 
+function exceptionQuery() {
+  const query = {}
+  if (exceptionFilters.sourceModule) query.sourceModule = exceptionFilters.sourceModule
+  if (exceptionFilters.status) query.status = exceptionFilters.status
+  return query
+}
+
 onMounted(loadQualityData)
 </script>
 
 <style scoped>
 .mini-card {
   cursor: pointer;
+}
+
+.exception-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .mini-card.selected {
@@ -981,6 +1031,10 @@ onMounted(loadQualityData)
 
 @media (max-width: 960px) {
   .mrb-form {
+    grid-template-columns: 1fr;
+  }
+
+  .exception-filters {
     grid-template-columns: 1fr;
   }
 

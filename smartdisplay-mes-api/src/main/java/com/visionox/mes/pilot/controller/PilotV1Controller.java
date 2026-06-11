@@ -319,8 +319,10 @@ public class PilotV1Controller {
     }
 
     @GetMapping("/quality/exceptions")
-    public Result<List<Map<String, Object>>> qualityExceptions(@RequestParam(required = false) String lotNo) {
-        return Result.success(pilotMesService.qualityExceptions(lotNo));
+    public Result<List<Map<String, Object>>> qualityExceptions(@RequestParam(required = false) String lotNo,
+                                                               @RequestParam(required = false) String sourceModule,
+                                                               @RequestParam(required = false) String status) {
+        return Result.success(pilotMesService.qualityExceptions(lotNo, sourceModule, status));
     }
 
     @GetMapping("/quality/exceptions/{eventNo}/mrb-records")

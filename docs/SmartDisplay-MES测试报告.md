@@ -612,3 +612,17 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
 | Docker 升级冒烟 | 经 `http://127.0.0.1:8888/api/v1` 创建、领取、完成、复核驳回并升级库位任务 | 通过 | `MLT-20260611092724738-0001` 返回 `dispositionStatus=ESCALATED`，异常事件 `EX-20260611092725212-0003` 为 `OPEN/QE` |
 | Docker 审计冒烟 | 查询 `/api/v1/system/audit-logs?action=EXCEPTION_CREATE&bizNo=EX-20260611092725212-0003` | 通过 | 命中 1 条审计；`object=EX-20260611092725212-0003`，`source=material-service`，`requestUri=/api/v1/material/location-tasks/MLT-20260611092724738-0001/disposition` |
+
+## 2026-06-11 质量异常队列来源筛选复验
+
+本轮补齐质量异常队列对 WMS 来源事件的筛查能力。WMS 复核差异升级生成的 `exception_event` 不再只能混在全量 MRB 列表里，而是可以通过 `sourceModule=WMS_LOCATION_TASK` 和状态筛选直接定位。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端质量异常筛选回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=QualityServiceTest,MaterialServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 160 项通过；新增覆盖 `sourceModule/status` 筛选返回 WMS 来源事件 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 424 项通过；质量页检查包含 `exceptionFilters`、`exceptionQuery`、`WMS_LOCATION_TASK` 和 `getQualityExceptions(exceptionQuery())` |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| 后端打包 | `mvn.cmd -DskipTests package` | 通过 | 已覆盖 Docker 后端 `/app/app.jar` 并重启 |
+| Docker 质量异常筛选冒烟 | `GET /api/v1/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN` | 通过 | 返回业务码 200，命中 `EX-20260611092725212-0003 / MATERIAL / P2 / WMS_LOCATION_TASK / OPEN / QE` |
+| Docker 前端产物检查 | 容器内检查 `/usr/share/nginx/html/assets/quality-*.js` | 通过 | `quality-Bn9iVQIn.js` 包含 `WMS_LOCATION_TASK` |

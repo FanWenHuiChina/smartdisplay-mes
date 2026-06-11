@@ -962,3 +962,12 @@
 - 该增强仍不自动 Hold Lot、不自动调库、不自动执行 MRB 决策；升级只负责把 WMS 差异作为异常事件交给质量/异常队列承接。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 104 项通过，`mvn.cmd -DskipTests package` 通过，`git diff --check` 无空白错误。
 - 已部署到当前 Docker 后端容器：经前端反代创建升级任务 `MLT-20260611092724738-0001`，处置返回 `status=ESCALATED`，生成异常事件 `EX-20260611092725212-0003`，事件状态 `OPEN`、负责人角色 `QE`；审计查询命中 `EXCEPTION_CREATE`，请求路径为 `/api/v1/material/location-tasks/MLT-20260611092724738-0001/disposition`。
+
+## 2026-06-11 增量：质量异常队列来源筛选
+
+- `GET /api/v1/quality/exceptions` 新增 `sourceModule` 和 `status` 查询参数，支持按 `WMS_LOCATION_TASK`、`QUALITY` 等来源以及 `OPEN/MRB_PENDING/MRB_REVIEWED/CLOSED` 状态筛选异常事件。
+- `QualityService.exceptionRows` 保留旧 `lotNo` 查询入口，并新增带来源/状态筛选的重载；`PilotMesService` 在无筛选时继续走旧方法，避免影响既有调用和测试。
+- 质量页 MRB 待处置卡片新增“异常来源”和“异常状态”筛选条，调用 `getQualityExceptions(exceptionQuery())`；WMS 升级事件在卡片中显示来源标签“WMS库位任务”。
+- 前端契约脚本新增质量页 WMS 来源筛选检查，覆盖 `exceptionFilters`、`sourceModule`、`WMS_LOCATION_TASK` 和筛选查询调用。
+- 已验证：`QualityServiceTest,MaterialServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 160 项通过，`npm.cmd run verify:frontend-contract` 424 项通过，`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过，`git diff --check` 无空白错误。
+- 已部署到当前 Docker 前后端容器：`GET /api/v1/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN` 返回业务码 200，并命中 `EX-20260611092725212-0003 / MATERIAL / P2 / WMS_LOCATION_TASK / OPEN / QE`；容器内 `quality-Bn9iVQIn.js` 已包含 `WMS_LOCATION_TASK`。

@@ -362,6 +362,7 @@ const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
 check('page:views/quality/index.vue:manual-inspection-submit', hasAll(qualityView, ['createQualityInspection', 'submitQualityInspection', "qmsForm.mode === 'MES'", "hasButton('quality:inspection-create')"]), 'quality page must expose MES manual inspection write path separately from QMS adapter')
+check('page:views/quality/index.vue:wms-exception-source-filter', hasAll(qualityView, ['exceptionFilters', 'exceptionQuery', 'sourceModule', 'WMS_LOCATION_TASK', 'WMS库位任务', 'getQualityExceptions(exceptionQuery())']), 'quality page must expose WMS material exception source filtering')
 
 const traceView = read('src/views/trace/index.vue')
 check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['serialNumbers', 'serialNumberSummary', 'serialNumberCount']), 'Trace page must display production SN binding evidence returned by /trace/search')

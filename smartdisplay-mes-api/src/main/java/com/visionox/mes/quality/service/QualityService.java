@@ -143,10 +143,20 @@ public class QualityService {
     }
 
     public List<Map<String, Object>> exceptionRows(String lotNo) {
+        return exceptionRows(lotNo, null, null);
+    }
+
+    public List<Map<String, Object>> exceptionRows(String lotNo, String sourceModule, String status) {
         LambdaQueryWrapper<ExceptionEvent> wrapper = new LambdaQueryWrapper<>();
         applyLotDataScope(wrapper);
         if (lotNo != null && !lotNo.isBlank()) {
             wrapper.eq(ExceptionEvent::getLotNo, lotNo);
+        }
+        if (sourceModule != null && !sourceModule.isBlank()) {
+            wrapper.eq(ExceptionEvent::getSourceModule, sourceModule.trim().toUpperCase(Locale.ROOT));
+        }
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(ExceptionEvent::getStatus, status.trim().toUpperCase(Locale.ROOT));
         }
         wrapper.orderByDesc(ExceptionEvent::getOccurredTime).last("LIMIT 100");
         return exceptionEventMapper.selectList(wrapper).stream()
