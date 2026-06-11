@@ -1,6 +1,6 @@
 # SmartDisplay MES 测试报告
 
-更新时间：2026-06-10
+更新时间：2026-06-11
 
 ## 结论
 
@@ -637,3 +637,19 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
 | 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
+
+## 2026-06-11 WMS 异常来源证据结构化复验
+
+本轮把 WMS 库位任务升级生成的异常从“description 内拼接任务号”升级为正式来源引用：异常表保存来源类型、来源对象号和来源快照 JSON，质量异常列表与页面都可以直接展示来源任务、批次和处置证据。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 WMS/质量定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,QualityServiceTest" test` | 通过 | 72 项通过；覆盖 WMS 升级异常写入 `sourceRefType/sourceRefNo/sourcePayload`、处置审计关联来源字段，以及质量异常列表返回来源证据 |
+| Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.51` 共 51 个迁移文件 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 426 项通过；新增覆盖 `sourceRefNo`、`sourcePayload`、`sourceBatchNo`、`parseSourcePayload` 和来源任务/批次展示 |
+| 后端打包 | `mvn.cmd -DskipTests package` | 通过 | 生成 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` 并覆盖 Docker 后端 `/app/app.jar` |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| Docker Flyway 迁移 | 后端容器重启日志 | 通过 | Flyway 从 `1.50` 迁移到 `1.51 Add Exception Source Reference` |
+| Docker 来源证据冒烟 | 经 `http://127.0.0.1:8888/api/v1` 创建、领取、完成、复核驳回并升级库位任务，再查询质量异常列表 | 通过 | 任务 `MLT-20260611101252500-0001` 生成异常 `EX-20260611101252939-0003`；列表返回 `sourceRefNo=MLT-20260611101252500-0001`，`sourcePayload` 包含 `batchNo=PI260606-A` |
+| Docker 前端产物检查 | 容器内检查 `/usr/share/nginx/html/assets/quality-*.js` | 通过 | `quality-Kz2xDzBE.js` 包含 `sourceRefNo/sourceEvidenceText/sourceBatchNo` |

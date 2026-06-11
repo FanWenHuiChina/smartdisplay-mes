@@ -38,6 +38,12 @@ public class ExceptionEvent implements Serializable {
 
     private String sourceModule;
 
+    private String sourceRefType;
+
+    private String sourceRefNo;
+
+    private String sourcePayload;
+
     private String title;
 
     private String description;

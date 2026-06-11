@@ -1049,8 +1049,14 @@ class MaterialServiceTest {
                 .containsEntry("eventType", "MATERIAL")
                 .containsEntry("eventLevel", "P2")
                 .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("sourceRefType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("sourceRefNo", "MLT-DISP-ESC-001")
                 .containsEntry("status", "OPEN")
                 .containsEntry("ownerRole", "QE");
+        assertThat(String.valueOf(exceptionRow.get("sourcePayload")))
+                .contains("\"taskNo\":\"MLT-DISP-ESC-001\"")
+                .contains("\"batchNo\":\"PI_INK_B010\"")
+                .contains("\"reviewResult\":\"REJECTED\"");
 
         verify(batchMapper, never()).selectByBatchNoForUpdate(any());
         verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
@@ -1059,6 +1065,12 @@ class MaterialServiceTest {
         assertThat(eventCaptor.getValue().getEventNo()).startsWith("EX-");
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("MATERIAL");
         assertThat(eventCaptor.getValue().getSourceModule()).isEqualTo("WMS_LOCATION_TASK");
+        assertThat(eventCaptor.getValue().getSourceRefType()).isEqualTo("MATERIAL_LOCATION_TASK");
+        assertThat(eventCaptor.getValue().getSourceRefNo()).isEqualTo("MLT-DISP-ESC-001");
+        assertThat(eventCaptor.getValue().getSourcePayload())
+                .contains("\"taskNo\":\"MLT-DISP-ESC-001\"")
+                .contains("\"batchNo\":\"PI_INK_B010\"")
+                .contains("\"dispositionResult\":\"ESCALATE\"");
         assertThat(eventCaptor.getValue().getTitle()).isEqualTo("WMS库位任务复核差异升级");
         assertThat(eventCaptor.getValue().getDescription())
                 .contains("taskNo=MLT-DISP-ESC-001")
@@ -1072,6 +1084,7 @@ class MaterialServiceTest {
                 .contains("\"dispositionResult\":\"ESCALATE\"")
                 .contains("\"dispositionStatus\":\"ESCALATED\"")
                 .contains("\"escalatedEventNo\":\"" + eventCaptor.getValue().getEventNo() + "\"")
+                .contains("\"sourceRefNo\":\"MLT-DISP-ESC-001\"")
                 .contains("\"changedFields\"");
     }
 

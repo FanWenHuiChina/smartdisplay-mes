@@ -364,6 +364,7 @@ check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(q
 check('page:views/quality/index.vue:manual-inspection-submit', hasAll(qualityView, ['createQualityInspection', 'submitQualityInspection', "qmsForm.mode === 'MES'", "hasButton('quality:inspection-create')"]), 'quality page must expose MES manual inspection write path separately from QMS adapter')
 check('page:views/quality/index.vue:wms-exception-source-filter', hasAll(qualityView, ['exceptionFilters', 'exceptionQuery', 'sourceModule', 'WMS_LOCATION_TASK', 'WMS库位任务', 'getQualityExceptions(exceptionQuery())']), 'quality page must expose WMS material exception source filtering')
 check('page:views/quality/index.vue:wms-exception-action-boundary', hasAll(qualityView, ['lotActionable', "item.lotActionable", "!item.lotActionable", "handleReview(item, 'CONTINUE_HOLD')", '复判']), 'quality page must avoid Lot disposition labels for WMS/material exceptions without Lot context')
+check('page:views/quality/index.vue:wms-exception-source-evidence', hasAll(qualityView, ['sourceRefNo', 'sourcePayload', 'sourceBatchNo', 'parseSourcePayload', 'sourceEvidenceText', '来源任务', '批次']), 'quality page must display structured WMS source task and batch evidence')
 
 const traceView = read('src/views/trace/index.vue')
 check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['serialNumbers', 'serialNumberSummary', 'serialNumberCount']), 'Trace page must display production SN binding evidence returned by /trace/search')

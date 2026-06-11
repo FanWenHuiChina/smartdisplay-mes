@@ -789,6 +789,9 @@ public class QualityService {
         row.put("stepCode", event.getStepCode());
         row.put("equipmentCode", event.getEquipmentCode());
         row.put("sourceModule", event.getSourceModule());
+        row.put("sourceRefType", event.getSourceRefType());
+        row.put("sourceRefNo", event.getSourceRefNo());
+        row.put("sourcePayload", event.getSourcePayload());
         row.put("title", event.getTitle());
         row.put("description", event.getDescription());
         row.put("status", event.getStatus());

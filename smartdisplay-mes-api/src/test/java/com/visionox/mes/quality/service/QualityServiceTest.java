@@ -404,6 +404,9 @@ class QualityServiceTest {
         event.setStepCode(null);
         event.setEquipmentCode(null);
         event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-WMS-001");
+        event.setSourcePayload("{\"taskNo\":\"MLT-WMS-001\",\"batchNo\":\"PI_INK_B010\"}");
         event.setTitle("WMS库位任务复核差异升级");
         when(exceptionEventMapper.selectList(any())).thenReturn(List.of(event));
         when(mrbRecordMapper.selectCount(any())).thenReturn(0L);
@@ -418,6 +421,9 @@ class QualityServiceTest {
                 .containsEntry("eventType", "MATERIAL")
                 .containsEntry("eventLevel", "P2")
                 .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("sourceRefType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("sourceRefNo", "MLT-WMS-001")
+                .containsEntry("sourcePayload", "{\"taskNo\":\"MLT-WMS-001\",\"batchNo\":\"PI_INK_B010\"}")
                 .containsEntry("status", "OPEN")
                 .containsEntry("ownerRole", "QE");
         verify(exceptionEventMapper).selectList(any());

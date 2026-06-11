@@ -169,10 +169,13 @@
               <div class="mini-meta">{{ item.meta }}</div>
               <div class="mini-stock">
                 <span>{{ item.sourceText }}</span>
+                <span v-if="item.sourceRefNo">来源任务 {{ item.sourceRefNo }}</span>
+                <span v-if="item.sourceBatchNo">批次 {{ item.sourceBatchNo }}</span>
                 <span>MRB {{ item.recordCount }}</span>
                 <span>纪要 {{ item.minutesCount }}</span>
                 <span>附件 {{ item.attachmentCount }}</span>
               </div>
+              <div v-if="item.sourceEvidence" class="mini-evidence">{{ item.sourceEvidence }}</div>
               <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
               <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
                 <button v-if="canReviewAction && item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
@@ -350,7 +353,7 @@ const fallbackInspections = [
 const fallbackExceptions = [
   { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', sourceModule: 'QUALITY', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
   { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', sourceModule: 'EAP', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' },
-  { eventNo: 'EX-FALLBACK-WMS', title: 'WMS复核差异升级', eventType: 'MATERIAL', eventLevel: 'P2', sourceModule: 'WMS_LOCATION_TASK', lotNo: '', stepCode: '', equipmentCode: '', status: 'OPEN', ownerRole: 'QE' }
+  { eventNo: 'EX-FALLBACK-WMS', title: 'WMS复核差异升级', eventType: 'MATERIAL', eventLevel: 'P2', sourceModule: 'WMS_LOCATION_TASK', sourceRefType: 'MATERIAL_LOCATION_TASK', sourceRefNo: 'MLT-FALLBACK-001', sourcePayload: '{"taskNo":"MLT-FALLBACK-001","taskType":"COUNT","batchNo":"PI-FALLBACK-001","reviewResult":"REJECTED","dispositionResult":"ESCALATE"}', lotNo: '', stepCode: '', equipmentCode: '', status: 'OPEN', ownerRole: 'QE' }
 ]
 
 const fallbackDefects = [
@@ -438,23 +441,33 @@ const metrics = computed(() => [
   { label: '缺陷类型', tag: 'TopN', type: 'purple', value: String(defectTopN.value.length), left: '按数量', right: '质量看板' }
 ])
 
-const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
-  eventNo: item.eventNo,
-  title: `${item.lotNo || item.eventNo || '-'} ${item.title || item.eventType}`,
-  status: item.status || 'OPEN',
-  type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
-  sourceModule: item.sourceModule,
-  sourceText: exceptionSourceText(item.sourceModule),
-  lotActionable: Boolean(item.lotNo) && item.sourceModule !== 'WMS_LOCATION_TASK',
-  meta: `${exceptionSourceText(item.sourceModule)} / ${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
-  mrbResult: item.mrbResult,
-  dispositionAction: item.dispositionAction,
-  conclusion: item.closeConclusion,
-  rootCause: item.rootCause,
-  recordCount: item.mrbRecordCount || 0,
-  attachmentCount: item.mrbAttachmentCount || 0,
-  minutesCount: item.mrbMinutesCount || 0
-})))
+const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => {
+  const sourcePayload = parseSourcePayload(item.sourcePayload)
+  const sourceRefNo = item.sourceRefNo || sourcePayload.taskNo || ''
+  const sourceBatchNo = sourcePayload.batchNo || ''
+  return {
+    eventNo: item.eventNo,
+    title: `${item.lotNo || item.eventNo || '-'} ${item.title || item.eventType}`,
+    status: item.status || 'OPEN',
+    type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
+    sourceModule: item.sourceModule,
+    sourceRefType: item.sourceRefType,
+    sourceRefNo,
+    sourceBatchNo,
+    sourcePayload,
+    sourceEvidence: sourceEvidenceText(item, sourcePayload, sourceRefNo),
+    sourceText: exceptionSourceText(item.sourceModule),
+    lotActionable: Boolean(item.lotNo) && item.sourceModule !== 'WMS_LOCATION_TASK',
+    meta: `${exceptionSourceText(item.sourceModule)} / ${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
+    mrbResult: item.mrbResult,
+    dispositionAction: item.dispositionAction,
+    conclusion: item.closeConclusion,
+    rootCause: item.rootCause,
+    recordCount: item.mrbRecordCount || 0,
+    attachmentCount: item.mrbAttachmentCount || 0,
+    minutesCount: item.mrbMinutesCount || 0
+  }
+}))
 
 const canReviewAction = computed(() => hasButton('quality:mrb-review'))
 const canCloseAction = computed(() => hasButton('quality:exception-close'))
@@ -484,6 +497,28 @@ function exceptionSourceText(sourceModule) {
   if (sourceModule === 'QUALITY') return '质量检验'
   if (sourceModule === 'EAP') return 'EAP设备'
   return sourceModule || 'MES异常'
+}
+
+function parseSourcePayload(payload) {
+  if (!payload) return {}
+  if (typeof payload === 'object') return payload
+  try {
+    return JSON.parse(payload)
+  } catch (error) {
+    console.warn('异常来源快照解析失败', error)
+    return {}
+  }
+}
+
+function sourceEvidenceText(item, payload, sourceRefNo) {
+  if (item.sourceModule !== 'WMS_LOCATION_TASK') return ''
+  const parts = [
+    payload.taskType ? `任务类型 ${payload.taskType}` : '',
+    payload.reviewResult ? `复核 ${payload.reviewResult}` : '',
+    payload.dispositionResult ? `处置 ${payload.dispositionResult}` : '',
+    sourceRefNo ? `任务 ${sourceRefNo}` : ''
+  ].filter(Boolean)
+  return parts.length ? parts.join(' / ') : item.description || ''
 }
 
 const defects = computed(() => defectTopN.value.map(item => ({
@@ -932,6 +967,17 @@ onMounted(loadQualityData)
   margin-top: 8px;
   color: var(--mes-weak);
   font-size: 12px;
+}
+
+.mini-evidence {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 6px;
+  background: var(--mes-paper-muted);
+  color: var(--mes-sub);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .mini-actions {

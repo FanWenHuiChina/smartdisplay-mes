@@ -1,6 +1,6 @@
 # SmartDisplay MES 生产级试点落地进度
 
-更新时间：2026-06-10
+更新时间：2026-06-11
 
 ## 当前定位
 
@@ -979,3 +979,12 @@
 - `mrbItems` 保留 `sourceModule` 并派生 `lotActionable`，后续若 WMS 异常明确绑定 Lot，也必须显式经过该边界判断后才开放 Lot 处置按钮。
 - 前端契约脚本新增 `wms-exception-action-boundary` 检查，覆盖 `lotActionable`、无 Lot 异常的“复判”按钮和 `CONTINUE_HOLD` 复判动作，防止页面回退为所有异常都显示 Lot 处置标签。
 - 已验证：`npm.cmd run verify:frontend-contract` 通过 425 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
+
+## 2026-06-11 增量：WMS 异常来源证据结构化
+
+- 新增 Flyway `V1.51__Add_Exception_Source_Reference.sql`，为 `exception_event` 补充 `source_ref_type`、`source_ref_no` 和 `source_payload`，并增加 `source_module/source_ref_type/source_ref_no` 组合索引。
+- WMS 库位任务复核差异升级生成异常时，后端写入 `sourceRefType=MATERIAL_LOCATION_TASK`、`sourceRefNo=任务号` 和来源快照 JSON，快照包含任务类型、批次、源/目标库位、实盘数量、复核结果、处置结果和处置结论。
+- `GET /api/v1/quality/exceptions` 返回 `sourceRefType/sourceRefNo/sourcePayload`，质量页 MRB 卡片展示“来源任务”“批次”和低饱和来源证据行，避免只能从 description 中人工解析任务号。
+- `MATERIAL_LOCATION_TASK_DISPOSITION` 审计快照同步写入 `sourceRefType/sourceRefNo/sourcePayload`，保证 WMS 处置审计、异常事件和质量异常队列三方可互相追溯。
+- 已验证：`MaterialServiceTest,QualityServiceTest` 定向 72 项通过，`npm.cmd run verify:frontend-contract` 通过 426 项检查，`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 识别 51 个迁移文件，`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过。
+- 已部署到当前 Docker 运行环境：后端重启后 Flyway 从 `1.50` 迁移到 `1.51 Add Exception Source Reference`；经前端反代创建并升级库位任务 `MLT-20260611101252500-0001`，生成异常 `EX-20260611101252939-0003`，质量异常列表返回 `sourceRefNo=MLT-20260611101252500-0001` 和包含 `batchNo=PI260606-A` 的 `sourcePayload`；前端容器内 `quality-Kz2xDzBE.js` 已包含 `sourceRefNo/sourceEvidenceText/sourceBatchNo`。

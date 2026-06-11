@@ -1303,6 +1303,9 @@ public class MaterialService {
         if ("ESCALATE".equals(dispositionResult)) {
             escalatedEvent = createLocationTaskEscalationEvent(task, operator, conclusion, now);
             dispositionRequest.put("escalatedEventNo", escalatedEvent.getEventNo());
+            dispositionRequest.put("sourceRefType", escalatedEvent.getSourceRefType());
+            dispositionRequest.put("sourceRefNo", escalatedEvent.getSourceRefNo());
+            dispositionRequest.put("sourcePayload", escalatedEvent.getSourcePayload());
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -1326,6 +1329,9 @@ public class MaterialService {
         event.setEventType("MATERIAL");
         event.setEventLevel("P2");
         event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo(task.getTaskNo());
+        event.setSourcePayload(locationTaskExceptionSourcePayload(task, conclusion));
         event.setTitle("WMS库位任务复核差异升级");
         event.setDescription(limitText("库位任务复核驳回升级: taskNo=" + task.getTaskNo()
                 + ", batchNo=" + valueOr(task.getBatchNo(), "")
@@ -1356,8 +1362,27 @@ public class MaterialService {
         snapshot.put("eventType", event.getEventType());
         snapshot.put("eventLevel", event.getEventLevel());
         snapshot.put("sourceModule", event.getSourceModule());
+        snapshot.put("sourceRefType", event.getSourceRefType());
+        snapshot.put("sourceRefNo", event.getSourceRefNo());
+        snapshot.put("sourcePayload", event.getSourcePayload());
         snapshot.put("ownerRole", event.getOwnerRole());
         return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private String locationTaskExceptionSourcePayload(MaterialLocationTask task, String conclusion) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("taskNo", task.getTaskNo());
+        payload.put("taskType", task.getTaskType());
+        payload.put("batchNo", task.getBatchNo());
+        payload.put("sourceLocation", task.getSourceLocation());
+        payload.put("targetLocation", task.getTargetLocation());
+        payload.put("actualQty", task.getActualQty());
+        payload.put("reviewResult", task.getReviewResult());
+        payload.put("reviewConclusion", task.getReviewConclusion());
+        payload.put("dispositionStatus", task.getDispositionStatus());
+        payload.put("dispositionResult", task.getDispositionResult());
+        payload.put("dispositionConclusion", conclusion);
+        return JSONUtil.toJsonStr(payload);
     }
 
     private Map<String, Object> locationTaskExceptionRow(ExceptionEvent event) {
@@ -1366,6 +1391,9 @@ public class MaterialService {
         row.put("eventType", event.getEventType());
         row.put("eventLevel", event.getEventLevel());
         row.put("sourceModule", event.getSourceModule());
+        row.put("sourceRefType", event.getSourceRefType());
+        row.put("sourceRefNo", event.getSourceRefNo());
+        row.put("sourcePayload", event.getSourcePayload());
         row.put("title", event.getTitle());
         row.put("description", event.getDescription());
         row.put("status", event.getStatus());
