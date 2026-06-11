@@ -863,16 +863,34 @@ public class MaterialService {
                 .collect(Collectors.toList());
     }
 
-    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo) {
+    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo,
+                                                           String reviewResult, String dispositionStatus,
+                                                           Boolean pendingDispositionOnly) {
         LambdaQueryWrapper<MaterialLocationTask> wrapper = new LambdaQueryWrapper<>();
-        if (status != null && !status.isBlank()) {
-            wrapper.eq(MaterialLocationTask::getStatus, status);
+        if (Boolean.TRUE.equals(pendingDispositionOnly)) {
+            wrapper.eq(MaterialLocationTask::getStatus, "DONE")
+                    .eq(MaterialLocationTask::getReviewResult, "REJECTED")
+                    .and(scope -> scope.eq(MaterialLocationTask::getDispositionStatus, "PENDING")
+                            .or()
+                            .isNull(MaterialLocationTask::getDispositionStatus));
+        } else {
+            if (status != null && !status.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getStatus, status.trim().toUpperCase(Locale.ROOT));
+            }
+            if (reviewResult != null && !reviewResult.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getReviewResult, reviewResult.trim().toUpperCase(Locale.ROOT));
+            }
+            if (dispositionStatus != null && !dispositionStatus.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getDispositionStatus, dispositionStatus.trim().toUpperCase(Locale.ROOT));
+            }
         }
         if (batchNo != null && !batchNo.isBlank()) {
-            wrapper.eq(MaterialLocationTask::getBatchNo, batchNo);
+            wrapper.eq(MaterialLocationTask::getBatchNo, batchNo.trim());
         }
         wrapper.last("""
                 ORDER BY
+                    CASE WHEN status = 'DONE' AND review_result = 'REJECTED'
+                        AND (disposition_status = 'PENDING' OR disposition_status IS NULL) THEN 0 ELSE 1 END,
                     CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING') THEN 0 ELSE 1 END,
                     CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING')
                         AND due_time IS NOT NULL AND due_time < CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
@@ -2908,9 +2926,13 @@ public class MaterialService {
         row.put("reviewedTime", task.getReviewedTime());
         row.put("reviewResult", valueOr(task.getReviewResult(), task.getReviewedTime() == null ? "" : "APPROVED"));
         row.put("reviewConclusion", task.getReviewConclusion());
-        row.put("dispositionStatus", valueOr(task.getDispositionStatus(), defaultLocationTaskDispositionStatus(task)));
-        row.put("dispositionResult", task.getDispositionResult());
+        String dispositionStatus = valueOr(task.getDispositionStatus(), defaultLocationTaskDispositionStatus(task));
+        String dispositionResult = valueOr(task.getDispositionResult(), "");
+        row.put("dispositionStatus", dispositionStatus);
+        row.put("dispositionResult", dispositionResult);
         row.put("dispositionConclusion", task.getDispositionConclusion());
+        row.put("dispositionText", locationTaskDispositionText(dispositionStatus, dispositionResult));
+        row.put("dispositionType", locationTaskDispositionType(dispositionStatus, dispositionResult));
         row.put("dispositionBy", task.getDispositionBy());
         row.put("dispositionTime", task.getDispositionTime());
         row.put("cancelledBy", task.getCancelledBy());
@@ -3276,6 +3298,41 @@ public class MaterialService {
             return "CLOSED";
         }
         return "";
+    }
+
+    private String locationTaskDispositionText(String dispositionStatus, String dispositionResult) {
+        if (dispositionStatus == null || dispositionStatus.isBlank()) {
+            return "";
+        }
+        if ("PENDING".equals(dispositionStatus)) {
+            return "待处置";
+        }
+        if ("ESCALATED".equals(dispositionStatus)) {
+            return "已升级";
+        }
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            return "已调库";
+        }
+        if ("ACCEPT_DEVIATION".equals(dispositionResult)) {
+            return "已接收";
+        }
+        return "CLOSED".equals(dispositionStatus) ? "已关闭" : dispositionStatus;
+    }
+
+    private String locationTaskDispositionType(String dispositionStatus, String dispositionResult) {
+        if ("PENDING".equals(dispositionStatus)) {
+            return "amber";
+        }
+        if ("ESCALATED".equals(dispositionStatus)) {
+            return "red";
+        }
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            return "blue";
+        }
+        if ("CLOSED".equals(dispositionStatus)) {
+            return "green";
+        }
+        return "gray";
     }
 
     private MaterialLocationTask lockedLocationTask(String taskNo) {

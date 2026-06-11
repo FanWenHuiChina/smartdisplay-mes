@@ -570,3 +570,20 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
 | 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
 | Flyway 静态验收 | `powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` | 通过 | 识别 `V1.1-V1.50` 共 50 个迁移文件 |
+
+## 2026-06-11 WMS 复核差异待处置队列复验
+
+本轮将 WMS 复核驳回后的处置入口从“最近任务表内动作”提升为独立待办队列。后端提供 `pendingDispositionOnly=true` 服务端筛选，前端物料页按该筛选拉取真实待处置数据，避免在全量任务表中人工寻找复核驳回项。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 后端 WMS 待处置筛选定向回归 | `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest" test` | 通过 | 103 项通过；覆盖库位任务复核、驳回处置、权限和失败审计映射，并验证新增查询口径不破坏既有状态机 |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 423 项通过；覆盖 `dispositionMaterialLocationTask` API、`pendingDispositionTasks`、`pendingDispositionSummary`、`pendingDispositionOnly` 和物料页待处置队列接线 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |
+| Docker 前端静态资源覆盖 | 容器内检查 `/usr/share/nginx/html` | 通过 | `index.html` 和 `assets` 为 2026-06-11 00:32 本轮构建产物，包含 `material-DiQyXzfe.js` 和 `material-dRw9Q9vE.css` |
+| Docker HTTP 冒烟 | `Invoke-WebRequest http://127.0.0.1:8888/`，登录后查询 `GET /api/v1/material/location-tasks?pendingDispositionOnly=true` | 通过 | 首页 HTTP 200；登录业务码 200；筛选接口业务码 200 |
+| Docker 演示数据 | 经前端反代 API 创建、领取、完成、复核驳回 `COUNT` 库位任务 | 通过 | 生成 `MLT-20260611090846806-0001`，状态 `DONE`，`reviewResult=REJECTED`，`dispositionStatus=PENDING`，待处置筛选返回 `pendingCount=1` |
+
+说明：Codex app 内置浏览器本轮受 Windows 沙箱权限限制，连接时报 `CreateProcessAsUserW failed: 5`，未作为通过证据；本轮以 Docker 运行态 HTTP/API、容器静态资源和自动化契约/构建扫描作为验收依据。

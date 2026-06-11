@@ -932,3 +932,14 @@
 - 前端物料页最近库位任务表新增处置状态与结论展示；待处置驳回任务提供“接收差异”和“调库”两个低饱和按钮，调库时弹出实盘可用数量输入框，继续沿用浅色 Codex app 工作台风格。
 - 新增 `MATERIAL_LOCATION_TASK_DISPOSITION` 审计动作和失败审计映射，处置快照保留 `before`、`after`、`changedFields`、原始请求、处置人、处置结论以及调库批次证据。
 - 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 102 项通过，`npm.cmd run verify:frontend-contract` 420 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，Flyway 静态验收识别 `V1.1-V1.50` 共 50 个迁移文件。
+
+## 2026-06-11 增量：WMS 复核差异待处置队列
+
+- `GET /api/v1/material/location-tasks` 新增 `reviewResult`、`dispositionStatus` 和 `pendingDispositionOnly` 查询参数；当 `pendingDispositionOnly=true` 时，服务端只返回 `DONE + review_result=REJECTED + disposition_status=PENDING/NULL` 的待处置驳回任务。
+- 库位任务列表返回补充 `dispositionText` 和 `dispositionType`，将 `PENDING/ESCALATED/ADJUST_INVENTORY/ACCEPT_DEVIATION/CLOSED` 转换为前端可直接展示的低饱和状态标签。
+- `PilotMesService` 的开发 fallback 同步复核通过/驳回/待处置样例，但真实查询带过滤条件且结果为空时返回真实空数组，不再用演示样例覆盖生产语义。
+- 前端物料页新增“复核差异待处置”独立队列，使用 `getMaterialLocationTasks({ pendingDispositionOnly: true })` 拉取数据，展示待处置数量、批次数、高优先级数量，并提供“接收差异”和“调库”处置入口。
+- 队列样式沿用浅色 Codex app 工作台基线：细边框、低饱和标签、紧凑任务行和移动端单列布局，不回到深色侧栏或重色按钮风格。
+- 已验证：`MaterialServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 103 项通过，`npm.cmd run verify:frontend-contract` 423 项通过，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
+- 已部署到当前 Docker 运行环境：后端 `smartdisplay-mes-api-1.0.0-SNAPSHOT-exec.jar` 已覆盖 `/app/app.jar` 并重启，前端 `dist` 已覆盖 Nginx 静态目录；`http://127.0.0.1:8888/` 返回 HTTP 200，登录和 `pendingDispositionOnly=true` 接口返回业务码 200。
+- Docker 演示数据已通过正常业务 API 创建一条待处置驳回任务 `MLT-20260611090846806-0001`，当前筛选接口返回 `pendingCount=1`，便于在物料页直接查看新队列效果。

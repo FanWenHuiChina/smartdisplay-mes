@@ -1280,16 +1280,24 @@ public class PilotMesService {
         return fallbackListOnEmpty(fallbackMaterialLocations());
     }
 
-    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo) {
+    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo,
+                                                           String reviewResult, String dispositionStatus,
+                                                           Boolean pendingDispositionOnly) {
         try {
-            List<Map<String, Object>> rows = materialService.materialLocationTasks(status, batchNo);
+            List<Map<String, Object>> rows = materialService.materialLocationTasks(status, batchNo,
+                    reviewResult, dispositionStatus, pendingDispositionOnly);
             if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            return fallbackListOnFailure("物料库位任务", e, fallbackMaterialLocationTasks(status, batchNo));
+            return fallbackListOnFailure("物料库位任务", e,
+                    fallbackMaterialLocationTasks(status, batchNo, reviewResult, dispositionStatus, pendingDispositionOnly));
         }
-        return fallbackListOnEmpty(fallbackMaterialLocationTasks(status, batchNo));
+        if (hasLocationTaskQueryFilter(status, batchNo, reviewResult, dispositionStatus, pendingDispositionOnly)) {
+            return List.of();
+        }
+        return fallbackListOnEmpty(fallbackMaterialLocationTasks(status, batchNo, reviewResult,
+                dispositionStatus, pendingDispositionOnly));
     }
 
     public Map<String, Object> createMaterialLocationTask(Map<String, Object> request) {
@@ -2489,19 +2497,69 @@ public class PilotMesService {
         return row;
     }
 
-    private List<Map<String, Object>> fallbackMaterialLocationTasks(String status, String batchNo) {
-        List<Map<String, Object>> rows = List.of(
-                fallbackMaterialLocationTask("MLT-FB-001", "PUTAWAY", "PI260606-A", "PI_INK", "PI胶",
-                        "WMS-IN", "WMS-A01", 820, 820, "g", "DONE", "来料上架", "wms1001", "09:20", "green"),
-                fallbackMaterialLocationTask("MLT-FB-002", "MOVE", "ENCAP260604-C", "ENCAP_GLUE", "封装胶",
-                        "WMS-IN", "WMS-B03", 540, 540, "g", "DONE", "产线补料前移库", "wms1002", "10:35", "green"),
-                fallbackMaterialLocationTask("MLT-FB-003", "COUNT", "OLED-R-260605-B", "OLED_R", "红光有机材料",
-                        "COLD-02", "COLD-02", 310, 310, "g", "DONE", "低温库日盘", "wms1001", "13:10", "green")
-        );
+    private List<Map<String, Object>> fallbackMaterialLocationTasks(String status, String batchNo,
+                                                                    String reviewResult, String dispositionStatus,
+                                                                    Boolean pendingDispositionOnly) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.add(fallbackReviewedLocationTask("MLT-FB-001", "PUTAWAY", "PI260606-A", "PI_INK", "PI胶",
+                "WMS-IN", "WMS-A01", 820, 820, "g", "DONE", "来料上架", "wms1001", "09:20",
+                "APPROVED", "上架记录与库位一致", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-002", "MOVE", "ENCAP260604-C", "ENCAP_GLUE", "封装胶",
+                "WMS-IN", "WMS-B03", 540, 540, "g", "DONE", "产线补料前移库", "wms1002", "10:35",
+                "APPROVED", "移库记录已复核", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-003", "COUNT", "OLED-R-260605-B", "OLED_R", "红光有机材料",
+                "COLD-02", "COLD-02", 310, 310, "g", "DONE", "低温库日盘", "wms1001", "13:10",
+                "APPROVED", "盘点数量与系统一致", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-004", "COUNT", "PI260606-A", "PI_INK", "PI胶",
+                "WMS-A01", "WMS-A01", 820, 816, "g", "DONE", "复核发现实盘数量差异", "wms1001", "14:05",
+                "REJECTED", "复核驳回：实盘 816g，系统 820g，待处置", "PENDING", "red"));
         return rows.stream()
-                .filter(row -> status == null || status.isBlank() || status.equals(row.get("status")))
-                .filter(row -> batchNo == null || batchNo.isBlank() || batchNo.equals(row.get("batchNo")))
+                .filter(row -> !Boolean.TRUE.equals(pendingDispositionOnly)
+                        || (sameText(row.get("status"), "DONE")
+                        && sameText(row.get("reviewResult"), "REJECTED")
+                        && sameText(row.get("dispositionStatus"), "PENDING")))
+                .filter(row -> status == null || status.isBlank() || sameText(row.get("status"), status))
+                .filter(row -> batchNo == null || batchNo.isBlank() || sameText(row.get("batchNo"), batchNo))
+                .filter(row -> reviewResult == null || reviewResult.isBlank() || sameText(row.get("reviewResult"), reviewResult))
+                .filter(row -> dispositionStatus == null || dispositionStatus.isBlank()
+                        || sameText(row.get("dispositionStatus"), dispositionStatus))
                 .collect(Collectors.toList());
+    }
+
+    private boolean hasLocationTaskQueryFilter(String status, String batchNo,
+                                               String reviewResult, String dispositionStatus,
+                                               Boolean pendingDispositionOnly) {
+        return Boolean.TRUE.equals(pendingDispositionOnly)
+                || hasText(status)
+                || hasText(batchNo)
+                || hasText(reviewResult)
+                || hasText(dispositionStatus);
+    }
+
+    private Map<String, Object> fallbackReviewedLocationTask(String taskNo, String taskType,
+                                                             String batchNo, String materialCode,
+                                                             String materialName, String sourceLocation,
+                                                             String targetLocation, int plannedQty,
+                                                             int actualQty, String unit, String status,
+                                                             String reason, String operator,
+                                                             String executedTime, String reviewResult,
+                                                             String reviewConclusion, String dispositionStatus,
+                                                             String type) {
+        Map<String, Object> row = fallbackMaterialLocationTask(taskNo, taskType, batchNo, materialCode,
+                materialName, sourceLocation, targetLocation, plannedQty, actualQty, unit, status,
+                reason, operator, executedTime, type);
+        row.put("reviewer", "wms-lead");
+        row.put("reviewResult", reviewResult);
+        row.put("reviewConclusion", reviewConclusion);
+        row.put("reviewedTime", executedTime);
+        row.put("dispositionStatus", dispositionStatus);
+        if ("REJECTED".equals(reviewResult)) {
+            row.put("exceptionReason", reviewConclusion);
+        } else {
+            row.put("dispositionResult", "APPROVED");
+            row.put("dispositionConclusion", reviewConclusion);
+        }
+        return row;
     }
 
     private Map<String, Object> fallbackMaterialLocationTask(String taskNo, String taskType,

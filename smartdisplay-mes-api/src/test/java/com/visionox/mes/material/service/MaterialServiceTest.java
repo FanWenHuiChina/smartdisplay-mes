@@ -1114,7 +1114,8 @@ class MaterialServiceTest {
         MaterialLocationTask task = locationTask("MLT-001", "MOVE", "PI_INK_B007");
         when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
 
-        List<Map<String, Object>> rows = materialService.materialLocationTasks("DONE", "PI_INK_B007");
+        List<Map<String, Object>> rows = materialService.materialLocationTasks("DONE", "PI_INK_B007",
+                null, null, null);
 
         assertThat(rows).hasSize(1);
         Map<String, Object> row = rows.get(0);
@@ -1136,7 +1137,7 @@ class MaterialServiceTest {
         task.setDueTime(LocalDateTime.now().minusMinutes(5));
         when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
 
-        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null);
+        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null, null, null, null);
 
         assertThat(rows).hasSize(1);
         Map<String, Object> row = rows.get(0);
@@ -1145,6 +1146,22 @@ class MaterialServiceTest {
         assertThat(row.get("overdue")).isEqualTo(true);
         assertThat(row.get("slaStatus")).isEqualTo("OVERDUE");
         assertThat(row.get("slaType")).isEqualTo("red");
+    }
+
+    @Test
+    void materialLocationTasksShouldExposePendingDispositionRows() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-PENDING-DISP-001", "COUNT", "PI_INK_B007");
+        when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
+
+        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null,
+                "REJECTED", "PENDING", true);
+
+        assertThat(rows).hasSize(1);
+        Map<String, Object> row = rows.get(0);
+        assertThat(row.get("taskNo")).isEqualTo("MLT-PENDING-DISP-001");
+        assertThat(row.get("reviewResult")).isEqualTo("REJECTED");
+        assertThat(row.get("dispositionStatus")).isEqualTo("PENDING");
+        assertThat(row.get("dispositionText")).isEqualTo("待处置");
     }
 
     @Test

@@ -356,9 +356,55 @@
     <div class="mes-card section-gap">
       <div class="mes-card__head">
         <div class="mes-card__title">库位任务 / 上架移库拆批盘点</div>
-        <span class="status-tag blue">{{ locationTaskRows.length }} 条</span>
+        <span class="status-tag" :class="pendingDispositionTasks.length ? 'amber' : 'blue'">
+          待处置 {{ pendingDispositionTasks.length }} / 全量 {{ locationTaskRows.length }}
+        </span>
       </div>
       <div class="mes-card__body">
+        <div class="pending-disposition-queue">
+          <div class="queue-head">
+            <div>
+              <strong>复核差异待处置</strong>
+              <span>{{ pendingDispositionSummary }}</span>
+            </div>
+            <button class="mes-btn tiny" :disabled="loading" type="button" @click="loadMaterialData">刷新队列</button>
+          </div>
+          <div v-if="pendingDispositionTasks.length" class="queue-list">
+            <div v-for="task in pendingDispositionTasks" :key="`pending-${task.key}`" class="queue-row">
+              <div class="task-main">
+                <strong>{{ task.taskNo }} / {{ task.taskLabel }}</strong>
+                <span>{{ task.batchNo }} / {{ task.sourceLocation }} → {{ task.targetLocation }} / {{ task.qty }}</span>
+                <span>{{ task.reviewConclusion || task.reason }}</span>
+              </div>
+              <div class="queue-meta">
+                <span class="task-review" :class="task.dispositionType">{{ task.dispositionText }}</span>
+                <span>{{ task.reviewText }}</span>
+              </div>
+              <div class="task-actions">
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ACCEPT_DEVIATION')"
+                >
+                  接收差异
+                </button>
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny primary"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ADJUST_INVENTORY')"
+                >
+                  调库
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-cell queue-empty">暂无复核差异待处置任务</div>
+        </div>
+
         <div class="location-task-shell">
           <div class="location-task-panel">
             <div class="wms-actions">
@@ -981,7 +1027,8 @@ const fallbackLocationTasks = [
   { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', priority: 6, dueTime: new Date(Date.now() + 3 * 3600000).toISOString(), slaStatus: 'ON_TRACK', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', priority: 9, dueTime: new Date(Date.now() - 3600000).toISOString(), overdue: true, slaStatus: 'OVERDUE', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', priority: 3, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
-  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' }
+  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-005', taskType: 'COUNT', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 816, unit: 'g', status: 'DONE', priority: 7, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核发现数量差异', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 816g，系统 820g，待处置', dispositionStatus: 'PENDING', executedTime: new Date().toISOString(), type: 'red' }
 ]
 
 const wmsActions = [
@@ -1018,6 +1065,7 @@ const supplierReviewRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackSupplierReviews.m
 const supplierTrendRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackSupplierTrends.map(mapSupplierTrend) : [])
 const materialLocationRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations.map(mapMaterialLocation) : [])
 const locationTaskRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackLocationTasks.map(mapLocationTask) : [])
+const pendingDispositionTasks = ref(__DEV_MOCK_FALLBACK__ ? fallbackLocationTasks.map(mapLocationTask).filter(item => item.canDisposition) : [])
 const readiness = ref(__DEV_MOCK_FALLBACK__ ? 'PASS_WITH_WARNING' : 'NO_DATA')
 const loading = ref(false)
 const wmsSubmitting = ref(false)
@@ -1094,6 +1142,12 @@ const openSupplierActionCount = computed(() => supplierActionRows.value.filter(i
 const openSupplierReviewCount = computed(() => supplierReviewRows.value.filter(item => item.reviewStatus === 'OPEN').length)
 const supplierTrendRiskCount = computed(() => supplierTrendRows.value.filter(item => item.latestRiskLevel !== 'LOW' || item.overdueWindowCount > 0).length)
 const lockedLocationCount = computed(() => materialLocationRows.value.filter(item => item.status !== 'ACTIVE').length)
+const pendingDispositionSummary = computed(() => {
+  if (!pendingDispositionTasks.value.length) return '复核驳回任务已清零'
+  const batches = new Set(pendingDispositionTasks.value.map(item => item.batchNo).filter(Boolean))
+  const highPriority = pendingDispositionTasks.value.filter(item => Number(item.priority || 0) >= 7).length
+  return `${batches.size} 个批次待处置 / 高优先级 ${highPriority}`
+})
 const readinessText = computed(() => readiness.value || '待检查')
 const readinessType = computed(() => {
   if (readiness.value === 'PASS') return 'green'
@@ -2156,7 +2210,7 @@ async function closeSupplierAction(action) {
 async function loadMaterialData() {
   try {
     loading.value = true
-    const [materialData, carrierData, consumptionData, txnData, iqcData, supplierData, supplierActionsData, supplierReviewData, supplierTrendData, locationData, locationTaskData] = await Promise.all([
+    const [materialData, carrierData, consumptionData, txnData, iqcData, supplierData, supplierActionsData, supplierReviewData, supplierTrendData, locationData, locationTaskData, pendingDispositionData] = await Promise.all([
       getMaterialBatches(),
       getCarriers(),
       getMaterialConsumptions(),
@@ -2167,7 +2221,8 @@ async function loadMaterialData() {
       getSupplierQualificationReviews(),
       getMaterialSupplierTrends({ months: 6 }),
       getMaterialLocations(),
-      getMaterialLocationTasks()
+      getMaterialLocationTasks(),
+      getMaterialLocationTasks({ pendingDispositionOnly: true })
     ])
     if (Array.isArray(materialData?.batches) && materialData.batches.length) {
       rawBatches.value = materialData.batches
@@ -2219,8 +2274,11 @@ async function loadMaterialData() {
         locationTaskForm.targetLocation = materialLocationRows.value.find(item => item.status === 'ACTIVE')?.locationCode || ''
       }
     }
-    if (Array.isArray(locationTaskData) && locationTaskData.length) {
+    if (Array.isArray(locationTaskData)) {
       locationTaskRows.value = locationTaskData.map(mapLocationTask)
+    }
+    if (Array.isArray(pendingDispositionData)) {
+      pendingDispositionTasks.value = pendingDispositionData.map(mapLocationTask).filter(item => item.canDisposition)
     }
   } catch (error) {
     warnDevFallback('物料接口不可用', error)
@@ -2238,6 +2296,7 @@ async function loadMaterialData() {
       supplierTrendRows.value = fallbackSupplierTrends.map(mapSupplierTrend)
       materialLocationRows.value = fallbackMaterialLocations.map(mapMaterialLocation)
       locationTaskRows.value = fallbackLocationTasks.map(mapLocationTask)
+      pendingDispositionTasks.value = fallbackLocationTasks.map(mapLocationTask).filter(item => item.canDisposition)
       readiness.value = 'PASS_WITH_WARNING'
     }
   } finally {
@@ -2364,6 +2423,70 @@ onMounted(loadMaterialData)
   margin-top: 14px;
   max-height: 220px;
   overflow: auto;
+}
+
+.pending-disposition-queue {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper-muted);
+}
+
+.queue-head,
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 0.46fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.queue-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.queue-head div,
+.queue-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.queue-head strong {
+  color: var(--mes-text);
+  font-size: 13px;
+}
+
+.queue-head span,
+.queue-meta span:not(.task-review) {
+  color: var(--mes-sub);
+  font-size: 12px;
+}
+
+.queue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.queue-row {
+  padding: 10px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper);
+}
+
+.queue-row .task-actions {
+  justify-content: flex-end;
+}
+
+.queue-empty {
+  padding: 10px;
+  border: 1px dashed var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper);
 }
 
 .location-task-shell {
@@ -2661,6 +2784,15 @@ onMounted(loadMaterialData)
 
   .location-task-shell {
     grid-template-columns: 1fr;
+  }
+
+  .queue-head,
+  .queue-row {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-row .task-actions {
+    justify-content: flex-start;
   }
 
   .wms-form .wide {

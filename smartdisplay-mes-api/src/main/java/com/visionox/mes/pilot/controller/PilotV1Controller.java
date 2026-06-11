@@ -643,8 +643,12 @@ public class PilotV1Controller {
 
     @GetMapping("/material/location-tasks")
     public Result<List<Map<String, Object>>> materialLocationTasks(@RequestParam(required = false) String status,
-                                                                   @RequestParam(required = false) String batchNo) {
-        return Result.success(pilotMesService.materialLocationTasks(status, batchNo));
+                                                                   @RequestParam(required = false) String batchNo,
+                                                                   @RequestParam(required = false) String reviewResult,
+                                                                   @RequestParam(required = false) String dispositionStatus,
+                                                                   @RequestParam(required = false) Boolean pendingDispositionOnly) {
+        return Result.success(pilotMesService.materialLocationTasks(status, batchNo,
+                reviewResult, dispositionStatus, pendingDispositionOnly));
     }
 
     @PostMapping("/material/location-tasks")
