@@ -175,9 +175,10 @@
               </div>
               <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
               <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
-                <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
-                <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
-                <button v-if="canReviewAction" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
+                <button v-if="canReviewAction && !item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'CONTINUE_HOLD')">复判</button>
                 <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
               </div>
             </div>
@@ -442,7 +443,9 @@ const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
   title: `${item.lotNo || item.eventNo || '-'} ${item.title || item.eventType}`,
   status: item.status || 'OPEN',
   type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
+  sourceModule: item.sourceModule,
   sourceText: exceptionSourceText(item.sourceModule),
+  lotActionable: Boolean(item.lotNo) && item.sourceModule !== 'WMS_LOCATION_TASK',
   meta: `${exceptionSourceText(item.sourceModule)} / ${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
   mrbResult: item.mrbResult,
   dispositionAction: item.dispositionAction,

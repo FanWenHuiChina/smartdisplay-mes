@@ -626,3 +626,14 @@ powershell -ExecutionPolicy Bypass -File tools\run-real-db-api-flow.ps1
 | 后端打包 | `mvn.cmd -DskipTests package` | 通过 | 已覆盖 Docker 后端 `/app/app.jar` 并重启 |
 | Docker 质量异常筛选冒烟 | `GET /api/v1/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN` | 通过 | 返回业务码 200，命中 `EX-20260611092725212-0003 / MATERIAL / P2 / WMS_LOCATION_TASK / OPEN / QE` |
 | Docker 前端产物检查 | 容器内检查 `/usr/share/nginx/html/assets/quality-*.js` | 通过 | `quality-Bn9iVQIn.js` 包含 `WMS_LOCATION_TASK` |
+
+## 2026-06-11 WMS 来源异常动作边界复验
+
+本轮收紧质量页 MRB 卡片的动作语义：WMS 库位任务升级生成且没有 Lot 上下文的物料异常，不再展示“放行 / 返工 / 报废”这类 Lot 处置动作，只保留通用“复判”和“关闭”。这样质量异常队列可以承接 WMS 差异，但不会误导用户认为该异常已经具备 Lot 状态机处置上下文。
+
+| 验证项 | 命令/方式 | 结果 | 说明 |
+| --- | --- | --- | --- |
+| 前端契约回归 | `npm.cmd run verify:frontend-contract` | 通过 | 425 项通过；新增覆盖 `lotActionable`、无 Lot 异常“复判”和 `CONTINUE_HOLD` 动作边界 |
+| 前端生产构建 | `npm.cmd run build` | 通过 | 仅保留第三方 `@vueuse/core` pure annotation 和 chunk size warning |
+| 前端生产包扫描 | `npm.cmd run verify:production-bundle` | 通过 | `Production bundle clean: 14 JS assets checked` |
+| 空白检查 | `git -c safe.directory=D:/workspace/mes diff --check` | 通过 | 无 whitespace error，仅有既有 LF/CRLF 提示 |

@@ -971,3 +971,11 @@
 - 前端契约脚本新增质量页 WMS 来源筛选检查，覆盖 `exceptionFilters`、`sourceModule`、`WMS_LOCATION_TASK` 和筛选查询调用。
 - 已验证：`QualityServiceTest,MaterialServiceTest,PilotMesServiceTest,RolePermissionServiceTest,AuditFailureResolverTest` 定向 160 项通过，`npm.cmd run verify:frontend-contract` 424 项通过，`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过，`git diff --check` 无空白错误。
 - 已部署到当前 Docker 前后端容器：`GET /api/v1/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN` 返回业务码 200，并命中 `EX-20260611092725212-0003 / MATERIAL / P2 / WMS_LOCATION_TASK / OPEN / QE`；容器内 `quality-Bn9iVQIn.js` 已包含 `WMS_LOCATION_TASK`。
+
+## 2026-06-11 增量：WMS 来源异常动作边界
+
+- 质量页 MRB 待处置卡片新增 `lotActionable` 判断：只有存在 `lotNo` 且来源不是 `WMS_LOCATION_TASK` 的异常才展示“放行 / 返工 / 报废”这类 Lot 处置动作。
+- 对 WMS 库位任务升级生成、无 Lot 上下文的物料异常，页面改为显示通用“复判”和“关闭”，避免把库存差异异常误表达成可直接执行 Lot 放行、返工或报废。
+- `mrbItems` 保留 `sourceModule` 并派生 `lotActionable`，后续若 WMS 异常明确绑定 Lot，也必须显式经过该边界判断后才开放 Lot 处置按钮。
+- 前端契约脚本新增 `wms-exception-action-boundary` 检查，覆盖 `lotActionable`、无 Lot 异常的“复判”按钮和 `CONTINUE_HOLD` 复判动作，防止页面回退为所有异常都显示 Lot 处置标签。
+- 已验证：`npm.cmd run verify:frontend-contract` 通过 425 项检查，`npm.cmd run build` 通过，`npm.cmd run verify:production-bundle` 扫描 14 个 JS 产物通过，`git diff --check` 无空白错误。
