@@ -1035,6 +1035,16 @@
 - `PilotMesService.trackOut` 的 `processParams` 默认值从伪造的 `{"temperature":150,"speed":300}` 改为空 `{}`，避免虚假工艺参数混入质检评估上下文；`result` 默认 `"OK"` 保留（MES 出站默认合格是业务约定）。
 - 已验证：`MaterialServiceTest` 60 项通过（freeze/return 审计断言从 `any()` 补强为校验 before/after/changedFields 和具体库存数值）；后端全量 274 项通过。
 
+## 2026-06-14 增量：工业风 MES 视觉换肤（ISA-101 高性能浅色）
+
+- `style.css` 全局色板从"米白纸张 + 低饱和莫兰迪色"升级为 ISA-101 工业标准"浅灰底 + 高饱和语义色"，提升报警状态在车间环境下的辨识度。
+- 背景层级从米白（`#f7f7f4`）改为 ISA-101 推荐浅灰（`#F0F2F5`），减少眩光；文字层级增强对比度（主文字 `#1F2329`）。
+- 状态色核心改动：绿色 `#5b735f`→`#00B42A`、红色 `#9a5954`→`#F53F3F`、琥珀 `#8a7148`→`#FF7D00`、蓝色 `#596473`→`#3370FF`；所有状态 tag 的浅底色和边框色同步更新为高饱和色系。
+- 新增等宽字体 `--font-mono`（JetBrains Mono / Cascadia Code），KPI 数值（`.metric-value`）应用等宽 + `tabular-nums`，避免刷新跳动、列对齐更整齐。
+- 阴影从极弱（`rgba 0.03`）增强到 `rgba(31,35,41,0.08)`，卡片层次感更明确；scrollbar 配色匹配新主题。
+- 改造范围仅 `style.css` 一个文件（+54/-43 行），13 个页面全部自动受益，未动页面结构、未引入新组件库。
+- 已验证：`npm run build` 通过；`npm run verify:frontend-contract` 427 项通过；`npm run verify:production-bundle` 14 个 JS 产物 clean；`npm run e2e:browser` 21 步全绿（console/network 错误 0，无横向溢出/文字裁切/布局回归）。
+
 
 
 
