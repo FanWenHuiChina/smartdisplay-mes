@@ -56,7 +56,11 @@ class ErpOrderAdapterServiceTest {
         assertThat(auditLogService.description).contains("created=1000");
         assertThat(auditLogService.operator).isEqualTo("planner");
         assertThat(auditLogService.source).isEqualTo("erp-adapter");
-        assertThat(auditLogService.requestSnapshot).contains("createdCount");
+        assertThat(auditLogService.requestSnapshot).contains("\"request\"");
+        assertThat(auditLogService.requestSnapshot).contains("\"summary\"");
+        assertThat(auditLogService.requestSnapshot).contains("\"createdCount\":1000");
+        assertThat(auditLogService.requestSnapshot).contains("\"orderPrefix\":\"MOERP-PERF\"");
+        assertThat(auditLogService.requestSnapshot).contains("\"skippedDetails\":[]");
     }
 
     @Test
@@ -64,9 +68,10 @@ class ErpOrderAdapterServiceTest {
         ProductionOrder existing = new ProductionOrder();
         existing.setOrderNo("MO-EXISTS");
         AtomicInteger insertCount = new AtomicInteger();
+        RecordingAuditLogService auditLogService = new RecordingAuditLogService();
         ErpOrderAdapterService service = new ErpOrderAdapterService(
                 mapper(List.of(existing), insertCount, new ArrayList<>()),
-                new RecordingAuditLogService()
+                auditLogService
         );
 
         Map<String, Object> result = service.importOrders(Map.of(
@@ -77,6 +82,36 @@ class ErpOrderAdapterServiceTest {
         assertThat(result.get("createdCount")).isEqualTo(0);
         assertThat(result.get("skippedCount")).isEqualTo(1);
         assertThat(insertCount.get()).isZero();
+        List<?> skippedDetails = (List<?>) result.get("skippedDetails");
+        assertThat(skippedDetails).hasSize(1);
+        assertThat(auditLogService.requestSnapshot).contains("\"orderNo\":\"MO-EXISTS\"");
+        assertThat(auditLogService.requestSnapshot).contains("\"skipReason\":\"EXISTING\"");
+    }
+
+    @Test
+    void importOrdersShouldRecordDuplicateInBatchSkips() {
+        AtomicInteger insertCount = new AtomicInteger();
+        List<ProductionOrder> samples = new ArrayList<>();
+        RecordingAuditLogService auditLogService = new RecordingAuditLogService();
+        ErpOrderAdapterService service = new ErpOrderAdapterService(
+                mapper(List.of(), insertCount, samples),
+                auditLogService
+        );
+
+        Map<String, Object> result = service.importOrders(Map.of(
+                "batchNo", "ERP-BATCH-DUP",
+                "orders", List.of(
+                        Map.of("orderNo", "MO-DUP", "productCode", "AMOLED_65", "plannedQty", 100),
+                        Map.of("orderNo", "MO-DUP", "productCode", "AMOLED_65", "plannedQty", 100)
+                )
+        ), "planner");
+
+        assertThat(result.get("createdCount")).isEqualTo(1);
+        assertThat(result.get("skippedCount")).isEqualTo(1);
+        assertThat(insertCount.get()).isEqualTo(1);
+        List<?> skippedDetails = (List<?>) result.get("skippedDetails");
+        assertThat(skippedDetails).hasSize(1);
+        assertThat(auditLogService.requestSnapshot).contains("\"skipReason\":\"DUPLICATE_IN_BATCH\"");
     }
 
     @Test

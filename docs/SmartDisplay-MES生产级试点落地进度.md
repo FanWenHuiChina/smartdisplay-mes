@@ -98,7 +98,7 @@
 
 ## 仍未达到生产级落地标准的缺口
 
-- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Lot 批量 Hold/Release、Rework/Scrap 已写入结构化快照或批量汇总快照；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出；后续新增批量写接口的差异快照和失败审计映射仍需持续治理。
+- 审计：关键动作已落 `sys_audit_log`，请求上下文、IP和调用端标识已自动解析并落库；关键写接口业务异常、参数校验异常和系统异常已写失败审计；工单创建/释放、Track In/Out、Hold/Release、Lot 批量 Hold/Release、Rework/Scrap 已写入结构化快照或批量汇总快照；ERP 批量导入已补齐 `request + summary` 快照和逐条跳过明细（`EXISTING`/`DUPLICATE_IN_BATCH`）；系统审计已支持分页、动作分组、结果、来源、操作人、日期范围过滤和上下文字段导出。
 - 质量：基础检验、缺陷、异常事件、NG/参数超限自动 Hold、MRB复判、异常关闭、结构化处置结论、MRB履历、会议号、参与人、审批状态、附件元数据、会议纪要正文版本管理、多角色会签待办、按角色/风险/处置动作的审批 SLA、逾期升级策略和关闭前会签校验已落地。
 - 物料：BOM、BOM变更附件、物料批次、库位策略、库位上架/整批移库/拆批/盘点任务、上料锁定、消耗履历、载具绑定、WMS 入库/冻结/解冻/退料/盘点、库存事务履历、来料 IQC、COA/检验附件元数据、基于批次与 IQC 的供应商绩效评分、准入/复审/8D整改、到期复审自动提醒、月度评分趋势和 `FOR UPDATE` 批次锁已落地；后续可继续扩展异步领取和复核式 WMS 任务流。
 - 设备：设备主数据、能力矩阵、事件队列、EAP 参数采样、参数越限自动设备事件、PM任务、Recipe下发/回读命令履历、事件关闭、OEE拆解、停机原因TopN、设备状态历史、标准/实际节拍采样、标准节拍主数据、EAP 统一适配器、网关连接配置、协议驱动抽象、网关心跳、健康检查和消息履历已落地；仍缺真实 SECS/GEM、OPC UA、厂商 HTTP 驱动真机联调和毫秒级设备状态采集。
@@ -999,4 +999,11 @@
 - 前端契约脚本新增 `wms-location-task-exception-closure` 检查，覆盖回写字段、辅助函数和 MRB 关闭文案，防止页面退回只显示处置状态。
 - 已验证：`MaterialServiceTest,QualityServiceTest` 定向 76 项通过（新增回写正常/任务不存在/非物料来源/关联事件不一致 4 个用例），`npm.cmd run verify:frontend-contract` 通过 427 项检查，`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
 - 浏览器 E2E 新增“WMS 库位任务复核驳回升级并回写 MRB 关闭”专步（第 21 步）：先用 `/api/v1/material/receive` 入库一个临时批次，再串联 `COUNT 任务创建 → assign → complete → review REJECTED → disposition ESCALATE → 按 sourceModule 筛选 WMS 异常 → closeException → 查任务回写字段`，断言任务 `ESCALATED`、`linkedExceptionEventNo`、`exceptionClosedBy`、`exceptionCloseAction=RELEASE` 和 `dispositionStatus=CLOSED`；步骤自包含临时批次，不破坏种子库存，脚本语法和前端契约已通过，待 Docker 运行态复跑归档。
+
+## 2026-06-14 增量：ERP 批量导入差异快照治理
+
+- `ErpOrderAdapterService.importOrders` 的 `ERP_ORDER_IMPORT` 审计快照从“只保存汇总 result”升级为与 Lot 批量 Hold/Release 一致的 `request + summary` 结构，便于审计导出、问题复盘和接口回放。
+- 导入循环新增逐条跳过明细收集：被跳过的工单按 `EXISTING`（数据库已存在）和 `DUPLICATE_IN_BATCH`（同批次内重复）区分原因，写入 `result.skippedDetails`（含 orderNo、skipReason、productCode），避免审计只能看到跳过总数而无法追溯具体工单。
+- 失败审计映射 `ERP_ORDER_IMPORT` 已在 `AuditFailureResolver` 覆盖，本次只强化成功路径快照，不改失败路径。
+- 已验证：`ErpOrderAdapterServiceTest` 4 项通过（新增 `importOrdersShouldRecordDuplicateInBatchSkips` 用例覆盖同批次重复跳过；既有用例补强断言 `request`/`summary`/`orderPrefix`/`skippedDetails`）；后端全量 271 项通过；前端契约 427 项不回归。
 
