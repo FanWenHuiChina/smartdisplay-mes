@@ -1299,14 +1299,15 @@ public class MaterialService {
         task.setDispositionTime(now);
         task.setDispositionStatus("ESCALATE".equals(dispositionResult) ? "ESCALATED" : "CLOSED");
         task.setUpdatedTime(now);
-        materialLocationTaskMapper.updateById(task);
         if ("ESCALATE".equals(dispositionResult)) {
             escalatedEvent = createLocationTaskEscalationEvent(task, operator, conclusion, now);
+            task.setLinkedExceptionEventNo(escalatedEvent.getEventNo());
             dispositionRequest.put("escalatedEventNo", escalatedEvent.getEventNo());
             dispositionRequest.put("sourceRefType", escalatedEvent.getSourceRefType());
             dispositionRequest.put("sourceRefNo", escalatedEvent.getSourceRefNo());
             dispositionRequest.put("sourcePayload", escalatedEvent.getSourcePayload());
         }
+        materialLocationTaskMapper.updateById(task);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("task", locationTaskRow(task));
@@ -1320,6 +1321,63 @@ public class MaterialService {
                 "处置库位任务复核差异: " + dispositionResult + ", conclusion=" + conclusion,
                 operator, auditSnapshot(before, locationTaskRow(task), dispositionRequest));
         return response;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void recordLocationTaskExceptionClosure(ExceptionEvent event, String operator) {
+        if (event == null) {
+            return;
+        }
+        if (!"MATERIAL_LOCATION_TASK".equals(event.getSourceRefType())) {
+            return;
+        }
+        String taskNo = event.getSourceRefNo();
+        if (taskNo == null || taskNo.isBlank()) {
+            return;
+        }
+        MaterialLocationTask task = materialLocationTaskMapper.selectByTaskNoForUpdate(taskNo);
+        if (task == null) {
+            log.warn("MRB回写未找到WMS库位任务: eventNo={}, taskNo={}", event.getEventNo(), taskNo);
+            return;
+        }
+        String currentLinked = valueOr(task.getLinkedExceptionEventNo(), "");
+        if (!currentLinked.isBlank() && !currentLinked.equals(event.getEventNo())) {
+            log.warn("WMS库位任务关联异常事件不一致，跳过回写: taskNo={}, linked={}, incoming={}",
+                    taskNo, currentLinked, event.getEventNo());
+            return;
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        LocalDateTime closedTime = event.getClosedTime() != null ? event.getClosedTime() : LocalDateTime.now();
+        String resolvedOperator = valueOr(operator, valueOr(event.getOwnerUser(), ""));
+        if (resolvedOperator.isBlank()) {
+            resolvedOperator = AuthContext.username();
+        }
+        String dispositionAction = valueOr(event.getDispositionAction(),
+                valueOr(event.getMrbResult(), "RELEASE"));
+        String closeConclusion = valueOr(event.getCloseConclusion(),
+                valueOr(event.getMrbOpinion(), "MRB关闭WMS升级异常"));
+        task.setLinkedExceptionEventNo(event.getEventNo());
+        task.setExceptionCloseAction(dispositionAction);
+        task.setExceptionCloseConclusion(limitText(closeConclusion, 500));
+        task.setExceptionClosedBy(resolvedOperator);
+        task.setExceptionClosedTime(closedTime);
+        task.setDispositionStatus("CLOSED");
+        task.setUpdatedTime(closedTime);
+        materialLocationTaskMapper.updateById(task);
+
+        Map<String, Object> requestSnapshot = new LinkedHashMap<>();
+        requestSnapshot.put("eventNo", event.getEventNo());
+        requestSnapshot.put("eventStatus", event.getStatus());
+        requestSnapshot.put("dispositionAction", dispositionAction);
+        requestSnapshot.put("closeConclusion", closeConclusion);
+        requestSnapshot.put("closedBy", resolvedOperator);
+        requestSnapshot.put("closedTime", closedTime);
+        requestSnapshot.put("sourceRefType", event.getSourceRefType());
+        requestSnapshot.put("sourceRefNo", event.getSourceRefNo());
+
+        audit("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "MRB关闭WMS升级异常: eventNo=" + event.getEventNo() + ", action=" + dispositionAction,
+                resolvedOperator, auditSnapshot(before, locationTaskRow(task), requestSnapshot));
     }
 
     private ExceptionEvent createLocationTaskEscalationEvent(MaterialLocationTask task, String operator,
@@ -3029,6 +3087,11 @@ public class MaterialService {
         row.put("dispositionType", locationTaskDispositionType(dispositionStatus, dispositionResult));
         row.put("dispositionBy", task.getDispositionBy());
         row.put("dispositionTime", task.getDispositionTime());
+        row.put("linkedExceptionEventNo", task.getLinkedExceptionEventNo());
+        row.put("exceptionCloseAction", task.getExceptionCloseAction());
+        row.put("exceptionCloseConclusion", task.getExceptionCloseConclusion());
+        row.put("exceptionClosedBy", task.getExceptionClosedBy());
+        row.put("exceptionClosedTime", task.getExceptionClosedTime());
         row.put("cancelledBy", task.getCancelledBy());
         row.put("cancelledTime", task.getCancelledTime());
         row.put("cancelReason", task.getCancelReason());

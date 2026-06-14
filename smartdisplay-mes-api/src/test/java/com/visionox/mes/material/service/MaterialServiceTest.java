@@ -1161,6 +1161,96 @@ class MaterialServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void recordLocationTaskExceptionClosureShouldWriteBackMrbResultAndAudit() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-WRITEBACK-001", "COUNT", "PI_INK_B010");
+        task.setDispositionStatus("ESCALATED");
+        task.setDispositionResult("ESCALATE");
+        task.setDispositionConclusion("升级到MRB后续处理");
+        task.setDispositionBy("wms-lead");
+        task.setDispositionTime(LocalDateTime.now().minusMinutes(10));
+        task.setLinkedExceptionEventNo("EX-WMS-MRB-001");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-WRITEBACK-001")).thenReturn(task);
+
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-WMS-MRB-001");
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-WRITEBACK-001");
+        event.setStatus("CLOSED");
+        event.setDispositionAction("REWORK");
+        event.setCloseConclusion("MRB判定降级使用并补做返工");
+        event.setOwnerUser("qe-zhang");
+        event.setClosedTime(LocalDateTime.now());
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        assertThat(task.getDispositionStatus()).isEqualTo("CLOSED");
+        assertThat(task.getLinkedExceptionEventNo()).isEqualTo("EX-WMS-MRB-001");
+        assertThat(task.getExceptionCloseAction()).isEqualTo("REWORK");
+        assertThat(task.getExceptionCloseConclusion()).isEqualTo("MRB判定降级使用并补做返工");
+        assertThat(task.getExceptionClosedBy()).isEqualTo("qe-zhang");
+        assertThat(task.getExceptionClosedTime()).isNotNull();
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                eq("MLT-WRITEBACK-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("qe-zhang"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"eventNo\":\"EX-WMS-MRB-001\"")
+                .contains("\"dispositionAction\":\"REWORK\"")
+                .contains("\"sourceRefNo\":\"MLT-WRITEBACK-001\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldIgnoreUnmatchedTask() {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-NONE-001");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-NOT-FOUND");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-NOT-FOUND")).thenReturn(null);
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldSkipNonMaterialLocationSource() {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-OTHER-001");
+        event.setSourceRefType("LOT");
+        event.setSourceRefNo("LOT001");
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).selectByTaskNoForUpdate(any());
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldSkipWhenLinkedEventDiffers() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-LINK-DIFF-001", "COUNT", "PI_INK_B010");
+        task.setDispositionStatus("ESCALATED");
+        task.setLinkedExceptionEventNo("EX-WMS-MRB-OLD");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-LINK-DIFF-001")).thenReturn(task);
+
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-WMS-MRB-NEW");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-LINK-DIFF-001");
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void reviewLocationTaskShouldRejectNonDoneOrReviewedTask() {
         MaterialLocationTask executing = locationTask("MLT-REVIEW-002", "MOVE", "PI_INK_B010");
         executing.setStatus("EXECUTING");

@@ -7,6 +7,7 @@ import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
+import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.quality.entity.ExceptionEvent;
 import com.visionox.mes.quality.entity.QualityDefectRecord;
 import com.visionox.mes.quality.entity.QualityInspection;
@@ -85,8 +86,16 @@ class QualityServiceTest {
     @Mock
     private RolePermissionService rolePermissionService;
 
+    @Mock
+    private MaterialService materialService;
+
     @InjectMocks
     private QualityService qualityService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void wireLazyMaterialService() {
+        org.springframework.test.util.ReflectionTestUtils.setField(qualityService, "materialService", materialService);
+    }
 
     @Test
     void evaluateTrackOutShouldCreateExceptionAndAutoHoldWhenManualResultIsNg() {

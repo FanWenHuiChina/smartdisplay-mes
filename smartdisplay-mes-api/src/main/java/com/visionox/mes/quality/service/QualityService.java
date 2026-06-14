@@ -10,6 +10,7 @@ import com.visionox.mes.lot.dto.TrackOutRequest;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
+import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.quality.entity.ExceptionEvent;
@@ -33,6 +34,8 @@ import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,6 +81,10 @@ public class QualityService {
     private final HoldRecordMapper holdRecordMapper;
     private final AuditLogService auditLogService;
     private final RolePermissionService rolePermissionService;
+
+    @Autowired
+    @Lazy
+    private MaterialService materialService;
 
     /**
      * Track Out 后执行质量判定，返回最终出站结果。
@@ -480,6 +487,16 @@ public class QualityService {
 
         audit("EXCEPTION_CLOSE", event.getEventNo(), "EXCEPTION",
                 "异常关闭: action=" + action + ", conclusion=" + conclusion, operator, JSONUtil.toJsonStr(request));
+
+        if ("MATERIAL_LOCATION_TASK".equals(event.getSourceRefType())
+                && event.getSourceRefNo() != null && !event.getSourceRefNo().isBlank()) {
+            try {
+                materialService.recordLocationTaskExceptionClosure(event, operator);
+            } catch (Exception ex) {
+                log.warn("回写WMS库位任务MRB关闭失败，已降级不阻断主流程: eventNo={}, taskNo={}, reason={}",
+                        event.getEventNo(), event.getSourceRefNo(), ex.getMessage());
+            }
+        }
         return exceptionRow(event);
     }
 

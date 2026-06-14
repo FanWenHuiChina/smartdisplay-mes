@@ -496,3 +496,20 @@
 | 审计关联 | WMS 处置审计必须记录升级异常的来源引用，便于从审计反查异常和原始任务 | 已落地，`MATERIAL_LOCATION_TASK_DISPOSITION` 快照包含来源引用 |
 | Docker 运行态证据 | 当前 Docker 后端必须已迁移到 V1.51，并能通过真实 API 生成带来源证据的 WMS 异常 | 已通过：任务 `MLT-20260611101252500-0001` 生成异常 `EX-20260611101252939-0003`，返回 `sourceRefNo` 和 `sourcePayload` |
 | 回归验证 | 后端定向、Flyway 静态验收、前端契约、生产构建、生产包扫描和 Docker 冒烟必须通过 | 已通过：后端 72 项、Flyway 51 个迁移、前端契约 426 项、生产包 14 个 JS 产物 clean |
+
+## 2026-06-11 补充验收：WMS 升级异常 MRB 关闭回写
+
+| 验收项 | 标准 | 当前状态 |
+| --- | --- | --- |
+| 回写字段 | `material_location_task` 必须保存升级关联的异常事件号、MRB 关闭动作、关闭结论、关闭人和关闭时间 | 已落地，`V1.52__Link_Material_Task_Exception_Closure.sql` 新增 5 个回写字段并回填历史关联异常 |
+| 升级关联写入 | `ESCALATE` 处置生成异常事件后，任务必须回写 `linkedExceptionEventNo`，便于从任务反查异常 | 已落地，`dispositionLocationTask` 升级分支写入关联事件号 |
+| MRB 关闭回写 | 关闭 `MATERIAL_LOCATION_TASK` 来源异常时，必须把 MRB 处置动作、关闭结论、关闭人和时间回写到原库位任务 | 已落地，`QualityService.closeException` 回调 `MaterialService.recordLocationTaskExceptionClosure` |
+| 来源边界 | 回写只对 `sourceRefType=MATERIAL_LOCATION_TASK` 且来源对象号匹配的异常生效，非物料来源异常不得误回写 | 已落地，服务层显式判断来源类型和任务号 |
+| 关联一致性 | 任务已关联其他异常事件号时，新回写必须跳过并告警，避免覆盖错误的关闭结论 | 已落地，关联事件不一致时跳过更新并写日志 |
+| 关闭状态联动 | 回写成功后任务处置状态必须置为 `CLOSED`，与异常事件关闭语义一致 | 已落地，回写时同步更新 `dispositionStatus=CLOSED` |
+| 失败降级 | 回写失败不得阻断异常关闭主流程，只记录告警 | 已落地，`closeException` 以 try/catch 包裹回写调用 |
+| 审计留痕 | 回写必须写 `MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE` 审计，快照包含事件号、处置动作、关闭结论、来源引用和字段差异 | 已落地，`MaterialServiceTest` 覆盖审计快照断言 |
+| 任务行证据 | `/api/v1/material/location-tasks` 返回的行数据必须包含 `linkedExceptionEventNo/exceptionCloseAction/exceptionCloseConclusion/exceptionClosedBy/exceptionClosedTime` | 已落地，`locationTaskRow` 已暴露新字段 |
+| 前端展示 | 物料页最近库位任务表必须展示 MRB 关闭证据行（事件号、关闭人、关闭时间、关闭结论） | 已落地，任务表“执行/复核”列追加 MRB 关闭标签和结论 |
+| 前端契约 | 自动契约必须覆盖 MRB 关闭回写展示，防止页面退回只显示处置状态 | 已落地，前端契约 427 项通过 |
+| 回归验证 | 后端定向、前端契约和前端生产构建必须通过 | 已通过：后端定向 76 项、前端契约 427 项、前端构建通过 |

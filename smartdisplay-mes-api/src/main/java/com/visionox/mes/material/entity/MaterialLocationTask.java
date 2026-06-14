@@ -57,6 +57,11 @@ public class MaterialLocationTask implements Serializable {
     private Integer priority;
     private LocalDateTime dueTime;
     private String requestSnapshot;
+    private String linkedExceptionEventNo;
+    private String exceptionCloseAction;
+    private String exceptionCloseConclusion;
+    private String exceptionClosedBy;
+    private LocalDateTime exceptionClosedTime;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdTime;

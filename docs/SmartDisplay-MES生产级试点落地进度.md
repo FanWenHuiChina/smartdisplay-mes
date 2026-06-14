@@ -988,3 +988,14 @@
 - `MATERIAL_LOCATION_TASK_DISPOSITION` 审计快照同步写入 `sourceRefType/sourceRefNo/sourcePayload`，保证 WMS 处置审计、异常事件和质量异常队列三方可互相追溯。
 - 已验证：`MaterialServiceTest,QualityServiceTest` 定向 72 项通过，`npm.cmd run verify:frontend-contract` 通过 426 项检查，`powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1` 识别 51 个迁移文件，`npm.cmd run build` 和 `npm.cmd run verify:production-bundle` 通过。
 - 已部署到当前 Docker 运行环境：后端重启后 Flyway 从 `1.50` 迁移到 `1.51 Add Exception Source Reference`；经前端反代创建并升级库位任务 `MLT-20260611101252500-0001`，生成异常 `EX-20260611101252939-0003`，质量异常列表返回 `sourceRefNo=MLT-20260611101252500-0001` 和包含 `batchNo=PI260606-A` 的 `sourcePayload`；前端容器内 `quality-Kz2xDzBE.js` 已包含 `sourceRefNo/sourceEvidenceText/sourceBatchNo`。
+
+## 2026-06-11 增量：WMS 升级异常 MRB 关闭回写
+
+- 新增 Flyway `V1.52__Link_Material_Task_Exception_Closure.sql`，为 `material_location_task` 补充 `linkedExceptionEventNo`、`exceptionCloseAction`、`exceptionCloseConclusion`、`exceptionClosedBy`、`exceptionClosedTime` 五个回写字段，并回填历史 `MATERIAL_LOCATION_TASK` 来源异常的关联事件号，新增按关联事件号查询的索引。
+- `MaterialService.dispositionLocationTask` 升级分支在生成异常事件后，立即把 `linkedExceptionEventNo` 回写到任务，保证“升级 -> 异常 -> MRB 关闭 -> 回写”链路从任务侧可反查异常。
+- 新增 `MaterialService.recordLocationTaskExceptionClosure`：只对 `sourceRefType=MATERIAL_LOCATION_TASK` 且来源对象号匹配的任务回写；任务不存在、来源类型不符或已关联其他异常事件号时跳过并告警；回写成功后任务处置状态置为 `CLOSED`，与异常关闭语义一致，并写 `MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE` 审计（`before/after/changedFields/request` 快照）。
+- `QualityService.closeException` 关闭物料来源异常后，回调 `materialService.recordLocationTaskExceptionClosure` 回写原任务；通过 `@Lazy` 注入避免 `QualityService <-> MaterialService` 循环依赖，回写失败以 try/catch 降级记录告警，不阻断异常关闭主流程。
+- `/api/v1/material/location-tasks` 任务行新增 `linkedExceptionEventNo/exceptionCloseAction/exceptionCloseConclusion/exceptionClosedBy/exceptionClosedTime` 字段；前端物料页最近库位任务表“执行/复核”列追加 MRB 关闭标签（`MRB已关闭`/`MRB待关闭`）、关闭人、关闭时间和关闭结论，沿用低饱和状态标签样式。
+- 前端契约脚本新增 `wms-location-task-exception-closure` 检查，覆盖回写字段、辅助函数和 MRB 关闭文案，防止页面退回只显示处置状态。
+- 已验证：`MaterialServiceTest,QualityServiceTest` 定向 76 项通过（新增回写正常/任务不存在/非物料来源/关联事件不一致 4 个用例），`npm.cmd run verify:frontend-contract` 通过 427 项检查，`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
+

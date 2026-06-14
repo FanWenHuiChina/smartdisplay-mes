@@ -534,6 +534,8 @@
                       <span v-if="task.reviewConclusion">{{ task.reviewConclusion }}</span>
                       <span v-if="task.dispositionText" class="task-review" :class="task.dispositionType">{{ task.dispositionText }}</span>
                       <span v-if="task.dispositionConclusion">{{ task.dispositionConclusion }}</span>
+                      <span v-if="task.exceptionCloseText" class="task-review" :class="task.exceptionCloseType">{{ task.exceptionCloseText }}</span>
+                      <span v-if="task.exceptionCloseConclusion">{{ task.exceptionCloseConclusion }}</span>
                     </div>
                   </td>
                   <td>{{ task.time }}</td>
@@ -1045,7 +1047,8 @@ const fallbackLocationTasks = [
   { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', priority: 9, dueTime: new Date(Date.now() - 3600000).toISOString(), overdue: true, slaStatus: 'OVERDUE', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', priority: 3, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
   { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-005', taskType: 'COUNT', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 816, unit: 'g', status: 'DONE', priority: 7, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核发现数量差异', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 816g，系统 820g，待处置', dispositionStatus: 'PENDING', executedTime: new Date().toISOString(), type: 'red' }
+  { taskNo: 'MLT-FB-005', taskType: 'COUNT', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 816, unit: 'g', status: 'DONE', priority: 7, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核发现数量差异', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 816g，系统 820g，待处置', dispositionStatus: 'PENDING', executedTime: new Date().toISOString(), type: 'red' },
+  { taskNo: 'MLT-FB-006', taskType: 'COUNT', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WH-B03', targetLocation: 'WH-B03', plannedQty: 540, actualQty: 534, unit: 'g', status: 'DONE', priority: 4, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核差异升级MRB', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 534g，系统 540g，已升级MRB', dispositionStatus: 'CLOSED', dispositionResult: 'ESCALATE', dispositionConclusion: '升级MRB后续处理', linkedExceptionEventNo: 'EX-FB-MRB-001', exceptionCloseAction: 'RELEASE', exceptionCloseConclusion: 'MRB判定降级使用', exceptionClosedBy: 'qe-zhang', exceptionClosedTime: new Date().toISOString(), executedTime: new Date().toISOString(), type: 'green' }
 ]
 
 const wmsActions = [
@@ -1472,6 +1475,12 @@ function mapLocationTask(item, index = 0) {
   const dispositionStatus = item.dispositionStatus || (reviewResult === 'REJECTED' ? 'PENDING' : (reviewResult === 'APPROVED' ? 'CLOSED' : ''))
   const dispositionResult = item.dispositionResult || ''
   const dispositionConclusion = item.dispositionConclusion || ''
+  const linkedExceptionEventNo = item.linkedExceptionEventNo || ''
+  const exceptionCloseAction = item.exceptionCloseAction || ''
+  const exceptionCloseConclusion = item.exceptionCloseConclusion || ''
+  const exceptionClosedBy = item.exceptionClosedBy || ''
+  const exceptionClosedTime = item.exceptionClosedTime || ''
+  const exceptionClosed = Boolean(linkedExceptionEventNo && exceptionClosedBy)
   const priority = Number(item.priority ?? defaultLocationTaskPriority(item.taskType))
   const dueTime = item.dueTime || ''
   const slaStatus = item.slaStatus || inferLocationTaskSlaStatus(status, dueTime)
@@ -1506,6 +1515,13 @@ function mapLocationTask(item, index = 0) {
     dispositionConclusion,
     dispositionText: locationTaskDispositionText(dispositionStatus, dispositionResult),
     dispositionType: locationTaskDispositionType(dispositionStatus, dispositionResult),
+    linkedExceptionEventNo,
+    exceptionCloseAction,
+    exceptionCloseConclusion,
+    exceptionClosedBy,
+    exceptionClosedTime,
+    exceptionCloseText: locationTaskExceptionCloseText(linkedExceptionEventNo, exceptionClosed, exceptionClosedBy, exceptionClosedTime),
+    exceptionCloseType: locationTaskExceptionCloseType(dispositionStatus, exceptionClosed),
     priority,
     priorityText: `P${priority}`,
     dueTime,
@@ -1552,6 +1568,18 @@ function locationTaskDispositionType(status, result) {
   if (status === 'ESCALATED') return 'red'
   if (result === 'ADJUST_INVENTORY') return 'blue'
   if (status === 'CLOSED') return 'green'
+  return 'gray'
+}
+
+function locationTaskExceptionCloseText(linkedExceptionEventNo, exceptionClosed, closedBy, closedTime) {
+  if (!linkedExceptionEventNo) return ''
+  if (!exceptionClosed) return `MRB待关闭 ${linkedExceptionEventNo}`
+  return `MRB已关闭 ${linkedExceptionEventNo} ${closedBy || '-'}${closedTime ? ` / ${formatTime(closedTime)}` : ''}`
+}
+
+function locationTaskExceptionCloseType(dispositionStatus, exceptionClosed) {
+  if (!exceptionClosed) return 'amber'
+  if (dispositionStatus === 'CLOSED') return 'green'
   return 'gray'
 }
 
