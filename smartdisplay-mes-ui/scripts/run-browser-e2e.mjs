@@ -455,6 +455,96 @@ async function main() {
     return `${workflowResult.completedTask}: ${workflowResult.created}->${workflowResult.assigned}->${workflowResult.completed}; ${workflowResult.cancelledTask}: CANCELLED`
   })
 
+  await runStep('WMS 库位任务复核驳回升级并回写 MRB 关闭', async () => {
+    workflowResult = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+      const post = async (path, body) => {
+        const response = await fetch('/api/v1' + path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        })
+        const json = await response.json()
+        if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+        return json.data
+      }
+      const get = async (path) => {
+        const response = await fetch('/api/v1' + path, { headers })
+        const json = await response.json()
+        if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+        return json.data
+      }
+      const stamp = Date.now()
+      const batchNo = 'E2EREJ' + stamp
+      await post('/material/receive', {
+        batchNo,
+        materialCode: 'E2E_MAT',
+        materialName: 'E2E复核驳回物料',
+        qty: 100,
+        unit: 'EA',
+        location: 'WH-A01',
+        reason: 'browser e2e reject escalate setup',
+        operator: '${escapeJs(username)}'
+      })
+      const created = await post('/material/location-tasks', {
+        taskType: 'COUNT',
+        batchNo,
+        actualQty: 96,
+        reason: 'browser e2e reject escalate ' + stamp,
+        operator: '${escapeJs(username)}'
+      })
+      const taskNo = created.task.taskNo
+      await post('/material/location-tasks/' + taskNo + '/assign', {
+        assignedTo: '${escapeJs(username)}',
+        operator: '${escapeJs(username)}'
+      })
+      await post('/material/location-tasks/' + taskNo + '/complete', {
+        operator: '${escapeJs(username)}',
+        actualQty: 96
+      })
+      await post('/material/location-tasks/' + taskNo + '/review', {
+        reviewResult: 'REJECTED',
+        reviewConclusion: 'E2E 复核驳回：实盘 96EA 与系统 100EA 不一致，升级 MRB',
+        exceptionReason: 'E2E 数量差异',
+        operator: '${escapeJs(username)}'
+      })
+      const escalated = await post('/material/location-tasks/' + taskNo + '/disposition', {
+        dispositionResult: 'ESCALATE',
+        dispositionConclusion: 'E2E 升级 MRB 后续处理',
+        operator: '${escapeJs(username)}'
+      })
+      const eventNo = escalated.exception && escalated.exception.eventNo
+      if (!eventNo) throw new Error('升级处置未返回异常事件号')
+      const filtered = await get('/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN')
+      const matched = (Array.isArray(filtered) ? filtered : []).some(item => item.eventNo === eventNo)
+      if (!matched) throw new Error('质量异常队列未按 WMS 来源筛到升级事件 ' + eventNo)
+      await post('/quality/exceptions/' + eventNo + '/close', {
+        dispositionAction: 'RELEASE',
+        closeConclusion: 'E2E MRB 关闭：降级使用',
+        closedBy: '${escapeJs(username)}'
+      })
+      const taskAfter = await get('/material/location-tasks?batchNo=' + encodeURIComponent(batchNo))
+      const taskRow = (Array.isArray(taskAfter) ? taskAfter : []).find(item => item.taskNo === taskNo) || {}
+      return {
+        taskNo,
+        eventNo,
+        batchNo,
+        dispositionStatus: escalated.task.dispositionStatus,
+        linkedExceptionEventNo: taskRow.linkedExceptionEventNo,
+        exceptionClosedBy: taskRow.exceptionClosedBy,
+        exceptionCloseAction: taskRow.exceptionCloseAction,
+        taskDispositionStatusAfter: taskRow.dispositionStatus
+      }
+    })()`)
+    assert(workflowResult.dispositionStatus === 'ESCALATED', '升级处置后任务状态不是 ESCALATED')
+    assert(workflowResult.linkedExceptionEventNo === workflowResult.eventNo, '库位任务未回写关联异常事件号')
+    assert(workflowResult.exceptionClosedBy === username, '库位任务未回写 MRB 关闭人')
+    assert(workflowResult.exceptionCloseAction === 'RELEASE', '库位任务未回写 MRB 关闭动作')
+    assert(workflowResult.taskDispositionStatusAfter === 'CLOSED', 'MRB 关闭后任务处置状态未联动为 CLOSED')
+    return `${workflowResult.taskNo} -> ${workflowResult.eventNo}: REJECTED -> ESCALATED -> CLOSED (writeback linked=${workflowResult.linkedExceptionEventNo})`
+  })
+
   await runStep('设备页面通过 UI 上报 EAP 参数并执行网关健康检查', async () => {
     const eapParamCode = `EAP_E2E_${timestamp.replace(/\D/g, '')}`
     const healthStartedAt = Date.now()
