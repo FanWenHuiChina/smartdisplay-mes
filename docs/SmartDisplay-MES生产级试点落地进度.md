@@ -1029,5 +1029,12 @@
 - 向后兼容：不设环境变量时仍使用原默认密钥，已签发的 Token 不会失效；生产部署只需注入 `MES_JWT_SECRET` 环境变量即可使用独立密钥，密钥不再绑定版本库。
 - 已验证：后端全量 274 项通过（`JwtUtil` 测试通过 Spring 上下文注入，无需改动）。
 
+## 2026-06-14 增量：库存操作审计快照与出站默认值治理
+
+- `MaterialService.freezeMaterial`/`unfreezeMaterial`/`returnMaterial` 三个库存操作的审计从无快照（`requestSnapshot=null`）升级为四段式结构化快照（`before/after/changedFields/request`），复用已有的 `auditSnapshot` helper；新增 `stockSnapshot` 辅助方法统一库存字段快照（batchNo/availableQty/frozenQty/reservedQty/status）。代码内原本已计算 before/after 库存值（供 `insertTxn` 使用），此次只是把同一份数据写进审计快照，零额外查询开销。
+- `PilotMesService.trackOut` 的 `processParams` 默认值从伪造的 `{"temperature":150,"speed":300}` 改为空 `{}`，避免虚假工艺参数混入质检评估上下文；`result` 默认 `"OK"` 保留（MES 出站默认合格是业务约定）。
+- 已验证：`MaterialServiceTest` 60 项通过（freeze/return 审计断言从 `any()` 补强为校验 before/after/changedFields 和具体库存数值）；后端全量 274 项通过。
+
+
 
 

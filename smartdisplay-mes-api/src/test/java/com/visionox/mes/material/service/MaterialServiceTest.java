@@ -1342,7 +1342,17 @@ class MaterialServiceTest {
         assertThat(updated.getStockVersion()).isEqualTo(1L);
         verify(batchMapper).updateById(batch);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
-        verify(auditLogService).record(eq("MATERIAL_FREEZE"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> freezeSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_FREEZE"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(),
+                eq("wms1001"), eq("material-service"), freezeSnapshotCaptor.capture());
+        assertThat(freezeSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"changedFields\"")
+                .contains("\"availableQty\":100")
+                .contains("\"frozenQty\":0")
+                .contains("\"availableQty\":70")
+                .contains("\"frozenQty\":30");
     }
 
     @Test
@@ -1357,7 +1367,14 @@ class MaterialServiceTest {
         assertThat(updated.getReturnedQty()).isEqualByComparingTo("5");
         assertThat(updated.getStockVersion()).isEqualTo(1L);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
-        verify(auditLogService).record(eq("MATERIAL_RETURN"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(), eq("op1001"), eq("material-service"), any());
+        ArgumentCaptor<String> returnSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_RETURN"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(),
+                eq("op1001"), eq("material-service"), returnSnapshotCaptor.capture());
+        assertThat(returnSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"availableQty\":70")
+                .contains("\"availableQty\":75");
     }
 
     @Test

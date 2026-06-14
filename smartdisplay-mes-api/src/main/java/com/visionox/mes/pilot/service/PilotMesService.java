@@ -541,7 +541,7 @@ public class PilotMesService {
         TrackOutRequest trackOut = new TrackOutRequest();
         trackOut.setLotNo(lotNo);
         trackOut.setResult(text(request, "result", "OK"));
-        trackOut.setProcessParams(text(request, "processParams", "{\"temperature\":150,\"speed\":300}"));
+        trackOut.setProcessParams(text(request, "processParams", "{}"));
         trackOut.setRemark(text(request, "remark", "试点接口出站"));
         String finalResult = trackInService.trackOut(trackOut);
         if (!"NG".equals(finalResult)) {

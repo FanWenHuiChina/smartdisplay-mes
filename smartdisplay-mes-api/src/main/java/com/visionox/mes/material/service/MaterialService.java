@@ -1055,11 +1055,14 @@ public class MaterialService {
         touchStock(batch);
         batchMapper.updateById(batch);
 
+        Map<String, Object> freezeBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "FREEZE");
+        Map<String, Object> freezeAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("FREEZE", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty.negate(), null, text(request, "reason", "WMS freeze"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_FREEZE", batchNo, "MATERIAL_BATCH",
-                "WMS冻结 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS冻结 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(freezeBefore, freezeAfter, safeRequest(request)));
         return batch;
     }
 
@@ -1082,11 +1085,14 @@ public class MaterialService {
         touchStock(batch);
         batchMapper.updateById(batch);
 
+        Map<String, Object> unfreezeBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "AVAILABLE");
+        Map<String, Object> unfreezeAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("UNFREEZE", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty, null, text(request, "reason", "WMS unfreeze"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_UNFREEZE", batchNo, "MATERIAL_BATCH",
-                "WMS解冻 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS解冻 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(unfreezeBefore, unfreezeAfter, safeRequest(request)));
         return batch;
     }
 
@@ -1108,11 +1114,14 @@ public class MaterialService {
         batchMapper.updateById(batch);
         adjustLocationUsage(batch.getLocation(), qty);
 
+        Map<String, Object> returnBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "AVAILABLE");
+        Map<String, Object> returnAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("RETURN", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty, null, text(request, "reason", "WMS return"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_RETURN", batchNo, "MATERIAL_BATCH",
-                "WMS退料 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS退料 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(returnBefore, returnAfter, safeRequest(request)));
         return batch;
     }
 
@@ -4217,6 +4226,17 @@ public class MaterialService {
         } catch (Exception e) {
             log.warn("物料审计日志写入失败，已降级不阻断主流程: action={}, bizNo={}, reason={}", action, bizNo, e.getMessage());
         }
+    }
+
+    private Map<String, Object> stockSnapshot(String batchNo, BigDecimal availableQty,
+                                              BigDecimal frozenQty, BigDecimal reservedQty, String status) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("batchNo", batchNo);
+        snapshot.put("availableQty", availableQty);
+        snapshot.put("frozenQty", frozenQty);
+        snapshot.put("reservedQty", reservedQty);
+        snapshot.put("status", status);
+        return snapshot;
     }
 
     private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {
