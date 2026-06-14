@@ -53,6 +53,12 @@ mes:
   pilot:
     # 生产默认不静默返回试点样例数据；演示环境如需降级需显式置为 true
     fallback-enabled: false
+  security:
+    jwt:
+      # JWT 签名密钥，生产环境必须通过环境变量 MES_JWT_SECRET 注入独立密钥
+      secret: ${MES_JWT_SECRET:smartdisplay-mes-jwt-secret-key-2024-very-long-key-for-hs256}
+      # Token 有效期（毫秒），默认 24 小时
+      expiration-ms: ${MES_JWT_EXPIRATION_MS:86400000}
 
 # 服务器配置
 server:

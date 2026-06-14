@@ -1022,5 +1022,12 @@
 - 既有测试和浏览器 E2E 均已显式传入这些字段，校验收紧不影响既有调用方；新增 3 个用例覆盖漏传场景（`createOrderShouldRejectMissingProductCode`、`createOrderShouldRejectNonPositivePlannedQty`、`aiEquipmentAnalyzeShouldRejectMissingEquipmentCode`），断言抛 `BusinessException` 且不写库。
 - 已验证：后端全量 274 项通过（+3 必填校验用例）。
 
+## 2026-06-14 增量：JWT 密钥外置到配置
+
+- `JwtUtil` 的签名密钥和过期时间从硬编码 `static final` 改为通过 `@Value` 从 `mes.security.jwt.secret` 和 `mes.security.jwt.expiration-ms` 注入。
+- `application.yml` 新增 `mes.security.jwt` 配置段，密钥和过期时间均支持环境变量覆盖（`${MES_JWT_SECRET:默认值}` / `${MES_JWT_EXPIRATION_MS:86400000}`），与数据源配置 `${SPRING_DATASOURCE_*:默认值}` 模式一致。
+- 向后兼容：不设环境变量时仍使用原默认密钥，已签发的 Token 不会失效；生产部署只需注入 `MES_JWT_SECRET` 环境变量即可使用独立密钥，密钥不再绑定版本库。
+- 已验证：后端全量 274 项通过（`JwtUtil` 测试通过 Spring 上下文注入，无需改动）。
+
 
 

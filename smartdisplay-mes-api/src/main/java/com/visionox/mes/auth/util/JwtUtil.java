@@ -3,6 +3,7 @@ package com.visionox.mes.auth.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -15,16 +16,13 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
-    // 密钥（生产环境应该从配置文件读取）
-    private static final String SECRET_KEY = "smartdisplay-mes-jwt-secret-key-2024-very-long-key-for-hs256";
-
-    // Token有效期：24小时
-    private static final long EXPIRATION_TIME = 24 * 60 * 60 * 1000;
-
     private final SecretKey key;
+    private final long expirationTime;
 
-    public JwtUtil() {
-        this.key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes(StandardCharsets.UTF_8));
+    public JwtUtil(@Value("${mes.security.jwt.secret}") String secret,
+                   @Value("${mes.security.jwt.expiration-ms:86400000}") long expirationTime) {
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.expirationTime = expirationTime;
     }
 
     /**
@@ -35,7 +33,7 @@ public class JwtUtil {
                 .subject(username)
                 .claim("role", role)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+                .expiration(new Date(System.currentTimeMillis() + expirationTime))
                 .signWith(key)
                 .compact();
     }
