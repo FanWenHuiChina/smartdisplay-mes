@@ -184,6 +184,29 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void createOrderShouldRejectMissingProductCode() {
+        assertThatThrownBy(() -> pilotMesService.createOrder(Map.of(
+                "orderNo", "MO-MISSING-PRODUCT",
+                "plannedQty", 100
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("产品编码");
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderShouldRejectNonPositivePlannedQty() {
+        assertThatThrownBy(() -> pilotMesService.createOrder(Map.of(
+                "orderNo", "MO-ZERO-QTY",
+                "productCode", "OLED_PANEL",
+                "plannedQty", 0
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("计划数量");
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
     void importErpOrdersShouldDelegateToSimulatedErpAdapter() {
         Map<String, Object> request = Map.of("count", 2, "batchNo", "ERP-BATCH-001");
         Map<String, Object> response = Map.of("batchNo", "ERP-BATCH-001", "createdCount", 2);
@@ -864,6 +887,14 @@ class PilotMesServiceTest {
                 .contains("\"promptTemplateVersion\":\"equipment-analyze-v2\"")
                 .contains("\"model\":\"mock-structured-output\"")
                 .contains("\"request\"");
+    }
+
+    @Test
+    void aiEquipmentAnalyzeShouldRejectMissingEquipmentCode() {
+        assertThatThrownBy(() -> pilotMesService.aiEquipmentAnalyze(Map.of("lotNo", "LOT001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("设备编码");
+        verify(aiRecordService, never()).record(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

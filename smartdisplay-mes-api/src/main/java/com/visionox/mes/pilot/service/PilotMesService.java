@@ -169,9 +169,17 @@ public class PilotMesService {
     public ProductionOrder createOrder(Map<String, Object> request) {
         ProductionOrder order = new ProductionOrder();
         order.setOrderNo(text(request, "orderNo", "MO" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now())));
-        order.setProductCode(text(request, "productCode", "AMOLED_65"));
-        order.setProductName(text(request, "productName", order.getProductCode() + " 柔性屏"));
-        order.setPlannedQty(intValue(value(request, "plannedQty"), 1000));
+        String productCode = text(request, "productCode", "");
+        if (productCode.isBlank()) {
+            throw new BusinessException("创建工单必须指定产品编码");
+        }
+        order.setProductCode(productCode);
+        order.setProductName(text(request, "productName", productCode + " 柔性屏"));
+        int plannedQty = intValue(value(request, "plannedQty"), 0);
+        if (plannedQty <= 0) {
+            throw new BusinessException("创建工单必须填写大于0的计划数量");
+        }
+        order.setPlannedQty(plannedQty);
         order.setCompletedQty(0);
         order.setPriority(intValue(value(request, "priority"), 0));
         order.setLineCode(text(request, "lineCode", "LINE_01"));
@@ -1473,7 +1481,10 @@ public class PilotMesService {
     }
 
     public Map<String, Object> aiEquipmentAnalyze(Map<String, Object> request) {
-        String equipmentCode = text(request, "equipmentCode", "EVAP_01");
+        String equipmentCode = text(request, "equipmentCode", "");
+        if (equipmentCode.isBlank()) {
+            throw new BusinessException("设备异常分析必须指定设备编码");
+        }
         String lotNo = text(request, "lotNo", "");
         String reportNo = "AIR-EQP-" + System.currentTimeMillis();
         Map<String, Object> modelConfig = aiModelConfig("EQUIPMENT_ANALYSIS", "equipment-analyze-v2", "mock-structured-output");

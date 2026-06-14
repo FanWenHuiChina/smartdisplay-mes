@@ -1015,4 +1015,12 @@
 - 修复 `PilotMesService.carrierTraceRows` 中文日志乱码（GBK 被当 UTF-8 解码的产物），恢复为"Carrier正式表读取失败，Lot追溯已忽略Carrier证据"。
 - 已验证：`PilotMesServiceTest,AiKbIndexServiceTest,TrackInServiceTest` 定向 56 项通过（设备异常分析审计断言从 `isNull()` 补强为校验 `reportType/promptTemplateVersion/model/request` 结构化快照）；后端全量 271 项通过。
 
+## 2026-06-14 增量：关键写接口必填校验
+
+- `PilotMesService.createOrder` 的 `productCode` 从默认 `"AMOLED_65"` 改为必填校验，`plannedQty` 从默认 `1000` 改为必须大于 0；避免调用方漏传字段时静默创建绑定到错误产品/错误数量的工单。
+- `PilotMesService.aiEquipmentAnalyze` 的 `equipmentCode` 从默认 `"EVAP_01"` 改为必填校验；避免漏传设备编码时 AI 分析记录、审计和风险等级被归档到错误设备名下。
+- 既有测试和浏览器 E2E 均已显式传入这些字段，校验收紧不影响既有调用方；新增 3 个用例覆盖漏传场景（`createOrderShouldRejectMissingProductCode`、`createOrderShouldRejectNonPositivePlannedQty`、`aiEquipmentAnalyzeShouldRejectMissingEquipmentCode`），断言抛 `BusinessException` 且不写库。
+- 已验证：后端全量 274 项通过（+3 必填校验用例）。
+
+
 
