@@ -1,5 +1,6 @@
 package com.visionox.mes.ai.service;
 
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.visionox.mes.ai.entity.AiKbChunk;
 import com.visionox.mes.ai.entity.AiKbDocument;
@@ -159,16 +160,16 @@ public class AiKbIndexService {
     }
 
     private String auditSnapshot(AiKbIndexJob job) {
-        return "{"
-                + "\"jobNo\":\"" + job.getJobNo() + "\","
-                + "\"documentNo\":\"" + valueOr(job.getDocumentNo(), "ALL") + "\","
-                + "\"retrievalStrategy\":\"" + job.getRetrievalStrategy() + "\","
-                + "\"embeddingModel\":\"" + valueOr(job.getEmbeddingModel(), "") + "\","
-                + "\"status\":\"" + job.getStatus() + "\","
-                + "\"targetChunkCount\":" + valueOr(job.getTargetChunkCount(), 0) + ","
-                + "\"indexedChunkCount\":" + valueOr(job.getIndexedChunkCount(), 0) + ","
-                + "\"boundary\":\"" + job.getBoundaryNote().replace("\"", "'") + "\""
-                + "}";
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("jobNo", job.getJobNo());
+        snapshot.put("documentNo", valueOr(job.getDocumentNo(), "ALL"));
+        snapshot.put("retrievalStrategy", job.getRetrievalStrategy());
+        snapshot.put("embeddingModel", valueOr(job.getEmbeddingModel(), ""));
+        snapshot.put("status", job.getStatus());
+        snapshot.put("targetChunkCount", valueOr(job.getTargetChunkCount(), 0));
+        snapshot.put("indexedChunkCount", valueOr(job.getIndexedChunkCount(), 0));
+        snapshot.put("boundary", job.getBoundaryNote());
+        return JSONUtil.toJsonStr(snapshot);
     }
 
     private String normalizeStrategy(String strategy) {

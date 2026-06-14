@@ -1007,3 +1007,12 @@
 - 失败审计映射 `ERP_ORDER_IMPORT` 已在 `AuditFailureResolver` 覆盖，本次只强化成功路径快照，不改失败路径。
 - 已验证：`ErpOrderAdapterServiceTest` 4 项通过（新增 `importOrdersShouldRecordDuplicateInBatchSkips` 用例覆盖同批次重复跳过；既有用例补强断言 `request`/`summary`/`orderPrefix`/`skippedDetails`）；后端全量 271 项通过；前端契约 427 项不回归。
 
+## 2026-06-14 增量：审计快照与日志一致性修复
+
+- `AiKbIndexService.auditSnapshot` 从手工字符串拼接 JSON 改为 `Map + JSONUtil.toJsonStr`，消除 `boundaryNote` 含换行/引号时产生非法 JSON 的风险，与全项目其他审计点风格对齐。
+- `AI_YIELD_REPORT`/`AI_EQUIPMENT_ANALYZE`/`AI_KB_ASK` 三个 AI 生成动作的审计日志从 `requestSnapshot=null` 升级为包含 `reportNo/reportType/promptTemplateVersion/model/request` 的结构化快照，补齐 AI 合规证据链，使审计页可直接追溯到 AI 报告记录；新增 `aiAuditSnapshot` 辅助方法。
+- `TrackInService.checkEquipmentCapability` 设备能力 JSON 解析失败时从 `log.error` 降为 `log.warn`，与全项目"降级不阻断主流程用 warn"模式一致，避免把容错行为误报为系统故障。
+- 修复 `PilotMesService.carrierTraceRows` 中文日志乱码（GBK 被当 UTF-8 解码的产物），恢复为"Carrier正式表读取失败，Lot追溯已忽略Carrier证据"。
+- 已验证：`PilotMesServiceTest,AiKbIndexServiceTest,TrackInServiceTest` 定向 56 项通过（设备异常分析审计断言从 `isNull()` 补强为校验 `reportType/promptTemplateVersion/model/request` 结构化快照）；后端全量 271 项通过。
+
+

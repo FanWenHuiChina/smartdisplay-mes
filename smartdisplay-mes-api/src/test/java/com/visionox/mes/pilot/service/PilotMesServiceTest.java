@@ -856,8 +856,14 @@ class PilotMesServiceTest {
         assertThat((Map<String, Object>) outputCaptor.getValue())
                 .containsEntry("riskLevel", "P1")
                 .containsEntry("writeActionAllowed", false);
+        ArgumentCaptor<String> auditSnapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("AI_EQUIPMENT_ANALYZE"), eq("EVAP_01"), eq("AI_REPORT"), any(),
-                eq("system"), eq("smartdisplay-mes-api"), isNull());
+                eq("system"), eq("smartdisplay-mes-api"), auditSnapshotCaptor.capture());
+        assertThat(auditSnapshotCaptor.getValue())
+                .contains("\"reportType\":\"EQUIPMENT_ANALYSIS\"")
+                .contains("\"promptTemplateVersion\":\"equipment-analyze-v2\"")
+                .contains("\"model\":\"mock-structured-output\"")
+                .contains("\"request\"");
     }
 
     @Test

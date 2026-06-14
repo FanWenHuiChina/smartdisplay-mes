@@ -183,8 +183,8 @@ public class TrackInService {
             List<String> steps = JSONUtil.toList(capabilitySteps, String.class);
             return steps.contains(stepCode);
         } catch (Exception e) {
-            log.error("解析设备能力失败: equipment={}, capabilitySteps={}",
-                    equipment.getEquipmentCode(), capabilitySteps, e);
+            log.warn("解析设备能力失败，已降级为不支持该工序: equipment={}, capabilitySteps={}, reason={}",
+                    equipment.getEquipmentCode(), capabilitySteps, e.getMessage());
             return false;
         }
     }

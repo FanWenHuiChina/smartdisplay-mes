@@ -1164,7 +1164,7 @@ public class PilotMesService {
             List<Map<String, Object>> rows = materialService.carriersByLot(lotNo);
             return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("Carrier姝ｅ紡琛ㄨ鍙栧け璐ワ紝Lot杩芥函宸插拷鐣arrier璇佹嵁: {}", e.getMessage());
+            log.warn("Carrier正式表读取失败，Lot追溯已忽略Carrier证据: {}", e.getMessage());
             return List.of();
         }
     }
@@ -1467,7 +1467,8 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "YIELD_DAILY", reportNo, "AI_REPORT", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_YIELD_REPORT", reportNo, "生成 AI 良率日报", currentUser());
+        audit("AI_YIELD_REPORT", reportNo, "生成 AI 良率日报", currentUser(),
+                aiAuditSnapshot(reportNo, "YIELD_DAILY", promptVersion, model, request));
         return report;
     }
 
@@ -1515,7 +1516,8 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "EQUIPMENT_ANALYSIS", equipmentCode, "EQUIPMENT", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_EQUIPMENT_ANALYZE", equipmentCode, "生成 AI 设备异常分析: " + reportNo, currentUser());
+        audit("AI_EQUIPMENT_ANALYZE", equipmentCode, "生成 AI 设备异常分析: " + reportNo, currentUser(),
+                aiAuditSnapshot(reportNo, "EQUIPMENT_ANALYSIS", promptVersion, model, request));
         return report;
     }
 
@@ -1541,7 +1543,8 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "SOP_QA", question, "SOP_KB", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_KB_ASK", reportNo, "生成 AI SOP 问答", currentUser());
+        audit("AI_KB_ASK", reportNo, "生成 AI SOP 问答", currentUser(),
+                aiAuditSnapshot(reportNo, "SOP_QA", promptVersion, model, request));
         return report;
     }
 
@@ -2749,6 +2752,17 @@ public class PilotMesService {
         } catch (Exception e) {
             log.warn("审计日志写入失败，已降级不阻断主流程: action={}, object={}, reason={}", action, object, e.getMessage());
         }
+    }
+
+    private String aiAuditSnapshot(String reportNo, String reportType, String promptVersion,
+                                  String model, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("reportNo", reportNo);
+        snapshot.put("reportType", reportType);
+        snapshot.put("promptTemplateVersion", promptVersion);
+        snapshot.put("model", model);
+        snapshot.put("request", safeRequest(request));
+        return JSONUtil.toJsonStr(snapshot);
     }
 
     private String currentUser() {
