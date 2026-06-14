@@ -998,7 +998,7 @@
 - `/api/v1/material/location-tasks` 任务行新增 `linkedExceptionEventNo/exceptionCloseAction/exceptionCloseConclusion/exceptionClosedBy/exceptionClosedTime` 字段；前端物料页最近库位任务表“执行/复核”列追加 MRB 关闭标签（`MRB已关闭`/`MRB待关闭`）、关闭人、关闭时间和关闭结论，沿用低饱和状态标签样式。
 - 前端契约脚本新增 `wms-location-task-exception-closure` 检查，覆盖回写字段、辅助函数和 MRB 关闭文案，防止页面退回只显示处置状态。
 - 已验证：`MaterialServiceTest,QualityServiceTest` 定向 76 项通过（新增回写正常/任务不存在/非物料来源/关联事件不一致 4 个用例），`npm.cmd run verify:frontend-contract` 通过 427 项检查，`npm.cmd run build` 通过，仅保留既有第三方 pure annotation 和 chunk size 警告。
-- 浏览器 E2E 新增“WMS 库位任务复核驳回升级并回写 MRB 关闭”专步（第 21 步）：先用 `/api/v1/material/receive` 入库一个临时批次，再串联 `COUNT 任务创建 → assign → complete → review REJECTED → disposition ESCALATE → 按 sourceModule 筛选 WMS 异常 → closeException → 查任务回写字段`，断言任务 `ESCALATED`、`linkedExceptionEventNo`、`exceptionClosedBy`、`exceptionCloseAction=RELEASE` 和 `dispositionStatus=CLOSED`；步骤自包含临时批次，不破坏种子库存，脚本语法和前端契约已通过，待 Docker 运行态复跑归档。
+- 浏览器 E2E 新增“WMS 库位任务复核驳回升级并回写 MRB 关闭”专步（第 21 步）：先用 `/api/v1/material/receive` 入库一个临时批次（`WMS-IN` 库位），再串联 `COUNT 任务创建 → assign → complete → review REJECTED → disposition ESCALATE → 按 sourceModule 筛选 WMS 异常 → closeException → 查任务回写字段`，断言任务 `ESCALATED`、`linkedExceptionEventNo`、`exceptionClosedBy`、`exceptionCloseAction=RELEASE` 和 `dispositionStatus=CLOSED`；步骤自包含临时批次，不破坏种子库存。已通过 `npm.cmd run e2e:browser` 真实运行 21 步全绿，Console/Network 错误数为 0，报告 `SmartDisplay-MES-browser-e2e-20260614-124038.md`。同轮修复 E2E 脆弱性与文本不同步：`clickButtonByText` 新增 `exact` 精确匹配参数避免误点“批量 Hold/放行”按钮，物料页标题期望文本同步为“上架移库拆批盘点”。
 
 ## 2026-06-14 增量：ERP 批量导入差异快照治理
 

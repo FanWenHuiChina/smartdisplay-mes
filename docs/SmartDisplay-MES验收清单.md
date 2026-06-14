@@ -76,7 +76,7 @@
 | 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、库位任务复核驳回升级与 MRB 关闭回写、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已新增库位任务复核驳回升级与 MRB 关闭回写 E2E 步骤（21 步），脚本语法和前端契约已通过，待 Docker 运行态复跑归档报告 |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、库位任务复核驳回升级与 MRB 关闭回写、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，21 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260614-124038.md` |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
 | Flyway | `db/migration/V1.1-V1.51` 打包并自动迁移 | 已落地 |
 | Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.51` 静态验收通过 |
@@ -512,5 +512,5 @@
 | 任务行证据 | `/api/v1/material/location-tasks` 返回的行数据必须包含 `linkedExceptionEventNo/exceptionCloseAction/exceptionCloseConclusion/exceptionClosedBy/exceptionClosedTime` | 已落地，`locationTaskRow` 已暴露新字段 |
 | 前端展示 | 物料页最近库位任务表必须展示 MRB 关闭证据行（事件号、关闭人、关闭时间、关闭结论） | 已落地，任务表“执行/复核”列追加 MRB 关闭标签和结论 |
 | 前端契约 | 自动契约必须覆盖 MRB 关闭回写展示，防止页面退回只显示处置状态 | 已落地，前端契约 427 项通过 |
-| 浏览器 E2E | E2E 必须以真实 API 串联“复核驳回 → 升级 → 异常事件 → MRB 关闭 → 任务回写”全链路，校验来源筛选、关闭动作回写和处置状态联动 | 已落地，`run-browser-e2e.mjs` 新增专步，校验 `ESCALATED`、`linkedExceptionEventNo`、`exceptionClosedBy`、`exceptionCloseAction` 和 `dispositionStatus=CLOSED`；脚本语法和契约通过，待 Docker 运行态归档 |
+| 浏览器 E2E | E2E 必须以真实 API 串联“复核驳回 → 升级 → 异常事件 → MRB 关闭 → 任务回写”全链路，校验来源筛选、关闭动作回写和处置状态联动 | 已通过，`run-browser-e2e.mjs` 新增专步真实运行，校验 `ESCALATED`、`linkedExceptionEventNo`、`exceptionClosedBy`、`exceptionCloseAction=RELEASE` 和 `dispositionStatus=CLOSED`，报告 `SmartDisplay-MES-browser-e2e-20260614-124038.md` |
 | 回归验证 | 后端定向、前端契约和前端生产构建必须通过 | 已通过：后端定向 76 项、前端契约 427 项、前端构建通过 |

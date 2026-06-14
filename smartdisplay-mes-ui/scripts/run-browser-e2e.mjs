@@ -163,7 +163,7 @@ async function main() {
     await clickButtonByText('查询')
     await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
     await clickTableRowByText(e2eLotNo)
-    await clickButtonByText('Hold')
+    await clickButtonByText('Hold', true)
     await waitForExpression(`document.body.innerText.includes('Hold Lot - 暂停流转')`, 5000)
     await setFormItemValueByLabel('Hold原因', `browser e2e hold ${timestamp}`)
     await clickButtonByText('确认Hold')
@@ -175,7 +175,7 @@ async function main() {
       return text.includes('${escapeJs(e2eLotNo)}') && text.includes('HOLD') && text.includes('已 Hold')
     })`, 15000)
     await clickTableRowByText(e2eLotNo)
-    await clickButtonByText('放行')
+    await clickButtonByText('放行', true)
     await waitForExpression(`document.body.innerText.includes('Release Lot - 放行')`, 5000)
     await clickButtonByText('确认Release')
     const releasedState = await waitForLotState(`status === 'READY' && Number(holdFlag) === 0`, 15000)
@@ -332,7 +332,7 @@ async function main() {
 
   await runStep('物料页面显示 V1.38 库位任务操作台', async () => {
     await clickByText('物料与载具')
-    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库盘点')`)
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库拆批盘点')`)
     await evaluate(`(async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/v1/material/location-tasks', {
@@ -351,7 +351,7 @@ async function main() {
       return json.data.task.taskNo
     })()`)
     await navigate(`${baseUrl}/material`)
-    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库盘点')`)
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库拆批盘点')`)
     await assertLayoutClean('material')
     assert(await textExists('创建'), '物料页面缺少库位任务创建入口')
     await waitForExpression(`document.body.innerText.includes('领取') || document.body.innerText.includes('取消')`, 10000)
@@ -483,7 +483,7 @@ async function main() {
         materialName: 'E2E复核驳回物料',
         qty: 100,
         unit: 'EA',
-        location: 'WH-A01',
+        location: 'WMS-IN',
         reason: 'browser e2e reject escalate setup',
         operator: '${escapeJs(username)}'
       })
@@ -962,15 +962,23 @@ async function clickByText(text) {
   assert(ok, `未找到可点击文本: ${text}`)
 }
 
-async function clickButtonByText(text) {
+async function clickButtonByText(text, exact = false) {
+  const textLiteral = JSON.stringify(text)
+  const matchExpr = exact
+    ? `value === ${textLiteral}`
+    : `value.includes(${textLiteral})`
   const ok = await evaluate(`(() => {
     const visible = (el) => {
       const rect = el.getBoundingClientRect()
       const style = window.getComputedStyle(el)
       return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
     }
+    const match = (label) => {
+      const value = (label || '').trim()
+      return ${matchExpr}
+    }
     const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
-    const target = buttons.find(el => visible(el) && (el.innerText || el.textContent || '').trim().includes(${JSON.stringify(text)}))
+    const target = buttons.find(el => visible(el) && match(el.innerText || el.textContent || ''))
     if (!target) return false
     target.click()
     return true
