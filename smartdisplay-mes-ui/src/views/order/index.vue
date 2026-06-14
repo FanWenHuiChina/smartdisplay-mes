@@ -166,14 +166,14 @@ import { getOrders, getLots, getOrderReleaseChecks, importErpOrders, releaseOrde
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackOrders = [
+const fallbackOrders = __DEV_MOCK_FALLBACK__ ? [
   { no: 'MO20260606012', product: 'AMOLED_65', qty: '1,000', route: 'RTE_G6_V08', hot: true, status: '待释放', statusType: 'blue', window: '06/06 14:00-20:00' },
   { no: 'MO20260606013', product: 'AMOLED_67', qty: '800', route: 'RTE_G6_V05', status: '已释放', statusType: 'green', window: '06/06 18:00-06/07 02:00' },
   { no: 'MO20260606014', product: 'FOLD_78', qty: '600', route: 'RTE_MOD_V04', status: '待齐套', statusType: 'amber', window: '06/07 08:00-16:00' },
   { no: 'MO20260606015', product: 'AMOLED_65', qty: '1,200', route: 'RTE_G6_V08', status: '计划', statusType: 'gray', window: '06/07 16:00-06/08 04:00' }
-]
+] : []
 
-const fallbackReleaseChecks = [
+const fallbackReleaseChecks = __DEV_MOCK_FALLBACK__ ? [
   { title: '产品状态', text: 'AMOLED_65 已启用', type: 'green' },
   { title: 'Route 版本', text: 'RTE_G6_V08 已生效', type: 'green' },
   { title: 'BOM', text: 'BOM_65_V06 已生效', type: 'green' },
@@ -182,13 +182,13 @@ const fallbackReleaseChecks = [
   { title: '设备能力', text: '目标线可执行', type: 'green' },
   { title: '工单数量', text: '拆 10 个 Lot', type: 'green' },
   { title: '权限审计', text: '计划员可释放', type: 'green' }
-]
+] : []
 
-const fallbackLots = [
+const fallbackLots = __DEV_MOCK_FALLBACK__ ? [
   { no: 'LOT260606-021', product: 'AMOLED_65', qty: 100, step: 'CLEAN', route: 'RTE_G6_V08', priority: 'Hot', plan: '14:30' },
   { no: 'LOT260606-022', product: 'AMOLED_65', qty: 100, step: 'CLEAN', route: 'RTE_G6_V08', priority: 'Hot', plan: '14:40' },
   { no: 'LOT260606-023', product: 'AMOLED_65', qty: 100, step: 'CLEAN', route: 'RTE_G6_V08', priority: '普通', plan: '15:00' }
-]
+] : []
 
 const orders = ref(__DEV_MOCK_FALLBACK__ ? fallbackOrders : [])
 const lots = ref(__DEV_MOCK_FALLBACK__ ? fallbackLots : [])

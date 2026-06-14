@@ -151,14 +151,14 @@ import { ElMessage } from 'element-plus'
 import { getOverview } from '@/api/pilot'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackMetrics = [
+const fallbackMetrics = __DEV_MOCK_FALLBACK__ ? [
   { label: '今日投入 Lot', tag: 'WIP', tagType: 'blue', value: '128', left: '等待 18', right: 'Hot Lot 6' },
   { label: '综合良率', tag: '接近目标', tagType: 'green', value: '96.82%', left: '目标 97.00%', right: '-0.18%' },
   { label: 'Hold 待处置', tag: '质量介入', tagType: 'red', value: '7', left: '超 SLA 2', right: '新增 3' },
   { label: '设备稼动率', tag: '需关注', tagType: 'amber', value: '91.4%', left: 'Alarm 3', right: 'PM 1' }
-]
+] : []
 
-const fallbackRouteSteps = [
+const fallbackRouteSteps = __DEV_MOCK_FALLBACK__ ? [
   { code: 'CLEAN', name: '清洗', meta: 'WIP 14 / 等待 3', status: '正常', tagType: 'green' },
   { code: 'COATING', name: '涂胶', meta: 'WIP 26 / 排队 11', status: '瓶颈', tagType: 'amber', current: true },
   { code: 'EXPOSURE', name: '曝光', meta: 'WIP 17 / 设备 3', status: '正常', tagType: 'green' },
@@ -167,20 +167,20 @@ const fallbackRouteSteps = [
   { code: 'ENCAP', name: '封装', meta: 'WIP 18 / 等待 5', status: '正常', tagType: 'green' },
   { code: 'AOI', name: '检测', meta: 'WIP 19 / FPY 97.1%', status: '检测中', tagType: 'teal' },
   { code: 'BOND', name: '绑定', meta: 'WIP 22 / 等待 6', status: '正常', tagType: 'green' }
-]
+] : []
 
-const fallbackAlerts = [
+const fallbackAlerts = __DEV_MOCK_FALLBACK__ ? [
   { title: 'LOT260606-017 涂胶膜厚超限', level: 'P1', type: 'red', meta: 'COATER_02 / RCP_COAT_65_V12 / Hold 38 分钟 / 质量工程师待复判' },
   { title: 'EVAP_01 真空波动', level: 'P2', type: 'amber', meta: '影响 3 批 Lot / 最近 2 小时出现 4 次 / 设备工程师处理中' },
   { title: 'BOND_03 绑定偏移预警', level: 'P2', type: 'amber', meta: 'MODULE_BOND_03 缺陷上升 / 已触发 SPC 规则 2' }
-]
+] : []
 
-const fallbackAiSuggestions = [
+const fallbackAiSuggestions = __DEV_MOCK_FALLBACK__ ? [
   { title: '主要瓶颈：涂胶 / 蒸镀', text: '涂胶等待队列高于过去 7 日均值 28%，蒸镀设备异常与 Mura 不良上升存在时间相关性。' },
   { title: '建议动作', text: '优先释放 COATER_01 高优先级 Lot；EVAP_01 下一批进站前执行真空稳定性点检。' }
-]
+] : []
 
-const fallbackEquipmentOee = {
+const fallbackEquipmentOee = __DEV_MOCK_FALLBACK__ ? {
   windowHours: 24,
   oeeRate: 94.99,
   oeeText: '94.99%',
@@ -195,7 +195,7 @@ const fallbackEquipmentOee = {
     { reasonCode: 'PM_NOZZLE_CLEAN', reasonName: '喷嘴清洁', downtimeType: 'PLANNED', durationMinutes: 35, eventCount: 1, type: 'amber' }
   ],
   calculationNote: '试点口径：可用率来自近24小时设备停机事件，性能率按当前可执行设备状态估算。'
-}
+} : {}
 
 const emptyEquipmentOee = {
   windowHours: 0,

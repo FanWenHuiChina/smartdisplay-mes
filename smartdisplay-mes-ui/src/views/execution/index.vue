@@ -117,14 +117,14 @@ import { getLots, getTrackInChecks, holdLot, trackInLot, trackOutLot } from '@/a
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackLotQueue = [
+const fallbackLotQueue = __DEV_MOCK_FALLBACK__ ? [
   { no: 'LOT260606-017', product: 'AMOLED_65', route: 'RTE_G6_V08', step: 'COATING', equipment: 'COATER_02', status: 'HOLD', statusType: 'red', wait: '38 min', action: 'Release 需质量工程师', actionType: 'red' },
   { no: 'LOT260606-018', product: 'AMOLED_65', route: 'RTE_G6_V08', step: 'COATING', equipment: '待分配', status: 'READY', statusType: 'blue', wait: '11 min', action: '可 Track In', actionType: 'green' },
   { no: 'LOT260606-019', product: 'AMOLED_67', route: 'RTE_G6_V05', step: 'EVAP', equipment: 'EVAP_01', status: 'PROCESSING', statusType: 'green', wait: '加工中', action: '可 Track Out', actionType: 'teal' },
   { no: 'LOT260606-020', product: 'AMOLED_65', route: 'RTE_G6_V08', step: 'AOI', equipment: 'INSPECT_03', status: 'PROCESSING', statusType: 'green', wait: '检测中', action: '录入缺陷', actionType: 'purple' }
-]
+] : []
 
-const fallbackChecks = [
+const fallbackChecks = __DEV_MOCK_FALLBACK__ ? [
   { title: 'Lot 状态', text: 'READY / REWORK', type: 'green' },
   { title: 'Route 下一站', text: 'COATING 合法', type: 'green' },
   { title: '设备状态', text: 'IDLE', type: 'green' },
@@ -135,7 +135,7 @@ const fallbackChecks = [
   { title: '权限', text: '操作员可执行', type: 'green' },
   { title: '班次', text: '白班', type: 'green' },
   { title: '审计', text: '将写入日志', type: 'blue' }
-]
+] : []
 
 const timeline = __DEV_MOCK_FALLBACK__ ? [
   { title: '工单释放', time: '14:05', meta: 'MO20260606012 / 拆分 Lot / route=RTE_G6_V08', type: 'green' },

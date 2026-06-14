@@ -928,50 +928,50 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackMaterialLots = [
+const fallbackMaterialLots = __DEV_MOCK_FALLBACK__ ? [
   { batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', availableQty: 820, reservedQty: 120, frozenQty: 0, returnedQty: 0, stockVersion: 1, unit: 'g', remainPercent: 18, status: 'WARNING', location: 'WMS-A01' },
   { batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', availableQty: 310, reservedQty: 42, frozenQty: 12, returnedQty: 0, stockVersion: 2, unit: 'g', remainPercent: 62, status: 'OK', location: 'COLD-02' },
   { batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', availableQty: 540, reservedQty: 80, frozenQty: 0, returnedQty: 6, stockVersion: 3, unit: 'g', remainPercent: 76, status: 'OK', location: 'WMS-B03' }
-]
+] : []
 
-const fallbackCarriers = [
+const fallbackCarriers = __DEV_MOCK_FALLBACK__ ? [
   { code: 'CST-260606-001', lot: 'LOT202406001', step: 'COATING', status: 'BOUND', type: 'green' },
   { code: 'CST-260606-002', lot: '-', step: '-', status: 'IDLE', type: 'blue' },
   { code: 'TRAY-260606-009', lot: '-', step: '-', status: 'CLEANING', type: 'amber' }
-]
+] : []
 
-const fallbackChecks = [
+const fallbackChecks = __DEV_MOCK_FALLBACK__ ? [
   { title: 'BOM关键物料', text: '已配置 3 批', type: 'green' },
   { title: '批次质量', text: '来料质量 PASS', type: 'green' },
   { title: 'FIFO库存', text: 'PI 胶低库存', type: 'amber' },
   { title: '齐套结果', text: 'PASS_WITH_WARNING', type: 'amber' }
-]
+] : []
 
-const fallbackConsumeRecords = [
+const fallbackConsumeRecords = __DEV_MOCK_FALLBACK__ ? [
   { lot: 'LOT202406001', step: 'COATING', batch: 'PI260606-A', qty: '42.8g', operator: 'op1007', time: '13:42', status: 'TRACEABLE', type: 'green' },
   { lot: 'LOT202406004', step: 'EVAPORATION', batch: 'OLED-R-260605-B', qty: '8.2g', operator: 'op1011', time: '14:08', status: 'TRACEABLE', type: 'green' }
-]
+] : []
 
-const fallbackTxns = [
+const fallbackTxns = __DEV_MOCK_FALLBACK__ ? [
   { txnNo: 'TXN-FALLBACK-001', txnType: 'FREEZE', batchNo: 'OLED-R-260605-B', qtyDelta: -12, availableBefore: 322, availableAfter: 310, unit: 'g', operator: 'admin', txnTime: new Date().toISOString() },
   { txnNo: 'TXN-FALLBACK-002', txnType: 'RETURN', batchNo: 'ENCAP260604-C', qtyDelta: 6, availableBefore: 534, availableAfter: 540, unit: 'g', operator: 'admin', txnTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackIqcInspections = [
+const fallbackIqcInspections = __DEV_MOCK_FALLBACK__ ? [
   { inspectionNo: 'MIQC-FALLBACK-001', batchNo: 'PI260606-A', result: 'PASS', coaNo: 'COA-PI260606-A', conclusion: '来料黏度、固含量与外观复核通过。', attachmentCount: 1, inspector: 'qe1003', inspectionTime: new Date().toISOString() },
   { inspectionNo: 'MIQC-FALLBACK-002', batchNo: 'OLED-R-260605-B', result: 'PASS', coaNo: 'COA-OLED-R-260605-B', conclusion: 'COA 参数与抽检结果一致。', attachmentCount: 1, inspector: 'qe1003', inspectionTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackSupplierPerformance = [
+const fallbackSupplierPerformance = __DEV_MOCK_FALLBACK__ ? [
   { supplierCode: 'SUP-OLED-02', supplierName: 'OLED有机材料供应商B', qualificationStatus: 'CONDITIONAL', materialClass: 'ORGANIC', score: 84, scoreText: '84.0', passRate: 92, passRateText: '92.0%', batchCount: 4, inspectionCount: 4, passCount: 2, holdCount: 1, ngCount: 1, riskBatchCount: 2, riskLevel: 'HIGH', openActionCount: 1, overdueActionCount: 0, latestActionNo: 'SCA-SEED-OLED-001', type: 'amber' },
   { supplierCode: 'SUP-PI-01', supplierName: 'PI材料供应商A', qualificationStatus: 'QUALIFIED', materialClass: 'CHEMICAL', score: 100, scoreText: '100.0', passRate: 100, passRateText: '100.0%', batchCount: 7, inspectionCount: 6, passCount: 6, holdCount: 0, ngCount: 0, riskBatchCount: 0, riskLevel: 'LOW', openActionCount: 0, overdueActionCount: 0, latestActionNo: '', type: 'green' }
-]
+] : []
 
-const fallbackSupplierActions = [
+const fallbackSupplierActions = __DEV_MOCK_FALLBACK__ ? [
   { actionNo: 'SCA-SEED-OLED-001', supplierCode: 'SUP-OLED-02', sourceType: 'IQC', sourceNo: 'MIQC-SEED-OLED-R-260605-B', issueSummary: '有机材料批次稳定性需持续确认', owner: 'qe1003', severity: 'MEDIUM', status: 'OPEN', dueTime: new Date(Date.now() + 5 * 86400000).toISOString(), createdTime: new Date().toISOString(), type: 'amber' }
-]
+] : []
 
-const fallbackSupplierReviews = [
+const fallbackSupplierReviews = __DEV_MOCK_FALLBACK__ ? [
   {
     taskNo: 'SQR-SEED-OLED-001',
     supplierCode: 'SUP-OLED-02',
@@ -987,9 +987,9 @@ const fallbackSupplierReviews = [
     canDecide: true,
     type: 'red'
   }
-]
+] : []
 
-const fallbackSupplierTrends = [
+const fallbackSupplierTrends = __DEV_MOCK_FALLBACK__ ? [
   {
     supplierCode: 'SUP-OLED-02',
     supplierName: 'OLED有机材料供应商B',
@@ -1034,22 +1034,22 @@ const fallbackSupplierTrends = [
       fallbackTrendPoint(0, 100, 100, 'LOW', 'green')
     ]
   }
-]
+] : []
 
-const fallbackMaterialLocations = [
+const fallbackMaterialLocations = __DEV_MOCK_FALLBACK__ ? [
   { locationCode: 'WH-A01', zoneCode: 'CHEM-A', storageType: 'CHEMICAL', materialClass: 'CHEMICAL', status: 'ACTIVE', capacityQty: 5000, usedQty: 940, availableQty: 4060, unit: 'g', temperatureWindow: '18 ~ 25℃', humidityWindow: '30 ~ 55%RH', strategyPriority: 20, type: 'green' },
   { locationCode: 'WH-C02', zoneCode: 'ORG-COLD', storageType: 'COLD', materialClass: 'ORGANIC', status: 'ACTIVE', capacityQty: 2000, usedQty: 322, availableQty: 1678, unit: 'g', temperatureWindow: '2 ~ 8℃', humidityWindow: '20 ~ 45%RH', strategyPriority: 30, type: 'green' },
   { locationCode: 'WH-HOLD', zoneCode: 'HOLD', storageType: 'QUARANTINE', materialClass: 'ANY', status: 'LOCKED', capacityQty: 1000, usedQty: 0, availableQty: 1000, unit: 'EA', temperatureWindow: '18 ~ 28℃', humidityWindow: '30 ~ 70%RH', strategyPriority: 900, type: 'red' }
-]
+] : []
 
-const fallbackLocationTasks = [
+const fallbackLocationTasks = __DEV_MOCK_FALLBACK__ ? [
   { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', priority: 6, dueTime: new Date(Date.now() + 3 * 3600000).toISOString(), slaStatus: 'ON_TRACK', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', priority: 9, dueTime: new Date(Date.now() - 3600000).toISOString(), overdue: true, slaStatus: 'OVERDUE', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', priority: 3, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
   { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
   { taskNo: 'MLT-FB-005', taskType: 'COUNT', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 816, unit: 'g', status: 'DONE', priority: 7, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核发现数量差异', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 816g，系统 820g，待处置', dispositionStatus: 'PENDING', executedTime: new Date().toISOString(), type: 'red' },
   { taskNo: 'MLT-FB-006', taskType: 'COUNT', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WH-B03', targetLocation: 'WH-B03', plannedQty: 540, actualQty: 534, unit: 'g', status: 'DONE', priority: 4, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核差异升级MRB', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 534g，系统 540g，已升级MRB', dispositionStatus: 'CLOSED', dispositionResult: 'ESCALATE', dispositionConclusion: '升级MRB后续处理', linkedExceptionEventNo: 'EX-FB-MRB-001', exceptionCloseAction: 'RELEASE', exceptionCloseConclusion: 'MRB判定降级使用', exceptionClosedBy: 'qe-zhang', exceptionClosedTime: new Date().toISOString(), executedTime: new Date().toISOString(), type: 'green' }
-]
+] : []
 
 const wmsActions = [
   { value: 'RECEIVE', label: '入库' },

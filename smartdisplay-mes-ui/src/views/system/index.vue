@@ -308,12 +308,12 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackAuditLogs = [
+const fallbackAuditLogs = __DEV_MOCK_FALLBACK__ ? [
   { time: '14:31:22', user: 'qe1003', object: 'LOT260606-017', action: 'Hold Release 审批', result: '通过', source: '10.12.8.41' },
   { time: '14:26:10', user: 'pe2007', object: 'RCP_COAT_65_V12', action: 'Recipe 参数变更', result: '待复核', source: '10.12.6.18' },
   { time: '14:18:44', user: 'op1007', object: 'COATER_02', action: 'Track In', result: '失败', source: 'LINE-HMI-02' },
   { time: '14:05:36', user: 'pc3002', object: 'MO20260606012', action: '工单释放', result: '成功', source: '10.12.3.22' }
-]
+] : []
 
 const filters = reactive({
   bizNo: '',
@@ -343,19 +343,19 @@ const systemSummary = ref(null)
 const ruleActionLoading = ref('')
 const disabledRuleNames = ref(new Set())
 
-const fallbackRoles = [
+const fallbackRoles = __DEV_MOCK_FALLBACK__ ? [
   { name: '生产班长', post: '线体管理', permissions: '派工、Track、Hold 申请', scope: '本基地 / 本产线', status: '启用', type: 'green' },
   { name: '质量工程师', post: '质量处置', permissions: 'Hold Release、MRB、SPC', scope: '本基地 / 全工序', status: '启用', type: 'green' },
   { name: '工艺工程师', post: '工艺维护', permissions: 'Route、Recipe、规格版本', scope: '产品族 / 工艺段', status: '审批中', type: 'amber' },
   { name: '系统管理员', post: '平台治理', permissions: '用户、角色、审计策略', scope: '租户级', status: '受控', type: 'red' }
-]
+] : []
 
-const fallbackRules = [
+const fallbackRules = __DEV_MOCK_FALLBACK__ ? [
   { name: '关键 Recipe 发布双人复核', status: '启用', type: 'green', meta: '对象：COATING / EVAP / BOND；触发：版本发布、参数范围变更；审批：工艺经理 + 质量经理' },
   { name: 'Hold 超 SLA 升级', status: '需复核', type: 'amber', meta: 'P1 超过 30 分钟推送班长、质量工程师；超过 60 分钟升级制造经理' },
   { name: '跨产线权限访问拦截', status: '启用', type: 'green', meta: '当用户访问非授权基地、产线、工序数据时拦截并写入审计日志' },
   { name: '敏感操作二次确认', status: '启用', type: 'blue', meta: 'Scrap、MRB 报废、Recipe 回退、权限变更必须记录原因码和电子签名' }
-]
+] : []
 
 const permissionForm = reactive({
   targetRole: 'QE',

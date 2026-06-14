@@ -344,32 +344,32 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackInspections = [
+const fallbackInspections = __DEV_MOCK_FALLBACK__ ? [
   { inspectionNo: 'QI-FALLBACK-001', lotNo: 'LOT202406006', stepCode: 'COATING', itemCode: 'THICKNESS', itemName: '涂胶厚度', measuredValue: 2.26, upperLimit: 2.2, lowerLimit: 1.8, unit: 'μm', result: 'NG', defectCode: 'D-THICKNESS' },
   { inspectionNo: 'QI-FALLBACK-002', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', itemCode: 'VACUUM', itemName: '真空度', measuredValue: 0.00062, upperLimit: 0.0005, lowerLimit: 0.00001, unit: 'Pa', result: 'NG', defectCode: 'D-VACUUM' },
   { inspectionNo: 'QI-FALLBACK-003', lotNo: 'LOT202406001', stepCode: 'COATING', itemCode: 'THICKNESS', itemName: '涂胶厚度', measuredValue: 2.04, upperLimit: 2.2, lowerLimit: 1.8, unit: 'μm', result: 'OK' }
-]
+] : []
 
-const fallbackExceptions = [
+const fallbackExceptions = __DEV_MOCK_FALLBACK__ ? [
   { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', sourceModule: 'QUALITY', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
   { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', sourceModule: 'EAP', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' },
   { eventNo: 'EX-FALLBACK-WMS', title: 'WMS复核差异升级', eventType: 'MATERIAL', eventLevel: 'P2', sourceModule: 'WMS_LOCATION_TASK', sourceRefType: 'MATERIAL_LOCATION_TASK', sourceRefNo: 'MLT-FALLBACK-001', sourcePayload: '{"taskNo":"MLT-FALLBACK-001","taskType":"COUNT","batchNo":"PI-FALLBACK-001","reviewResult":"REJECTED","dispositionResult":"ESCALATE"}', lotNo: '', stepCode: '', equipmentCode: '', status: 'OPEN', ownerRole: 'QE' }
-]
+] : []
 
-const fallbackDefects = [
+const fallbackDefects = __DEV_MOCK_FALLBACK__ ? [
   { defectCode: 'D-THICKNESS', defectName: '涂胶厚度超限', level: 'MAJOR', qty: 2 },
   { defectCode: 'D-VACUUM', defectName: '真空度超限', level: 'MAJOR', qty: 1 },
   { defectCode: 'D-MURA', defectName: 'Mura', level: 'MAJOR', qty: 1 }
-]
+] : []
 
-const fallbackMrbRecords = [
+const fallbackMrbRecords = __DEV_MOCK_FALLBACK__ ? [
   { mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', reviewType: 'REVIEW', dispositionAction: 'CONTINUE_HOLD', opinion: '等待补充膜厚复测记录。', meetingNo: 'MRB-DEMO-001', participants: 'qe,pe,ee', riskLevel: 'P1', approvalStatus: 'APPROVED', reviewer: 'qe', attachmentCount: 1, reviewTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackMrbApprovals = [
+const fallbackMrbApprovals = __DEV_MOCK_FALLBACK__ ? [
   { taskNo: 'MRBT-FALLBACK-QE', mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', approvalRole: 'QE', approvalStatus: 'APPROVED', approver: 'qe', opinion: '质量复测通过', dueTime: new Date().toISOString(), slaLevel: 'CRITICAL', slaHours: 2, escalationCount: 0 },
   { taskNo: 'MRBT-FALLBACK-PE', mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', approvalRole: 'PE', approvalStatus: 'ESCALATED', approver: '-', opinion: '-', dueTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(), slaLevel: 'CRITICAL', slaHours: 3, escalatedTo: 'pm1001', escalationCount: 1 }
-]
+] : []
 
 const defaultDefectCodes = {
   MES: 'D-MANUAL-NG',

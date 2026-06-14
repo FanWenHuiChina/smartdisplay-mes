@@ -801,57 +801,57 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackEquipments = [
+const fallbackEquipments = __DEV_MOCK_FALLBACK__ ? [
   { equipmentCode: 'COATER_01', equipmentName: '涂胶机-1', status: 'IDLE', capabilitySteps: '["COATING"]', lineCode: 'LINE_01' },
   { equipmentCode: 'COATER_02', equipmentName: '涂胶机-2', status: 'RUNNING', capabilitySteps: '["COATING"]', lineCode: 'LINE_01' },
   { equipmentCode: 'EVAP_01', equipmentName: '蒸镀机-1', status: 'ALARM', capabilitySteps: '["EVAPORATION"]', lineCode: 'LINE_01' },
   { equipmentCode: 'INSPECT_01', equipmentName: 'AOI检测机-1', status: 'IDLE', capabilitySteps: '["INSPECTION"]', lineCode: 'LINE_01' },
   { equipmentCode: 'ETCH_01', equipmentName: '蚀刻机-1', status: 'ALARM', capabilitySteps: '["ETCH"]', lineCode: 'LINE_01' }
-]
+] : []
 
-const fallbackEvents = [
+const fallbackEvents = __DEV_MOCK_FALLBACK__ ? [
   { eventNo: 'EVT-FALLBACK-001', title: '真空波动', equipmentCode: 'EVAP_01', eventType: 'ALARM', eventLevel: 'P2', status: 'OPEN', sourceSystem: 'eap-adapter', occurredTime: new Date().toISOString() },
   { eventNo: 'EVT-FALLBACK-002', title: '涂胶膜厚超限', equipmentCode: 'COATER_02', eventType: 'PARAMETER', eventLevel: 'P1', status: 'OPEN', sourceSystem: 'eap-adapter', occurredTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackSamples = [
+const fallbackSamples = __DEV_MOCK_FALLBACK__ ? [
   { sampleNo: 'EPS-FALLBACK-001', equipmentCode: 'COATER_02', lotNo: 'LOT202406003', stepCode: 'COATING', recipeCode: 'RCP_COAT_002', paramCode: 'THICKNESS', paramValue: 2.26, lowerLimit: 1.8, upperLimit: 2.2, unit: 'um', result: 'NG', sampleTime: new Date().toISOString() },
   { sampleNo: 'EPS-FALLBACK-002', equipmentCode: 'COATER_01', lotNo: 'LOT202406001', stepCode: 'COATING', recipeCode: 'RCP_COAT_001', paramCode: 'TEMP_COATING', paramValue: 150.2, lowerLimit: 145, upperLimit: 155, unit: 'C', result: 'OK', sampleTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackPmTasks = [
+const fallbackPmTasks = __DEV_MOCK_FALLBACK__ ? [
   { taskNo: 'PM-FALLBACK-001', equipmentCode: 'COATER_01', pmType: 'NOZZLE_CLEAN', pmLevel: 'SHIFT', status: 'OPEN', planEndTime: new Date().toISOString() },
   { taskNo: 'PM-FALLBACK-002', equipmentCode: 'EVAP_01', pmType: 'VACUUM_CHECK', pmLevel: 'DAILY', status: 'OVERDUE', planEndTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackRecipeCommands = [
+const fallbackRecipeCommands = __DEV_MOCK_FALLBACK__ ? [
   { commandNo: 'RDL-FALLBACK-001', equipmentCode: 'COATER_01', recipeCode: 'RCP_COAT_001', commandStatus: 'SUCCESS', readbackStatus: 'MATCH', downloadTime: new Date().toISOString() },
   { commandNo: 'RDL-FALLBACK-002', equipmentCode: 'COATER_02', recipeCode: 'RCP_COAT_002', commandStatus: 'FAILED', readbackStatus: 'MISMATCH', downloadTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackStatusHistories = [
+const fallbackStatusHistories = __DEV_MOCK_FALLBACK__ ? [
   { historyNo: 'ESH-FALLBACK-001', equipmentCode: 'COATER_01', fromStatus: 'PM', toStatus: 'IDLE', changeReason: 'PM completed and ready for dispatch', sourceSystem: 'eap-adapter', changedTime: new Date().toISOString() },
   { historyNo: 'ESH-FALLBACK-002', equipmentCode: 'EVAP_01', fromStatus: 'RUNNING', toStatus: 'DOWN', changeReason: 'Vacuum pump down', sourceSystem: 'eap-adapter', changedTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackCycleSamples = [
+const fallbackCycleSamples = __DEV_MOCK_FALLBACK__ ? [
   { sampleNo: 'ECS-FALLBACK-001', equipmentCode: 'COATER_01', lotNo: 'LOT202406001', stepCode: 'COATING', standardCycleSeconds: 58, actualCycleSeconds: 61, outputQty: 1, goodQty: 1, result: 'OK', sampleTime: new Date().toISOString() },
   { sampleNo: 'ECS-FALLBACK-002', equipmentCode: 'COATER_02', lotNo: 'LOT202406003', stepCode: 'COATING', standardCycleSeconds: 58, actualCycleSeconds: 72, outputQty: 1, goodQty: 0, result: 'NG', sampleTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackStandardCycles = [
+const fallbackStandardCycles = __DEV_MOCK_FALLBACK__ ? [
   { cycleNo: 'ESC-FALLBACK-001', productCode: 'AMOLED_65', stepCode: 'COATING', equipmentCode: 'COATER_01', recipeCode: 'RCP_COAT_001', cycleVersion: 'V1.0', standardCycleSeconds: 58, lowerCycleSeconds: 52, upperCycleSeconds: 70, status: 'ACTIVE' },
   { cycleNo: 'ESC-FALLBACK-002', productCode: 'AMOLED_67', stepCode: 'COATING', equipmentCode: 'COATER_02', recipeCode: 'RCP_COAT_002', cycleVersion: 'V1.0', standardCycleSeconds: 58, lowerCycleSeconds: 52, upperCycleSeconds: 70, status: 'ACTIVE' },
   { cycleNo: 'ESC-FALLBACK-003', productCode: 'AMOLED_65', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', recipeCode: 'RCP_EVAP_001', cycleVersion: 'V1.0', standardCycleSeconds: 420, lowerCycleSeconds: 390, upperCycleSeconds: 480, status: 'ACTIVE' }
-]
+] : []
 
-const fallbackGateways = [
+const fallbackGateways = __DEV_MOCK_FALLBACK__ ? [
   { gatewayCode: 'GW-SIM-HTTP-01', gatewayName: '试点模拟EAP网关', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02","EVAP_01","INSPECT_01"]', status: 'CONNECTED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastHeartbeatTime: new Date().toISOString(), type: 'green' },
   { gatewayCode: 'GW-SECSGEM-SHADOW', gatewayName: 'SECS/GEM影子协议网关', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', endpointUri: 'secs://192.168.10.20:5000', lineCode: 'LINE_01', equipmentCodes: '["EVAP_01"]', status: 'DEGRADED', heartbeatIntervalMs: 500, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' },
   { gatewayCode: 'GW-OPCUA-SHADOW', gatewayName: 'OPC UA影子协议网关', protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', endpointUri: 'opc.tcp://192.168.10.30:4840', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02"]', status: 'DEGRADED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' }
-]
+] : []
 
-const fallbackGatewayMessages = [
+const fallbackGatewayMessages = __DEV_MOCK_FALLBACK__ ? [
   {
     messageNo: 'EGM-FALLBACK-001',
     gatewayCode: 'GW-SIM-HTTP-01',
@@ -887,21 +887,21 @@ const fallbackGatewayMessages = [
     diagnostic: { failureCategory: 'PROTOCOL_FRAME', operatorAction: '检查协议帧字段、设备编码和网关协议类型是否匹配。' },
     type: 'red'
   }
-]
+] : []
 
-const fallbackGatewayHealthChecks = [
+const fallbackGatewayHealthChecks = __DEV_MOCK_FALLBACK__ ? [
   { checkNo: 'EGH-FALLBACK-001', gatewayCode: 'GW-SIM-HTTP-01', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', checkType: 'SEED', resultStatus: 'PASS', latencyMs: 12, errorMessage: '', checkedTime: new Date().toISOString(), type: 'green' },
   { checkNo: 'EGH-FALLBACK-002', gatewayCode: 'GW-SECSGEM-SHADOW', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', endpointUri: 'secs://192.168.10.20:5000', checkType: 'SEED', resultStatus: 'WARN', latencyMs: 0, errorMessage: '影子协议帧校验可用，未配置真机握手', checkedTime: new Date().toISOString(), type: 'amber' }
-]
+] : []
 
-const fallbackGatewayDrivers = [
+const fallbackGatewayDrivers = __DEV_MOCK_FALLBACK__ ? [
   { protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED' },
   { protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
   { protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
   { protocolType: 'VENDOR_HTTP', driverCode: 'vendor-http-driver', driverMode: 'SHADOW', protocolFrameValidation: true }
-]
+] : []
 
-const fallbackEquipmentOee = {
+const fallbackEquipmentOee = __DEV_MOCK_FALLBACK__ ? {
   windowHours: 24,
   oeeRate: 94.99,
   oeeText: '94.99%',
@@ -916,7 +916,7 @@ const fallbackEquipmentOee = {
     { reasonCode: 'PM_NOZZLE_CLEAN', reasonName: '喷嘴清洁', downtimeType: 'PLANNED', durationMinutes: 35, eventCount: 1, type: 'amber' }
   ],
   calculationNote: '试点口径：可用率来自近24小时设备停机事件，性能率按当前可执行设备状态估算。'
-}
+} : {}
 
 const emptyEquipmentOee = {
   windowHours: 0,
