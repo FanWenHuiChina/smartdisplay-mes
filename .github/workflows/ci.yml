@@ -122,7 +122,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1
 
       - name: Verify Docker Compose config
-        run: docker compose -f smartdisplay-mes-api\docker-compose.yml config
+        run: docker compose config
 
   browser-e2e:
     name: Docker browser E2E
@@ -141,7 +141,7 @@ jobs:
           node-version: "20"
 
       - name: Start pilot stack
-        run: docker compose -f smartdisplay-mes-api/docker-compose.yml up -d --build
+        run: docker compose up -d --build
 
       - name: Run browser E2E
         working-directory: smartdisplay-mes-ui
@@ -160,7 +160,7 @@ jobs:
 
       - name: Stop pilot stack
         if: always()
-        run: docker compose -f smartdisplay-mes-api/docker-compose.yml down -v
+        run: docker compose down -v
 
   performance-baseline:
     name: Manual Docker performance baseline
@@ -173,7 +173,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start pilot stack
-        run: docker compose -f smartdisplay-mes-api/docker-compose.yml up -d --build
+        run: docker compose up -d --build
 
       - name: Wait for API proxy
         run: |
@@ -185,7 +185,7 @@ jobs:
             fi
             sleep 2
           done
-          docker compose -f smartdisplay-mes-api/docker-compose.yml logs
+          docker compose logs
           exit 1
 
       - name: Run performance baseline
@@ -211,4 +211,4 @@ jobs:
 
       - name: Stop pilot stack
         if: always()
-        run: docker compose -f smartdisplay-mes-api/docker-compose.yml down -v
+        run: docker compose down -v
