@@ -278,8 +278,8 @@
               <tbody>
                 <tr v-for="record in iqcInspections" :key="record.key">
                   <td><span class="status-tag" :class="record.type">{{ record.result }}</span></td>
-                  <td>{{ record.batchNo }}</td>
-                  <td>{{ record.coaNo }}</td>
+                  <td class="mono">{{ record.batchNo }}</td>
+                  <td class="mono">{{ record.coaNo }}</td>
                   <td>{{ record.conclusion }}</td>
                   <td>{{ record.attachmentCount }}</td>
                   <td>{{ record.time }}</td>
@@ -517,7 +517,7 @@
                       <span v-if="task.childBatchNo">子批 {{ task.childBatchNo }}</span>
                     </div>
                   </td>
-                  <td>{{ task.batchNo }}</td>
+                  <td class="mono">{{ task.batchNo }}</td>
                   <td>{{ task.sourceLocation }} → {{ task.targetLocation }}</td>
                   <td>{{ task.qty }}</td>
                   <td><span class="status-tag" :class="task.type">{{ task.status }}</span></td>

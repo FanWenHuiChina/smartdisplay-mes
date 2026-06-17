@@ -1026,7 +1026,7 @@ onMounted(() => {
   margin: 0;
   overflow: auto;
   color: var(--mes-sub);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

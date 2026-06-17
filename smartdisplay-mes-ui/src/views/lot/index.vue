@@ -98,7 +98,7 @@
                   @change="toggleLotSelection(lot.lotNo, $event.target.checked)"
                 />
               </td>
-              <td>{{ lot.lotNo }}</td>
+              <td class="mono">{{ lot.lotNo }}</td>
               <td>{{ lot.productCode || '-' }}</td>
               <td>{{ lot.currentStepCode || '-' }}</td>
               <td>{{ lot.currentEquipmentCode || '待分配' }}</td>

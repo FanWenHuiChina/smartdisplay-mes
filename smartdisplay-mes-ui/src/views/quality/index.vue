@@ -310,7 +310,7 @@
             <thead><tr><th>Lot</th><th>工序</th><th>检测项</th><th>测量值</th><th>结果</th></tr></thead>
             <tbody>
               <tr v-for="record in inspectionRows" :key="record.key" :class="{ danger: record.result === 'NG' }">
-                <td>{{ record.lotNo }}</td>
+                <td class="mono">{{ record.lotNo }}</td>
                 <td>{{ record.stepCode }}</td>
                 <td>{{ record.itemName }}</td>
                 <td>{{ record.valueText }}</td>

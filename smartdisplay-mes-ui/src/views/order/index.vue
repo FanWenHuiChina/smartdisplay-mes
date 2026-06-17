@@ -59,7 +59,7 @@
             <thead><tr><th>工单</th><th>产品</th><th>计划数</th><th>Route</th><th>优先级</th><th>状态</th><th>计划窗口</th></tr></thead>
             <tbody>
               <tr v-for="order in displayOrders" :key="order.no" :class="{ hot: order.hot }">
-                <td>{{ order.no }}</td><td>{{ order.product }}</td><td>{{ order.qty }}</td><td>{{ order.route }}</td>
+                <td class="mono">{{ order.no }}</td><td>{{ order.product }}</td><td>{{ order.qty }}</td><td>{{ order.route }}</td>
                 <td><span v-if="order.hot" class="status-tag orange">Hot</span><span v-else>普通</span></td>
                 <td><span class="status-tag" :class="order.statusType">{{ order.status }}</span></td><td>{{ order.window }}</td>
               </tr>
