@@ -68,18 +68,18 @@
 
 | 验收项 | 标准 | 当前状态 |
 | --- | --- | --- |
-| Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.51`，容器库已迁移到 `1.51` |
+| Docker Compose | PostgreSQL、后端、前端三服务配置可解析并可容器级启动 | 已通过；`smartdisplay-mes-postgres` healthy，后端 `8080`、前端 `8888` 已启动；本轮 Flyway 静态验收已升级到 `V1.52`，容器库已迁移到 `1.52` |
 | 后端构建 | `mvn.cmd -DskipTests package` 生成 `*-exec.jar` | 已通过 |
 | API文档合同 | Swagger/OpenAPI 必须提供 `/api/v3/api-docs/pilot-v1` 分组，声明 `/api/v1/**`、JWT Bearer、统一响应、分页模型和标准错误响应 | 已落地，`OpenApiConfigTest` 5 项通过；Docker 运行态已验证 `Result/PageResult`、400/401/403/500、登录免 Bearer 和业务接口 Bearer 安全要求 |
 | 前端构建 | `npm.cmd run build` 通过 | 已通过，有第三方 warning |
-| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、WMS 库位任务复核、WMS 库位任务复核结果、WMS 库位任务复核驳回处置、WMS 库位任务 SLA、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，426 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批、复核通过/驳回、复核结论、复核驳回处置、SLA 任务入口、WMS 异常来源筛选、动作边界和来源证据展示、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
-| 前端视觉冒烟 | 浅色 Codex app 风格、低饱和按钮、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 `/login`、`/overview`、`/material`、`/equipment`、`/system` 视觉检查；本轮补充 `material-codex-style-desktop.png`、`material-codex-style-suppliers.png` |
+| 前端契约验收 | 路由、API 封装、请求拦截、RBAC 菜单/按钮权限、关键页面接线、Lot/Recipe 二级工作台、Lot 批量 Hold/Release、WMS 多库位拆批、WMS 库位任务复核、WMS 库位任务复核结果、WMS 库位任务复核驳回处置、WMS 库位任务 SLA、审计分页筛选和生产 mock fallback 禁用可自动检查 | 已通过 `npm.cmd run verify:frontend-contract`，427 项检查；已覆盖工单释放预校验、Track In 预校验 API 接线、Lot 批量处置接线、WMS 拆批、复核通过/驳回、复核结论、复核驳回处置、SLA 任务入口、WMS 异常来源筛选、动作边界和来源证据展示、EAP 消息详情诊断接线、系统审计快照查看入口、审计分页筛选、上下文导出和禁止静态校验通过数 |
+| 前端视觉冒烟 | ISA-101工业标准浅色高对比配色、高饱和语义状态色、等宽KPI数值、紧凑工作台；关键页面无横向溢出、按钮文字溢出、文本裁切和控制台错误 | 已通过 ISA-101 配色升级后 21 步浏览器 E2E 视觉回归验证（2026-06-17）；绿色 `#00B42A`、红色 `#F53F3F`、琥珀 `#FF7D00`、蓝色 `#3370FF`，背景 `#F0F2F5`，等宽字体 JetBrains Mono/Cascadia Code |
 | 前端 mock fallback | 开发环境可保留样例 fallback，生产环境接口失败时不静默展示样例生产数据 | 已落地，关键页面统一使用编译期 `__DEV_MOCK_FALLBACK__` 与 `src/utils/devFallback.js` |
 | 前端生产包样例标识 | 默认生产构建不携带典型 mock/fallback 样例 Lot、工单、设备、Recipe、SOP、COA 编号 | 已通过 `npm.cmd run verify:production-bundle`，扫描 14 个 JS 产物 |
-| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、库位任务复核驳回升级与 MRB 关闭回写、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，21 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260614-124038.md` |
+| 前端浏览器 E2E | 覆盖登录、导航权限、工单页 UI 下发 ERP 工单并释放、Lot 管理 Hold/Release/Rework/Scrap、Recipe 管理、Lot 过站、Track In 预校验矩阵、QMS/WMS Adapter 页面操作、物料库位任务、库位任务复核驳回升级与 MRB 关闭回写、供应商到期复审生成审计、设备 EAP 参数/网关健康检查、EAP 失败消息诊断抽屉、质量证据、追溯、AI 报告、系统审计入口和操作员越权拒绝 | 已通过 `npm.cmd run e2e:browser`，21 步通过，Console/Network 错误数为 0，最新报告 `SmartDisplay-MES-browser-e2e-20260617-134419.md`（ISA-101工业配色验证） |
 | CI 浏览器 E2E 门禁 | CI 必须可启动 Docker Compose 三服务，并在真实浏览器中执行端到端闭环 | 已接入 `.github/workflows/ci.yml` 的 `Docker browser E2E` job，报告作为 Actions artifact 上传 |
-| Flyway | `db/migration/V1.1-V1.51` 打包并自动迁移 | 已落地 |
-| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.51` 静态验收通过 |
+| Flyway | `db/migration/V1.1-V1.52` 打包并自动迁移 | 已落地 |
+| Flyway验收 | 迁移静态验收脚本、全新库迁移演练、备份恢复校验、回滚策略和变更审批清单 | 已落地；全新库演练报告生成于 `V1.38`，当前 `V1.52` 静态验收通过 |
 | 真实数据库 API 闭环 | 在 Docker Compose PostgreSQL 上完成登录、工单创建/释放、Lot Track In/Out、NG 自动 Hold、Release、追溯、看板、AI 报告和审计落库校验 | 已通过 `tools\run-real-db-api-flow.ps1`，报告 `SmartDisplay-MES-real-db-api-flow-20260608-060901.md` |
 | README | 启动、账号、API 示例、Docker 说明齐全 | 已更新 |
 | 演示脚本 | 5分钟和15分钟脚本 | 已新增 |

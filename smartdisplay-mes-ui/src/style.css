@@ -222,6 +222,11 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .metric-meta {
   color: var(--mes-sub);
   display: flex;
@@ -646,16 +651,20 @@ textarea {
   font-weight: 600;
 }
 
+.mes-table tbody tr:nth-child(even) td {
+  background: var(--mes-soft);
+}
+
 .mes-table tbody tr:hover td {
-  background: var(--mes-paper-muted);
+  background: var(--mes-soft-2);
 }
 
 .mes-table tr.hot td {
-  background: #fbf5ea;
+  background: var(--mes-amber-soft);
 }
 
 .mes-table tr.danger td {
-  background: #fbf1f1;
+  background: var(--mes-red-soft);
 }
 
 .route-line {
@@ -775,6 +784,20 @@ textarea {
   padding: 9px;
   display: grid;
   gap: 6px;
+}
+
+.mini-card.alarm {
+  border-left: 4px solid var(--mes-red);
+  animation: pulse-alarm 1.4s ease-in-out infinite;
+}
+
+.mini-card.caution {
+  border-left: 4px solid var(--mes-amber);
+}
+
+@keyframes pulse-alarm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 63, 63, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(245, 63, 63, 0.12); }
 }
 
 .mini-top {
