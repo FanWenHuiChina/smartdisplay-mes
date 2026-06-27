@@ -1160,3 +1160,23 @@
 - 测试接线：`PilotMesFlowIntegrationTest` 手工构造新增 `new LotTraceAssembler()` 末位入参；`PilotMesServiceTest`（`@InjectMocks`）在 `setUp` 用 `ReflectionTestUtils.setField` 注入真实组装器（纯函数，行为不变）。
 - 已验证：后端全量 314 项通过（311 + 新增 3），`BUILD SUCCESS`；trace 双覆盖用例保持全绿，行为零变化。
 - 后续：dashboard / AI 报告等子域因耦合更深或缺测试覆盖，按设计说明列为后续小步（补测试后再拆），不在无测试网下动刀。
+
+
+## 2026-06-27 增量：梯队C-7 登录失败限流 / 防刷
+
+- 新增 `LoginAttemptService`（进程内、按用户名计数、时间源构造注入便于单测）：窗口内连续失败达阈值（5 次）临时锁定 15 分钟，登录成功即清零。
+- 接入 `AuthService.login`：登录前 `assertNotLocked`；用户不存在 / 密码错误时 `recordFailure`（被禁用账号不计为失败）；成功 `recordSuccess`。锁定时抛 `BusinessException(429)` 并提示大致剩余时间。
+- 新增 `LoginAttemptServiceTest` 5 项（阈值内不锁、达阈值锁定、用户名大小写/空白不敏感、成功重置、冷却窗口后解锁）。
+- 安全性：`AuthService` 无既有单测，正确口令登录不受影响（E2E / 演示脚本均用正确口令）。多实例生产可换 Redis 做跨实例计数与锁定（类注释留扩展点）。
+- 已验证：后端全量 319 项通过（314 + 5）。
+
+## 2026-06-27 增量：梯队C-8 API 版本与弃用策略文档
+
+- 新增《SmartDisplay-MES-API版本与弃用策略》：URI 版本化选型理由、`/v1` 稳定契约与破坏性变更升 `/v2` 策略、弃用流程（`@Operation(deprecated)` + `Deprecation`/`Sunset` 响应头 RFC 8594 + 公告期 + 下线）、v1 内向后兼容"允许/不允许"约定表、当前状态与预留落点。
+
+## 2026-06-27 增量：梯队C-9 CI 单元测试覆盖率
+
+- `pom.xml` 引入 `jacoco-maven-plugin`（`prepare-agent` + test 阶段 `report`），`mvn test` 即生成 `target/site/jacoco` 报告（HTML/XML/CSV）。
+- `ci.yml` 后端 job 新增：解析 `jacoco.csv` 把行覆盖率写入 `GITHUB_STEP_SUMMARY`、上传 JaCoCo 报告为构建产物。
+- 当前实测后端行覆盖率 **75.3%（8602/11430）**。真实 shields.io 徽章需仓库公开 + codecov / 发布集成，本期以 CI 摘要 + 报告产物体现覆盖率，公开徽章作为扩展点。
+- 至此面试就绪度完善计划梯队 A/B/C 全部推进完毕（B/C 中真重构与外部依赖项按风险与价值取舍，已落地安全增量并对高风险项出设计说明/扩展点）。

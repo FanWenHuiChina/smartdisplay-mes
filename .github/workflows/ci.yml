@@ -53,6 +53,29 @@ jobs:
       - name: Run backend tests
         run: mvn -B test
 
+      - name: Summarize backend coverage
+        if: always()
+        run: |
+          $csv = "target/site/jacoco/jacoco.csv"
+          if (Test-Path $csv) {
+            $rows = Import-Csv $csv
+            $covered = ($rows | Measure-Object -Property LINE_COVERED -Sum).Sum
+            $missed = ($rows | Measure-Object -Property LINE_MISSED -Sum).Sum
+            $total = $covered + $missed
+            $pct = if ($total -gt 0) { [math]::Round(100.0 * $covered / $total, 1) } else { 0 }
+            "## Backend line coverage: $pct% ($covered/$total lines)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } else {
+            "JaCoCo report not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco-coverage
+          path: smartdisplay-mes-api/target/site/jacoco/**
+          if-no-files-found: warn
+
       - name: Package backend
         run: mvn -B -DskipTests "-Dspring-boot.repackage.skip=true" package
 
