@@ -114,6 +114,7 @@ public class PilotMesService {
     private final EquipmentService equipmentService;
     private final EapAdapter eapAdapter;
     private final EapGatewayService eapGatewayService;
+    private final LotTraceAssembler traceAssembler;
 
     @Value("${mes.pilot.fallback-enabled:false}")
     private boolean pilotFallbackEnabled;
@@ -1069,8 +1070,8 @@ public class PilotMesService {
         data.put("materialConsumptions", materialConsumptions(lotNo));
         data.put("auditLogs", auditLogs(lotNo));
         List<Map<String, Object>> matches = List.of(traceLotMatch(lot));
-        data.put("impactSummary", traceImpactSummary(matches, data));
-        data.put("relatedDimensions", traceRelatedDimensions(matches, data));
+        data.put("impactSummary", traceAssembler.impactSummary(matches, data));
+        data.put("relatedDimensions", traceAssembler.relatedDimensions(matches, data));
         return data;
     }
 
@@ -1142,8 +1143,8 @@ public class PilotMesService {
         ));
         data.put("matches", matches);
         data.put("trace", trace);
-        data.put("impactSummary", traceImpactSummary(matches, trace));
-        data.put("relatedDimensions", traceRelatedDimensions(matches, trace));
+        data.put("impactSummary", traceAssembler.impactSummary(matches, trace));
+        data.put("relatedDimensions", traceAssembler.relatedDimensions(matches, trace));
         return data;
     }
 
@@ -2130,92 +2131,8 @@ public class PilotMesService {
         return snapshot;
     }
 
-    private Map<String, Object> traceImpactSummary(List<Map<String, Object>> matches, Map<String, Object> trace) {
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("matchedLotCount", matches.size());
-        summary.put("holdLotCount", matches.stream().filter(row -> "HOLD".equals(row.get("status"))).count());
-        summary.put("serialNumberCount", longValue(fieldValue(trace.get("serialNumberSummary"), "totalCount"), listValue(trace.get("serialNumbers")).size()));
-        summary.put("carrierCount", listValue(trace.get("carriers")).size());
-        summary.put("ngInspectionCount", listValue(trace.get("qualityRecords")).stream()
-                .filter(row -> !"OK".equals(fieldText(row, "result")))
-                .count());
-        summary.put("materialBatchCount", distinctTextCount(listValue(trace.get("materialConsumptions")), "batchNo"));
-        summary.put("defectCodeCount", distinctTextCount(listValue(trace.get("qualityRecords")), "defectCode"));
-        summary.put("equipmentCount", distinctTextCount(listValue(trace.get("stepRecords")), "equipmentCode"));
-        return summary;
-    }
-
-    private Map<String, Object> traceRelatedDimensions(List<Map<String, Object>> matches, Map<String, Object> trace) {
-        Map<String, Object> dimensions = new LinkedHashMap<>();
-        dimensions.put("orderNos", distinctTextValues(matches, "orderNo"));
-        dimensions.put("serialNumbers", distinctTextValues(listValue(trace.get("serialNumbers")), "sn"));
-        dimensions.put("carrierNos", distinctTextValues(listValue(trace.get("carriers")), "carrierNo"));
-        dimensions.put("equipmentCodes", distinctTextValues(listValue(trace.get("stepRecords")), "equipmentCode"));
-        dimensions.put("materialBatches", distinctTextValues(listValue(trace.get("materialConsumptions")), "batchNo"));
-        dimensions.put("defectCodes", distinctTextValues(listValue(trace.get("qualityRecords")), "defectCode"));
-        return dimensions;
-    }
-
     private List<?> listValue(Object value) {
         return value instanceof List<?> list ? list : List.of();
-    }
-
-    private int distinctTextCount(List<?> rows, String fieldName) {
-        return distinctTextValues(rows, fieldName).size();
-    }
-
-    private List<String> distinctTextValues(List<?> rows, String fieldName) {
-        Map<String, Boolean> values = new LinkedHashMap<>();
-        for (Object row : rows) {
-            String text = fieldText(row, fieldName);
-            if (!text.isBlank()) {
-                values.put(text, true);
-            }
-        }
-        return new ArrayList<>(values.keySet());
-    }
-
-    private String fieldText(Object row, String fieldName) {
-        if (row instanceof Map<?, ?> map) {
-            return objectText(map.get(fieldName), "");
-        }
-        if (row instanceof LotStepRecord record) {
-            return switch (fieldName) {
-                case "lotNo" -> objectText(record.getLotNo(), "");
-                case "stepCode" -> objectText(record.getStepCode(), "");
-                case "equipmentCode" -> objectText(record.getEquipmentCode(), "");
-                case "recipeCode" -> objectText(record.getRecipeCode(), "");
-                case "result" -> objectText(record.getResult(), "");
-                default -> "";
-            };
-        }
-        if (row instanceof Lot lot) {
-            return switch (fieldName) {
-                case "lotNo" -> objectText(lot.getLotNo(), "");
-                case "orderNo" -> objectText(lot.getOrderNo(), "");
-                case "productCode" -> objectText(lot.getProductCode(), "");
-                case "status" -> objectText(lot.getStatus(), "");
-                default -> "";
-            };
-        }
-        if (row instanceof SerialNumber serialNumber) {
-            return switch (fieldName) {
-                case "sn" -> objectText(serialNumber.getSn(), "");
-                case "lotNo" -> objectText(serialNumber.getLotNo(), "");
-                case "orderNo" -> objectText(serialNumber.getOrderNo(), "");
-                case "productCode" -> objectText(serialNumber.getProductCode(), "");
-                case "status" -> objectText(serialNumber.getStatus(), "");
-                default -> "";
-            };
-        }
-        return "";
-    }
-
-    private Object fieldValue(Object row, String fieldName) {
-        if (row instanceof Map<?, ?> map) {
-            return map.get(fieldName);
-        }
-        return null;
     }
 
     private boolean sameText(Object value, String expected) {

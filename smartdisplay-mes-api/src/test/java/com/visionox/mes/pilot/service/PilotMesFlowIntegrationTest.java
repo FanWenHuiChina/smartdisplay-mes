@@ -198,7 +198,8 @@ class PilotMesFlowIntegrationTest {
                 rolePermissionService,
                 equipmentService,
                 new SimulatedEapAdapter(equipmentService),
-                eapGatewayService
+                eapGatewayService,
+                new LotTraceAssembler()
         );
 
         wireStatefulMappers();

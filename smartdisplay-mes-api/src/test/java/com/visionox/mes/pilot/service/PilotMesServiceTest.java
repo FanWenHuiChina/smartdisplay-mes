@@ -150,6 +150,7 @@ class PilotMesServiceTest {
     @BeforeEach
     void enablePilotFallbackForExistingDemoScenarios() {
         ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", true);
+        ReflectionTestUtils.setField(pilotMesService, "traceAssembler", new LotTraceAssembler());
     }
 
     @Test

@@ -1139,3 +1139,24 @@
 
 - 落地梯队 A 第 4 项：README 新增「监控、健康检查与日志」章节，说明 Actuator `health/info/metrics` 端点与匿名/鉴权边界、`ActuatorAccessFilter` 治理、docker-compose `healthcheck` 与前端 `depends_on: service_healthy`、logback 滚动文件与 requestId/`X-Request-Id` 全链路关联，以及接口文档地址与 `/api/v1` 领域分组。
 - 至此面试就绪度完善计划梯队 A（4 项：Actuator 健康检查、OpenAPI 注解、生产级日志、README 补全）全部完成并通过后端全量回归与真实启动复验。
+
+
+## 2026-06-27 增量：梯队B-6 主数据 / 有效配方读缓存
+
+- 落地《SmartDisplay-MES面试就绪度完善计划》梯队 B 第 6 项：新增 `CacheConfig`（`@EnableCaching` + `ConcurrentMapCacheManager`，无新依赖，缓存设施均在 spring-context 内）。
+- `RecipeService.findActiveRecipe`（每次 Track In 都会读的热点）加 `@Cacheable(activeRecipe, key = 产品|工序|设备)`；`createRecipe/activateRecipe/publishRecipe/deactivateRecipe` 加 `@CacheEvict(allEntries)`，保证发布/激活/停用后不会读到旧的有效配方。
+- `MasterDataService` 站点/工序/产线/班次等只读主数据加 `@Cacheable(masterData)`。
+- 一致性取舍：进程内无 TTL，写动作全量失效；多实例生产可平滑替换为 Redis/Caffeine + TTL（已在 CacheConfig 注释与 README 留作扩展点）。
+- 安全性：缓存注解在 mock / 未代理的单元测试中天然失效，不改变现有用例行为。
+- 已验证：后端全量 311 项通过（新增 `CacheConfigTest` 4 项反射断言注解与缓存管理器）；真实启动复验 `GET /v1/master/sites` 连续 3 次只命中 1 次 DB 查询（缓存生效）。
+
+## 2026-06-27 增量：梯队B-5 PilotMesService 拆分（设计说明 + LotTraceAssembler 首刀）
+
+- 落地梯队 B 第 5 项：先产出《SmartDisplay-MES-PilotMesService拆分设计说明》（成因、耦合现实、目标分解、安全拆分策略、风险与回退），再做第一刀可落地的内聚抽取。
+- 通读结论修正：`PilotMesService` 实测 3112 行（非计划所述 6913），123 方法、25 依赖；大量方法是对领域服务的薄委托，重逻辑集中在 releaseOrder/trace/dashboard/AI。
+- 首刀抽取 `LotTraceAssembler`：把 Lot 追溯结果的纯函数"塑形"逻辑（影响面汇总 `impactSummary`、关联维度 `relatedDimensions` 及其内部 `distinctText*`/`fieldText`/`fieldValue`）从 PilotMesService 抽到独立无依赖组件，主类经构造注入委托。取数仍由主类负责，结果塑形交给组装器——零循环依赖、可独立单测。
+- 选它做第一刀：纯只读、无数据范围/Mapper 依赖、由 traceLot/traceSearch 调用，且 traceLot 有跨层集成测试 + 服务级测试双覆盖（最强回归网）。
+- PilotMesService 减少 ~84 行（3112→3030）；新增 `LotTraceAssemblerTest` 3 项，把原内联逻辑变成可独立单测。
+- 测试接线：`PilotMesFlowIntegrationTest` 手工构造新增 `new LotTraceAssembler()` 末位入参；`PilotMesServiceTest`（`@InjectMocks`）在 `setUp` 用 `ReflectionTestUtils.setField` 注入真实组装器（纯函数，行为不变）。
+- 已验证：后端全量 314 项通过（311 + 新增 3），`BUILD SUCCESS`；trace 双覆盖用例保持全绿，行为零变化。
+- 后续：dashboard / AI 报告等子域因耦合更深或缺测试覆盖，按设计说明列为后续小步（补测试后再拆），不在无测试网下动刀。
