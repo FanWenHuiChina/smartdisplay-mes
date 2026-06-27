@@ -174,7 +174,7 @@ WHERE gateway_code = 'GW-OPCUA-SHADOW';
 2. **实现ACTIVE模式连接握手逻辑**
 3. **实现消息收发和订阅逻辑**
 4. **实现心跳/超时/重连逻辑**
-5. **补充真机联调单元测试**（Mock设备模拟器）
+5. ✅ **补充真机联调单元测试**（Mock设备模拟器）— 2026-06-26 已落地：`MockEquipmentSimulator` 构造 SECS/GEM S6F11/S6F1/S2F41 与 OPC UA DATA_CHANGE 入站帧，`ProtocolDriverHandshakeTest` 11 项覆盖帧校验、CEID/RPTID/SVID/NodeId 解析、消息类型归一化和 SHADOW/EXTERNAL 健康状态机；只覆盖入站帧内容，不含 ACTIVE 连接握手。
 6. **补充真机联调E2E测试**（真实设备环境，或使用SECS/GEM Simulator + OPC UA Simulator）
 7. **更新验收清单和落地进度文档**（真机联调通过后）
 
