@@ -234,6 +234,9 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "material", "location-tasks", "*", "assign")) {
             return target("MATERIAL_LOCATION_TASK_ASSIGN", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }
+        if (matches(parts, offset, "material", "location-tasks", "*", "claim")) {
+            return target("MATERIAL_LOCATION_TASK_CLAIM", parts[offset + 2], "MATERIAL_LOCATION_TASK");
+        }
         if (matches(parts, offset, "material", "location-tasks", "*", "complete")) {
             return target("MATERIAL_LOCATION_TASK_COMPLETE", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }

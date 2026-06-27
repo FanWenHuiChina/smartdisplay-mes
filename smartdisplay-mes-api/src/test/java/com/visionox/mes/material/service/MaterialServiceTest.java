@@ -916,6 +916,58 @@ class MaterialServiceTest {
     }
 
     @Test
+    void claimLocationTaskShouldAssignToCurrentOperatorAndWriteAudit() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-001", "MOVE", "PI_INK_B011");
+        task.setStatus("CREATED");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-001")).thenReturn(task);
+
+        Map<String, Object> claimed = materialService.claimLocationTask("MLT-CLAIM-001", Map.of("operator", "wms1005"));
+
+        assertThat(task.getStatus()).isEqualTo("ASSIGNED");
+        assertThat(task.getAssignedTo()).isEqualTo("wms1005");
+        assertThat(task.getOperator()).isEqualTo("wms1005");
+        assertThat(task.getAssignedTime()).isNotNull();
+        assertThat(claimed.get("task")).isInstanceOf(Map.class);
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> claimSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CLAIM"), eq("MLT-CLAIM-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1005"), eq("material-service"), claimSnapshotCaptor.capture());
+        assertThat(claimSnapshotCaptor.getValue())
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"assignedTo\":\"wms1005\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void claimLocationTaskShouldRejectClaimingTaskOwnedByAnotherOperator() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-002", "MOVE", "PI_INK_B011");
+        task.setStatus("ASSIGNED");
+        task.setAssignedTo("wms1002");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-002")).thenReturn(task);
+
+        assertThatThrownBy(() -> materialService.claimLocationTask("MLT-CLAIM-002", Map.of("operator", "wms1005")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已被领取，不能重复认领");
+
+        verify(materialLocationTaskMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_CLAIM"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void claimLocationTaskShouldRejectNonCreatedTask() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-003", "MOVE", "PI_INK_B011");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-003")).thenReturn(task);
+
+        assertThatThrownBy(() -> materialService.claimLocationTask("MLT-CLAIM-003", Map.of("operator", "wms1005")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("状态不允许认领");
+
+        verify(materialLocationTaskMapper, never()).updateById(any());
+    }
+
+    @Test
     void reviewLocationTaskShouldUpdateReviewerAndWriteAudit() {
         MaterialLocationTask task = locationTask("MLT-REVIEW-001", "MOVE", "PI_INK_B010");
         task.setStatus("DONE");
@@ -1644,8 +1696,16 @@ class MaterialServiceTest {
         assertThat(task.getReviewType()).isEqualTo("PERIODIC");
         assertThat(task.getSourceNo()).isEqualTo("AUTO-DUE:SUP-DUE");
         assertThat(task.getCreatedBy()).isEqualTo("qe1003");
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
         verify(auditLogService).record(eq("SUPPLIER_QUALIFICATION_REVIEW_GENERATE"), eq("BATCH"), eq("SUPPLIER_REVIEW"),
-                any(), eq("qe1003"), eq("material-service"), any());
+                any(), eq("qe1003"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"request\":")
+                .contains("\"summary\":")
+                .contains("\"createdCount\":1")
+                .contains("\"skippedCount\":1")
+                .contains("\"windowDays\":7")
+                .contains("SUP-OLD");
     }
 
     @Test

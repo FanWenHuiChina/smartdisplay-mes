@@ -1151,6 +1151,138 @@ class PilotMesServiceTest {
         verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    void reworkShouldRejectRouteThatDoesNotMatchActiveProductRoute() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+
+        assertThatThrownBy(() -> pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V2",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Rework route must match active product route");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(holdRecordMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reworkShouldRejectStepThatIsNotConfiguredInActiveRoute() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("COATING", 1)));
+
+        assertThatThrownBy(() -> pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Rework step is not configured in active route");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reworkShouldSkipHoldReleaseWhenLotIsNotOnHold() {
+        Lot lot = lot("LOT001", "RUNNING");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
+
+        pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("REWORK");
+        verify(holdRecordMapper, never()).selectOne(any());
+        verify(holdRecordMapper, never()).updateById(any());
+        verify(qualityService, never()).closeException(any(), any());
+    }
+
+    @Test
+    void reworkShouldCloseLinkedExceptionWhenEventNoProvided() {
+        Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
+
+        pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "eventNo", "EX-20260626-0001",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("REWORK");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> closeCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).closeException(eq("EX-20260626-0001"), closeCaptor.capture());
+        Map<String, Object> closeRequest = closeCaptor.getValue();
+        assertThat(closeRequest).containsEntry("lotNo", "LOT001");
+        assertThat(closeRequest).containsEntry("dispositionAction", "REWORK");
+        assertThat(closeRequest).containsEntry("closedBy", "qe1001");
+        assertThat(closeRequest.get("closeConclusion")).asString().contains("RTE_OLED_V1", "ETCH");
+    }
+
+    @Test
+    void scrapShouldCloseLinkedExceptionWhenEventNoProvided() {
+        Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
+
+        pilotMesService.scrap("LOT001", Map.of(
+                "scrapConfirmed", true,
+                "confirmText", "SCRAP:LOT001",
+                "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
+                "eventNo", "EX-20260626-0002",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("SCRAP");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> closeCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).closeException(eq("EX-20260626-0002"), closeCaptor.capture());
+        Map<String, Object> closeRequest = closeCaptor.getValue();
+        assertThat(closeRequest).containsEntry("lotNo", "LOT001");
+        assertThat(closeRequest).containsEntry("dispositionAction", "SCRAP");
+        assertThat(closeRequest).containsEntry("closeConclusion", "MRB scrap");
+        assertThat(closeRequest).containsEntry("closedBy", "qe1001");
+    }
+
+    @Test
+    void scrapShouldRejectWhenConfirmTextDoesNotMatchLot() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+
+        assertThatThrownBy(() -> pilotMesService.scrap("LOT001", Map.of(
+                "scrapConfirmed", true,
+                "confirmText", "SCRAP:LOT999",
+                "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("second confirmation");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(qualityService, never()).closeException(any(), any());
+    }
+
     private ProductionOrder order(String orderNo, int plannedQty) {
         ProductionOrder order = new ProductionOrder();
         order.setOrderNo(orderNo);

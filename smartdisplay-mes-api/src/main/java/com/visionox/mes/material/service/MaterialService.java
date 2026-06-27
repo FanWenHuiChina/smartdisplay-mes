@@ -715,17 +715,18 @@ public class MaterialService {
             created.add(supplierQualificationReviewTaskRow(task));
         }
 
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("windowDays", windowDays);
+        summary.put("cutoffTime", cutoff);
+        summary.put("createdCount", created.size());
+        summary.put("skippedCount", skipped.size());
+        summary.put("createdTasks", created);
+        summary.put("skippedSuppliers", skipped);
+
         audit("SUPPLIER_QUALIFICATION_REVIEW_GENERATE", "BATCH", "SUPPLIER_REVIEW",
                 "生成到期供应商准入复审 created=" + created.size() + ", skipped=" + skipped.size(),
-                operator);
-        return Map.of(
-                "windowDays", windowDays,
-                "cutoffTime", cutoff,
-                "createdCount", created.size(),
-                "skippedCount", skipped.size(),
-                "createdTasks", created,
-                "skippedSuppliers", skipped
-        );
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest(request), "summary", summary)));
+        return new LinkedHashMap<>(summary);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -1162,6 +1163,36 @@ public class MaterialService {
         materialLocationTaskMapper.updateById(task);
         audit("MATERIAL_LOCATION_TASK_ASSIGN", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "领取库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), assignee,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
+        return Map.of("task", locationTaskRow(task));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> claimLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        // 异步领取（自助认领）：只允许从待办池领取尚未分配（CREATED）的任务，强制领给当前操作人本人，
+        // 不可抢占他人已领取（ASSIGNED）或正在执行的任务，保证待办池认领互斥。
+        if (!"CREATED".equals(valueOr(task.getStatus(), ""))) {
+            String owner = valueOr(task.getAssignedTo(), "");
+            if (List.of("ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), "")) && !owner.isBlank()) {
+                throw new BusinessException("库位任务已被领取，不能重复认领: " + owner);
+            }
+            throw new BusinessException("当前库位任务状态不允许认领: " + task.getStatus());
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String claimant = text(request, "operator", text(request, "assignedTo", AuthContext.username()));
+        if (claimant.isBlank()) {
+            throw new BusinessException("库位任务认领人不能为空");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus("ASSIGNED");
+        task.setAssignedTo(claimant);
+        task.setAssignedTime(now);
+        task.setOperator(claimant);
+        task.setUpdatedTime(now);
+        materialLocationTaskMapper.updateById(task);
+        audit("MATERIAL_LOCATION_TASK_CLAIM", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "认领库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), claimant,
                 auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }

@@ -1316,6 +1316,10 @@ public class PilotMesService {
         return materialService.assignLocationTask(taskNo, safeRequest(request));
     }
 
+    public Map<String, Object> claimMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.claimLocationTask(taskNo, safeRequest(request));
+    }
+
     public Map<String, Object> completeMaterialLocationTask(String taskNo, Map<String, Object> request) {
         return materialService.completeLocationTask(taskNo, safeRequest(request));
     }

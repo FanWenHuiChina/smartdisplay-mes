@@ -396,6 +396,18 @@ public class QualityService {
         row.put("operator", operator);
         row.put("refreshedAt", now);
         row.put("tasks", escalatedRows);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("scannedCount", tasks.size());
+        summary.put("escalatedCount", escalatedRows.size());
+        summary.put("affectedMrbNos", new ArrayList<>(affectedMrbNos));
+        summary.put("eventNo", eventNo);
+        summary.put("mrbNo", mrbNo);
+        summary.put("limit", limit);
+        summary.put("escalatedTasks", escalatedRows);
+        audit("MRB_APPROVAL_SLA_REFRESH", "BATCH", "MRB_APPROVAL",
+                "MRB审批SLA刷新 scanned=" + tasks.size() + ", escalated=" + escalatedRows.size(),
+                operator, JSONUtil.toJsonStr(Map.of("request", request == null ? Map.of() : request, "summary", summary)));
         return row;
     }
 

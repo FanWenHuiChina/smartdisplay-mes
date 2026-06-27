@@ -569,6 +569,15 @@ class QualityServiceTest {
         verify(mrbRecordMapper).updateById(record);
         verify(auditLogService).record(eq("MRB_APPROVAL_ESCALATE"), eq("MRBT001"), eq("MRB_APPROVAL"),
                 any(), eq("qe1001"), eq("quality-service"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MRB_APPROVAL_SLA_REFRESH"), eq("BATCH"), eq("MRB_APPROVAL"),
+                any(), eq("qe1001"), eq("quality-service"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"scannedCount\":1")
+                .contains("\"escalatedCount\":1")
+                .contains("MRB001")
+                .contains("\"request\"")
+                .contains("\"summary\"");
     }
 
     @Test
