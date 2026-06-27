@@ -455,6 +455,56 @@ async function main() {
     return `${workflowResult.completedTask}: ${workflowResult.created}->${workflowResult.assigned}->${workflowResult.completed}; ${workflowResult.cancelledTask}: CANCELLED`
   })
 
+  await runStep('浏览器会话验证库位任务自助认领', async () => {
+    const claimResult = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+      const request = async (path, body, expectOk = true) => {
+        const response = await fetch('/api/v1' + path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        })
+        const json = await response.json()
+        if (expectOk && json.code !== 200) throw new Error(json.message || ('claim request failed: ' + path))
+        return json
+      }
+      const payload = {
+        taskType: 'MOVE',
+        batchNo: 'PI2606-A',
+        targetLocation: 'WIP-A-02',
+        operator: '${escapeJs(username)}',
+        sourceLocation: 'WIP-A-01',
+        planQty: 5
+      }
+      // 1) self-claim a freshly created task
+      const created = await request('/material/location-tasks', payload)
+      const taskNo = (created.data.task || created.data).taskNo
+      const claimed = await request('/material/location-tasks/' + taskNo + '/claim', {
+        operator: '${escapeJs(username)}'
+      })
+      const claimedTask = claimed.data.task || claimed.data
+      // 2) create another task, assign to a different operator, then claim must be rejected (no preemption)
+      const created2 = await request('/material/location-tasks', payload)
+      const taskNo2 = (created2.data.task || created2.data).taskNo
+      await request('/material/location-tasks/' + taskNo2 + '/assign', {
+        assignedTo: 'other_wms_op'
+      })
+      const preempt = await request('/material/location-tasks/' + taskNo2 + '/claim', {
+        operator: '${escapeJs(username)}'
+      }, false)
+      return {
+        claimedStatus: claimedTask.status,
+        claimedAssignee: claimedTask.assignedTo,
+        preemptRejected: preempt.code !== 200
+      }
+    })()`)
+    assert(claimResult.claimedStatus === 'ASSIGNED', '认领后状态不是 ASSIGNED')
+    assert(claimResult.claimedAssignee === username, '认领人不是当前用户')
+    assert(claimResult.preemptRejected === true, '被他人领取的任务应拒绝抢占认领')
+    return `claimed=${claimResult.claimedStatus}/${claimResult.claimedAssignee}, preemptRejected=${claimResult.preemptRejected}`
+  })
+
   await runStep('WMS 库位任务复核驳回升级并回写 MRB 关闭', async () => {
     workflowResult = await evaluate(`(async () => {
       const token = localStorage.getItem('token')

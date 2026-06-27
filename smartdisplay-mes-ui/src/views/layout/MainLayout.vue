@@ -423,8 +423,10 @@ onMounted(() => {
 }
 
 .side-badge.red {
-  background: var(--mes-red-soft);
-  color: var(--mes-red);
+  background: var(--mes-red);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(245, 63, 63, 0.15);
 }
 
 .side-badge.amber {

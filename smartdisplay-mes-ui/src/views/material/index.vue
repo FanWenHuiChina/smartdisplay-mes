@@ -891,6 +891,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   assignMaterialLocationTask,
+  claimMaterialLocationTask,
   bindCarrier,
   cancelMaterialLocationTask,
   checkWmsMaterialReadiness,
@@ -1532,6 +1533,7 @@ function mapLocationTask(item, index = 0) {
     time: formatTime(timeSource),
     type: item.type || statusType(status),
     canAssign: status === 'CREATED',
+    canClaim: status === 'CREATED',
     canComplete: ['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status),
     canCancel: ['CREATED', 'ASSIGNED'].includes(status),
     canReview: status === 'DONE' && !reviewed,
@@ -1964,6 +1966,21 @@ async function assignLocationTask(task) {
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务领取失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
+async function claimLocationTask(task) {
+  try {
+    locationTaskSubmitting.value = true
+    await claimMaterialLocationTask(task.taskNo, {
+      operator: locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    })
+    ElMessage.success('库位任务已认领')
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '库位任务认领失败')
   } finally {
     locationTaskSubmitting.value = false
   }
@@ -2824,6 +2841,8 @@ onMounted(loadMaterialData)
 .empty-cell {
   color: var(--mes-weak);
   text-align: center;
+  padding: 24px 0;
+  font-size: 13px;
 }
 
 .mes-btn:disabled {

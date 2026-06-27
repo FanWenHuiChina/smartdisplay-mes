@@ -122,7 +122,7 @@
               </td>
             </tr>
             <tr v-if="!displayLots.length">
-              <td colspan="10">没有符合条件的 Lot</td>
+              <td colspan="10" class="empty-state">没有符合条件的 Lot</td>
             </tr>
           </tbody>
         </table>

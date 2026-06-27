@@ -227,6 +227,13 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.empty-state {
+  text-align: center;
+  color: var(--mes-weak);
+  padding: 24px 0;
+  font-size: 13px;
+}
+
 .metric-meta {
   color: var(--mes-sub);
   display: flex;

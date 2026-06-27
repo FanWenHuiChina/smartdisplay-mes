@@ -100,13 +100,14 @@
           <span class="status-tag red">{{ alertCount }} 待处理</span>
         </div>
         <div class="mes-card__body cards">
-          <div v-for="item in alerts" :key="item.title" class="mini-card">
+          <div v-for="item in alerts" :key="item.title" class="mini-card" :class="item.level === 'P1' ? 'alarm' : 'caution'">
             <div class="mini-top">
               <span>{{ item.title }}</span>
               <span class="status-tag" :class="item.type">{{ item.level }}</span>
             </div>
             <div class="mini-meta">{{ item.meta }}</div>
           </div>
+          <div v-if="!alerts.length" class="empty-state">暂无待处理异常</div>
         </div>
       </div>
 
@@ -138,6 +139,7 @@
             <h3>{{ item.title }}</h3>
             <p>{{ item.text }}</p>
           </div>
+          <div v-if="!aiSuggestions.length" class="empty-state">暂无 AI 建议</div>
         </div>
       </div>
     </div>
