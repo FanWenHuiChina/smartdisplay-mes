@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Production-grade logging for SmartDisplay MES.
+
+  - Console + rolling file appenders (daily + size cap, gzip history, total cap).
+  - Every line carries [%X{requestId}] so logs correlate with a single HTTP request;
+    AuditRequestContextFilter puts the requestId into MDC (and echoes it back in the
+    X-Request-Id response header).
+  - Profile-aware verbosity: the implicit `default` (local) profile logs the app at
+    DEBUG; `docker`/`prod` log at INFO and quiet down MyBatis-Plus SQL.
+
+  This is a logback-spring.xml (not logback.xml) so it is processed only by Spring Boot's
+  logging system at application startup; plain unit tests are unaffected.
+-->
+<configuration>
+
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="smartdisplay-mes-api"/>
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+    <!-- requestId defaults to "-" before the request filter runs (e.g. startup) -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId:--}] %-5level %logger{50} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- Local / no active profile: verbose app logging to console + file -->
+    <springProfile name="default">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+        <logger name="com.visionox.mes" level="DEBUG"/>
+        <logger name="com.baomidou.mybatisplus" level="DEBUG"/>
+    </springProfile>
+
+    <!-- Containerized / production: leaner logging, SQL quieted -->
+    <springProfile name="docker,prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+        <logger name="com.visionox.mes" level="INFO"/>
+        <logger name="com.baomidou.mybatisplus" level="WARN"/>
+    </springProfile>
+
+</configuration>

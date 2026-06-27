@@ -2,6 +2,7 @@ package com.visionox.mes.system.audit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -14,6 +15,7 @@ class AuditRequestContextFilterTest {
     @AfterEach
     void tearDown() {
         AuditRequestContext.clear();
+        MDC.clear();
     }
 
     @Test
@@ -25,8 +27,12 @@ class AuditRequestContextFilterTest {
         request.addHeader("User-Agent", "MES-Console/1.0");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<AuditRequestContext.RequestInfo> seen = new AtomicReference<>();
+        AtomicReference<String> mdcRequestId = new AtomicReference<>();
 
-        filter.doFilter(request, response, (servletRequest, servletResponse) -> seen.set(AuditRequestContext.get()));
+        filter.doFilter(request, response, (servletRequest, servletResponse) -> {
+            seen.set(AuditRequestContext.get());
+            mdcRequestId.set(MDC.get(AuditRequestContextFilter.REQUEST_ID_MDC_KEY));
+        });
 
         assertThat(seen.get()).isNotNull();
         assertThat(seen.get().requestMethod()).isEqualTo("POST");
@@ -34,6 +40,28 @@ class AuditRequestContextFilterTest {
         assertThat(seen.get().clientIp()).isEqualTo("10.10.1.5");
         assertThat(seen.get().userAgent()).isEqualTo("MES-Console/1.0");
         assertThat(AuditRequestContext.get()).isNull();
+
+        // A requestId is bound to MDC during the request and echoed back in the response header,
+        // then cleared from MDC afterwards so it cannot leak into the next request on this thread.
+        assertThat(mdcRequestId.get()).isNotBlank();
+        assertThat(response.getHeader(AuditRequestContextFilter.REQUEST_ID_HEADER)).isEqualTo(mdcRequestId.get());
+        assertThat(MDC.get(AuditRequestContextFilter.REQUEST_ID_MDC_KEY)).isNull();
+    }
+
+    @Test
+    void filterShouldPropagateIncomingRequestId() throws Exception {
+        AuditRequestContextFilter filter = new AuditRequestContextFilter();
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/lots");
+        request.addHeader(AuditRequestContextFilter.REQUEST_ID_HEADER, "upstream-trace-123");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<String> mdcRequestId = new AtomicReference<>();
+
+        filter.doFilter(request, response, (servletRequest, servletResponse) ->
+                mdcRequestId.set(MDC.get(AuditRequestContextFilter.REQUEST_ID_MDC_KEY)));
+
+        // An upstream-provided X-Request-Id (e.g. from Nginx) is honored rather than regenerated.
+        assertThat(mdcRequestId.get()).isEqualTo("upstream-trace-123");
+        assertThat(response.getHeader(AuditRequestContextFilter.REQUEST_ID_HEADER)).isEqualTo("upstream-trace-123");
     }
 
     @Test
