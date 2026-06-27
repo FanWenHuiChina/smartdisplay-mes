@@ -17,6 +17,9 @@ import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import com.visionox.mes.config.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +50,7 @@ public class RecipeService {
      * 创建Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public Long createRecipe(RecipeCreateRequest request) {
         log.info("创建Recipe: {}", request.getRecipeCode());
 
@@ -153,6 +157,8 @@ public class RecipeService {
     /**
      * 查找有效Recipe（用于Track In校验）
      */
+    @Cacheable(cacheNames = CacheConfig.ACTIVE_RECIPE,
+            key = "#productCode + '|' + #stepCode + '|' + #equipmentCode")
     public Recipe findActiveRecipe(String productCode, String stepCode, String equipmentCode) {
         log.debug("查找有效Recipe: product={}, step={}, equipment={}", productCode, stepCode, equipmentCode);
 
@@ -180,6 +186,7 @@ public class RecipeService {
      * 激活Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public void activateRecipe(Long id) {
         activateRecipe(id, "RECIPE_ACTIVATE", "激活Recipe");
     }
@@ -188,6 +195,7 @@ public class RecipeService {
      * 发布Recipe版本。
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public void publishRecipe(Long id) {
         activateRecipe(id, "RECIPE_PUBLISH", "发布Recipe版本");
     }
@@ -257,6 +265,7 @@ public class RecipeService {
      * 停用Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public void deactivateRecipe(Long id) {
         Recipe recipe = recipeMapper.selectById(id);
         if (recipe == null) {

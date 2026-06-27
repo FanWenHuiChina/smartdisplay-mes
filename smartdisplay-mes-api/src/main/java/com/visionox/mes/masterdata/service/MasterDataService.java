@@ -12,6 +12,8 @@ import com.visionox.mes.masterdata.mapper.SiteMapper;
 import com.visionox.mes.masterdata.mapper.WorkShiftMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import com.visionox.mes.config.CacheConfig;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -29,11 +31,13 @@ public class MasterDataService {
     private final ProductionLineMapper productionLineMapper;
     private final WorkShiftMapper workShiftMapper;
 
+    @Cacheable(cacheNames = CacheConfig.MASTER_DATA, key = "'sites'")
     public List<Site> getAllSites() {
         return siteMapper.selectList(new LambdaQueryWrapper<Site>()
                 .orderByAsc(Site::getSiteCode));
     }
 
+    @Cacheable(cacheNames = CacheConfig.MASTER_DATA, key = "'lines:' + #siteCode + ':' + #status")
     public List<ProductionLine> getAllProductionLines(String siteCode, String status) {
         LambdaQueryWrapper<ProductionLine> wrapper = new LambdaQueryWrapper<>();
         if (siteCode != null && !siteCode.isBlank()) {
@@ -47,6 +51,7 @@ public class MasterDataService {
         return productionLineMapper.selectList(wrapper);
     }
 
+    @Cacheable(cacheNames = CacheConfig.MASTER_DATA, key = "'shifts:' + #lineCode + ':' + #status")
     public List<WorkShift> getAllWorkShifts(String lineCode, String status) {
         LambdaQueryWrapper<WorkShift> wrapper = new LambdaQueryWrapper<>();
         if (lineCode != null && !lineCode.isBlank()) {
@@ -63,6 +68,7 @@ public class MasterDataService {
     /**
      * 获取所有工序
      */
+    @Cacheable(cacheNames = CacheConfig.MASTER_DATA, key = "'processSteps'")
     public List<ProcessStep> getAllProcessSteps() {
         return processStepMapper.selectList(null);
     }
