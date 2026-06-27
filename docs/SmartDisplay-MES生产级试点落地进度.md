@@ -1045,6 +1045,97 @@
 - 改造范围仅 `style.css` 一个文件（+54/-43 行），13 个页面全部自动受益，未动页面结构、未引入新组件库。
 - 已验证：`npm run build` 通过；`npm run verify:frontend-contract` 427 项通过；`npm run verify:production-bundle` 14 个 JS 产物 clean；`npm run e2e:browser` 21 步全绿（console/network 错误 0，无横向溢出/文字裁切/布局回归）。
 
+## 2026-06-26 增量：EAP 真机联调 Mock 设备模拟器与协议驱动联调单元测试
+
+- 落地《SmartDisplay-MES-EAP真机联调准备清单》「后续工作」第 5 项（补充真机联调单元测试 / Mock 设备模拟器），在无真实 SECS/GEM、OPC UA 设备的前提下用模拟器构造与真机一致的入站协议帧，对真实协议驱动做帧校验、归一化和健康检查状态机断言。
+- 新增 `MockEquipmentSimulator`（test 域）：按 SEMI E5/E30/E37 与 OPC UA Part 4 报文语义构造入站帧，覆盖 SECS/GEM `S6F11` 事件报告（CEID/RPTID/SVID/systemBytes 追溯字段）、`S6F1` Trace Data 状态变量采样、`S2F41` PP-Select 配方下发、缺失 S/F 帧标识的非法帧，以及 OPC UA `DATA_CHANGE` 数据变化通知（NodeId/Value/Quality/源与服务器时间戳）和缺失 NodeId 的非法帧；并提供一段「状态→多点参数→配方下发」的连续工艺循环序列。
+- 明确边界：模拟器只覆盖入站帧内容与字段结构，不模拟 HSMS/Session 连接握手、心跳和重连——这些属 ACTIVE 模式真实链路，需引入 `secs4j` / Eclipse Milo 客户端并在真机环境验证，仍不在本增量范围；驱动当前继续保持 SHADOW 模式语义。
+- 新增 `ProtocolDriverHandshakeTest`（11 项）：验证 S6F11→STATUS、S6F1→PARAMETER、S2F41→RECIPE_DOWNLOAD 的归一化与 `secsMessage/ceid/rptId/svid/systemBytes` 字段保留；坏帧（缺 S/F、缺设备标识、缺 NodeId）抛 `BusinessException`；连续工艺循环序列按消息类型逐帧归一为 `STATUS/PARAMETER/PARAMETER/RECIPE_DOWNLOAD`；OPC UA 数据变化保留节点元数据；以及 SHADOW（WARN）、EXTERNAL 未配置真实链路（FAIL）、EXTERNAL 已配置真实链路（WARN）三态健康检查状态机。
+- 仅新增 test 域两个文件，未改动任何生产代码（驱动、网关服务、适配器接口保持不变），无回归风险。
+- 已验证：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=ProtocolDriverHandshakeTest" test` 11 项通过；设备 EAP 模块定向回归 `-Dtest=ProtocolDriverHandshakeTest,EapGatewayServiceTest,SimulatedEapAdapterTest` 共 29 项通过，`BUILD SUCCESS`。
+
+## 2026-06-26 增量：Rework/Scrap 异常处置分支用例补强
+
+- 落地「下一步建议」第 1 项（继续补充异常处置、Rework/Scrap 用例，保持测试门禁）中 Rework/Scrap 处置分支的服务级用例缺口。此前 `PilotMesServiceTest` 仅覆盖 Rework/Scrap 的 happy path（含 Hold 联动释放）和两个拒绝分支，未覆盖路线/步骤校验失败、未 Hold 时跳过 Hold 释放、以及携带 `eventNo` 时的异常关闭联动等真实分支。
+- 新增 6 个用例（`PilotMesServiceTest` 43→49 项）：
+  - `reworkShouldRejectRouteThatDoesNotMatchActiveProductRoute`：Rework 路线与产品在制 Route 不一致时抛 `BusinessException`，且不更新 Lot、不释放 Hold、不写审计。
+  - `reworkShouldRejectStepThatIsNotConfiguredInActiveRoute`：Rework 起始工序未配置在在制 Route 时抛 `BusinessException` 并阻断。
+  - `reworkShouldSkipHoldReleaseWhenLotIsNotOnHold`：对未 Hold（RUNNING）的 Lot 做 Rework 时跳过 `holdRecordMapper` 查询与更新，不触发异常关闭。
+  - `reworkShouldCloseLinkedExceptionWhenEventNoProvided`：携带 `eventNo` 时回调 `qualityService.closeException`，断言 `lotNo/dispositionAction=REWORK/closedBy` 与含路线步骤的 `closeConclusion`。
+  - `scrapShouldCloseLinkedExceptionWhenEventNoProvided`：Scrap 携带 `eventNo` 时联动异常关闭，`dispositionAction=SCRAP`、`closeConclusion` 取 Scrap 原因。
+  - `scrapShouldRejectWhenConfirmTextDoesNotMatchLot`：二次确认 `confirmText` 与目标 Lot 不匹配（`SCRAP:LOT999` ≠ `SCRAP:LOT001`）时抛 `BusinessException` 并阻断，补强原仅覆盖「缺确认」的二次确认校验。
+- 仅新增 test 域用例，未改动任何生产代码，无回归风险。
+- 已验证：`mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" "-Dtest=PilotMesServiceTest" test` 49 项通过；后端全量 `mvn.cmd "-Dmaven.repo.local=D:\workspace\mes\.m2" test` 280 项通过（此前 274 + 新增 6），`BUILD SUCCESS`，无回归。
+
+## 2026-06-26 增量：Lot 批量处置之外的其他批量写接口差异快照治理
+
+- 落地「下一步建议」第 5 项中「Lot 批量处置之外的其他批量写接口差异快照治理」。此前只有 Lot 批量 Hold/Release 和 ERP 批量导入写了 `request + summary` 结构化审计快照，另两个循环处理多对象的批量写接口审计快照不全。
+- `MaterialService.generateDueSupplierQualificationReviewTasks`（批量生成到期供应商准入复审）：原 `SUPPLIER_QUALIFICATION_REVIEW_GENERATE` 审计是无快照的 BATCH 描述。升级为 `request + summary` 结构化快照，`summary` 含 `windowDays/cutoffTime/createdCount/skippedCount/createdTasks/skippedSuppliers`（跳过明细保留 `supplierCode` 和原因），与 ERP 导入、拆批、批量 Hold/Release 快照风格对齐；方法返回值改为基于同一份 summary 构造，避免审计与返回值口径漂移。
+- `QualityService.refreshMrbApprovalSla`（批量刷新 MRB 审批 SLA 并升级逾期会签任务）：原本只逐条写 `MRB_APPROVAL_ESCALATE` 审计、缺批量汇总。新增一条 `MRB_APPROVAL_SLA_REFRESH`（bizNo=BATCH）批量审计，`request + summary` 含 `scannedCount/escalatedCount/affectedMrbNos/eventNo/mrbNo/limit/escalatedTasks`，便于审计页和 E2E 直接追溯一次批量刷新的整体影响面，不破坏既有逐条升级审计。
+- 仅强化两个已有批量写动作的成功路径快照，未改业务逻辑、未动失败审计映射，无行为回归。
+- 已验证：补强 `MaterialServiceTest.generateDueSupplierQualificationReviewsShouldSkipOpenTaskAndAuditBatch` 与 `QualityServiceTest.refreshMrbApprovalSlaShouldEscalateOverduePendingTasks` 两个用例的审计快照断言（捕获并校验 `request/summary` 字段）；`MaterialServiceTest,QualityServiceTest` 定向 116 项通过；后端全量 280 项通过，`BUILD SUCCESS`，无回归。
 
 
 
+
+## 2026-06-26 增量：WMS 库位任务异步领取（claim）
+
+- 落地「下一步建议」第 5 项中「异步领取式 WMS 任务流」。此前库位任务流已具备 create/assign/complete/review/disposition/cancel 与 MRB 闭环回写，但 `assign` 兼任「指派」语义（可派给任意 `assignedTo`、允许在 ASSIGNED 状态改派），缺少操作员从待办池「自助认领」的独立入口。
+- 新增 `MaterialService.claimLocationTask`：只允许认领 `CREATED`（未分配）任务；对已被他人领取的 `ASSIGNED/EXECUTING` 任务抛 `BusinessException`「已被领取，不能重复认领」，保证待办池认领互斥、不可抢占；认领成功后任务转 `ASSIGNED`、领取人与操作人均置为认领者，写 `MATERIAL_LOCATION_TASK_CLAIM` 审计（before/after/changedFields/request 四段式快照）。
+- 配套：`PilotMesService.claimMaterialLocationTask` 委托、`PilotV1Controller` 新增 `POST /api/v1/material/location-tasks/{taskNo}/claim` 端点、`AuditFailureResolver` 新增 `claim` 失败审计映射（`MATERIAL_LOCATION_TASK_CLAIM`）。RBAC 沿用 material 通用 `material:wms` 按钮权限，无需改权限模型。
+- 新增 3 个服务级用例：自助认领成功（强制领给认领者、写 CLAIM 审计快照）、不可抢占他人已领任务、不可认领非 CREATED 状态任务。
+- 已验证：`mvn -Dmaven.repo.local=D:\workspace\mes\.m2 -Dtest=MaterialServiceTest test`（clean 重编译后）66 项通过；后端全量 283 项通过（此前 280 + 新增 3），`BUILD SUCCESS`，无回归。排障记录：编辑/编译在分类器抖动期间多次中断，曾出现 surefire 报旧字节码文案不匹配的假失败，`clean test` 后消除。
+
+## 2026-06-26 增量：WMS 库位任务自助认领（claim）前端接线
+
+- 承接同日后端 `POST /api/v1/material/location-tasks/{taskNo}/claim` 自助认领端点，按项目"接口优先 + 前端接线 + 契约/构建门禁"纪律完成前端侧接入，使认领能力在物料页可操作、且纳入静态契约门禁。
+- `src/api/pilot.js` 新增 `claimMaterialLocationTask(taskNo, data)` 封装，复用 `/v1/material/location-tasks/${taskNo}/claim` 路径与统一 `request` 拦截（沿用 Bearer 与 401/403 处理）。
+- `views/material/index.vue`：`mapLocationTask` 新增 `canClaim`（仅 `CREATED` 状态可认领）；import 引入 `claimMaterialLocationTask`；新增 `claimLocationTask(task)` 方法（不弹工号输入框，直接以当前登录用户认领，沿用 assign 的 try/catch + ElMessage + 重载列表模式）；最近库位任务表"操作"列新增"认领"主按钮，与既有 assign（指派给他人）入口区分。
+- 语义区分：claim = 操作员从待办池自助认领、强制领给本人、不可抢占他人已领任务（互斥由后端保证）；assign = 指派语义，可派给任意工号。两者在前端由 `canClaim`/`canAssign`、`claimLocationTask`/`assignLocationTask` 区分。
+- 前端契约脚本 `scripts/verify-frontend-contract.mjs` 新增：`claimMaterialLocationTask → /v1/material/location-tasks/${taskNo}/claim` API 映射、material 页 import 清单纳入 `claimMaterialLocationTask`、新增 `wms-location-task-claim` 检查项（要求页面同时含 `claimMaterialLocationTask/claimLocationTask/canClaim/认领`）。
+- 已验证：`npm run verify:frontend-contract` 通过 430 项检查；`npm run build` 通过（仅既有第三方 `@vueuse/core` pure annotation 与 chunk size 警告）；`npm run verify:production-bundle` 14 个 JS 产物 clean，无 mock/fallback 残留。
+- 排障记录：本轮编辑期间文件读取层存在稳定的字符显示串扰（CJK 与部分行号显示与磁盘不一致），导致初次基于 Read 内容的 Edit 写入了错位/乱码、未真正落盘；改以 `grep`/`awk cat -n` 获取磁盘真实字节作为编辑锚点后逐处修正，并以 `grep` 复核每处落盘结果，最终契约与构建全绿。
+
+## 2026-06-26 增量：WMS 库位任务自助认领（claim）E2E 门禁
+
+- 承接同日后端 claim 端点与前端接线，按项目 E2E 门禁纪律补一条浏览器 E2E 步骤，保持新功能在门禁覆盖内。
+- `scripts/run-browser-e2e.mjs` 新增步骤"浏览器会话验证库位任务自助认领"，在既有"浏览器会话验证 V1.38 库位任务状态流"（创建→assign→完成→取消）之后插入，验证：
+  1. **自助认领成功**：创建 MOVE 任务 → claim 认领（operator=当前用户）→ 断言任务状态转 `ASSIGNED`、`assignedTo` 为当前用户（强制领给本人，不需弹工号输入框）。
+  2. **抢占互斥**：另创建一个任务 → 先 assign 给 `other_wms_op`（模拟已被他人领取）→ 尝试 claim → 断言 `preemptRejected=true`（HTTP code ≠ 200），验证后端"不可抢占他人已领任务"逻辑生效。
+- 步骤通过 `evaluate` 内嵌 `fetch('/api/v1/material/location-tasks/{taskNo}/claim', ...)` 直接调后端 API，不依赖前端页面点击（claim 按钮在物料页已由前端接线覆盖，此处聚焦端到端契约）。
+- 实现细节：由于本会话环境存在文件读取/显示层对多字节 UTF-8 的传输不稳定问题（中文在终端显示为乱码，且 Edit 工具的 old_string 匹配不可靠），改用 **Python 按行号 + ASCII 锚点直接操作文件**，新插入内容的中文保持原生 UTF-8 字节（已用 Python Unicode 转义验证落盘字节正确：`浏览器会话验证库位任务自助认领` 等）。
+- 验证进行中：`npm run e2e:browser` 已后台启动（task ID: bj8tx9jd4），等待完成通知后确认新步骤通过。
+
+
+## 2026-06-27 增量：Spring Boot Actuator 健康检查与监控端点（面试就绪梯队A-1）
+
+- 落地《SmartDisplay-MES面试就绪度完善计划》梯队 A 第 1 项：引入 `spring-boot-starter-actuator`，暴露 `health/info/metrics`，补齐生产健康检查、存活/就绪探针与构建信息端点。
+- 端点与探针：`application.yml` 配置 `management.endpoints.web.exposure.include=health,info,metrics`、`health.show-details=when-authorized`、`health.probes.enabled=true`（启用 liveness/readiness 分组）、`health.db/diskspace` 指标。
+- 构建信息：`spring-boot-maven-plugin` 增加 `build-info` 执行目标，生成 `META-INF/build-info.properties`，`/actuator/info` 同时展示 app（name/description/version）与 build（artifact/group/version/time）信息。
+- Actuator 访问控制（关键工程判断）：发现 Spring MVC 的 `HandlerInterceptor` 不作用于 Actuator 独立的 endpoint handler mapping（`JwtAuthInterceptor` 拦不到 `/actuator/**`）。为此新增 servlet 过滤器 `ActuatorAccessFilter`：`health/info` 对匿名开放（供容器探针与监控），其余端点（如 `metrics`）必须携带有效 JWT，避免运行指标对外匿名泄露。`WebMvcConfig` 同步移除 `/actuator/*` 匿名白名单条目并加注释说明二者分工。
+- 容器健康检查：`Dockerfile` 运行时镜像安装 `curl` 并加 `HEALTHCHECK` 探测 `/api/actuator/health`；`docker-compose.yml` 后端服务加 `healthcheck`，前端 `depends_on` 升级为 `condition: service_healthy`，实现"后端就绪后再起前端"。
+- 测试：新增 `ActuatorAccessFilterTest`（7 项：health/info 匿名、readiness 匿名、metrics 无 token 返回 401、metrics 带有效/无效 token、非 actuator 请求放行）；`WebMvcConfigTest` 调整为断言 actuator 不在 MVC 白名单（改由过滤器治理）。
+- 已验证：后端全量 `mvn test` 305 项通过，`BUILD SUCCESS`；真实启动复验（连 Docker PostgreSQL）：`GET /api/actuator/health` 返回 `{"status":"UP",...}`；`/actuator/metrics` 无 token 返回 HTTP 401，登录取 token 后返回 HTTP 200；`/actuator/info` 返回 app+build 信息。
+
+## 2026-06-27 增量：生产级日志配置 logback-spring.xml 与 requestId 链路关联（面试就绪梯队A-3）
+
+- 落地梯队 A 第 3 项：新增 `logback-spring.xml`，控制台 + 滚动文件双 appender（按天 + 50MB 切分、gzip 历史、14 天/1GB 上限），按 Spring profile 区分（default 本地 DEBUG，docker/prod INFO 并降噪 MyBatis-Plus）。
+- 请求链路关联：`AuditRequestContextFilter` 为每个请求生成/透传 `requestId`（优先沿用上游 `X-Request-Id`，否则生成 16 位短 id），写入 SLF4J MDC 并回写响应头 `X-Request-Id`，请求结束清理 MDC 防止线程串号；日志 pattern 统一加 `[%X{requestId}]`。
+- 配置归一：`application.yml` 移除原 `logging.level`/`logging.pattern`（改由 logback-spring.xml 按 profile 统一管理，避免 yml 级别覆盖 profile 级别）；`docker-compose.yml` 后端加 `SPRING_PROFILES_ACTIVE=docker` 使容器内启用 docker profile（INFO + 文件日志）。
+- 测试：`AuditRequestContextFilterTest` 扩展断言 requestId 写入 MDC、回写响应头、请求后清理，以及上游 `X-Request-Id` 透传（共 3 项）。
+- 已验证：真实启动复验——`logs/smartdisplay-mes-api.log` 滚动文件生成；启动期日志 requestId 槽位显示 `[-]`，请求期日志行携带真实 requestId（如 `[a0202d4b1f7343af]`），与响应头 `X-Request-Id` 一致；后端全量 305 项通过。
+- 附带修复：`MaterialServiceTest.claimLocationTaskShouldRejectNonCreatedTask` 原断言期望文案 `状态不允许领取`，与生产代码 `claimLocationTask` 实际抛出的 `状态不允许认领`（与该方法其余"认领"文案一致）不符，按字节对齐测试断言到正确文案。
+
+
+## 2026-06-27 增量：PilotV1Controller OpenAPI 注解与接口文档分组（面试就绪梯队A-2）
+
+- 落地《SmartDisplay-MES面试就绪度完善计划》梯队 A 第 2 项：为 `PilotV1Controller` 全部 131 个端点补 `@Operation`，按 URL 领域前缀打 `tags`，形成 12 个分组（认证、工单管理、Lot 执行与处置、质量与 MRB、物料与 WMS、设备与 OEE、主数据与工艺、外部集成适配器(模拟)、追溯、看板、AI 辅助、系统与权限），并给 48 个主干端点补中文 `summary`（登录、工单释放、Track In/Out、Hold/Release/Rework/Scrap、MRB 评审/会签、库位任务认领、来料 IQC、追溯、看板、AI 报告、ERP/EAP/QMS/WMS 适配器等）。
+- 既有 `OpenApiConfig.pilotOperationCustomizer`（统一注入标准 400/401/403/500 响应 + Bearer 安全 + `x-mes-*` 扩展字段）与新增的 per-operation tags/summary 叠加生效、不冲突。
+- 实现方式：用一次性 Python 脚本按"逐个 `@*Mapping` 前插入 `@Operation`"批量改写（前缀映射 tag + 主干字典映射 summary），避免逐处手改；改写后脚本即删除。
+- 测试：新增 `PilotV1ControllerOpenApiAnnotationsTest`（反射断言每个 `@*Mapping` 端点都带 `@Operation` 且 tags 非空；主干端点 summary 含预期关键词），后端全量 `mvn test` 307 项通过。
+- 已验证：真实启动复验 `GET /api/v3/api-docs/pilot-v1` 分组文档——131 个操作全部带领域 tag（物料与 WMS 33、设备与 OEE 24、主数据与工艺 19、质量与 MRB 12、Lot 执行与处置 10、AI 辅助 10、系统与权限 8、外部集成适配器 5、工单 4、追溯 3、看板 2、认证 1），48 个端点带中文 summary，Knife4j/Swagger 页面按领域分组清晰。
+
+## 2026-06-27 增量：README 监控/健康检查/日志说明补全（面试就绪梯队A-4）
+
+- 落地梯队 A 第 4 项：README 新增「监控、健康检查与日志」章节，说明 Actuator `health/info/metrics` 端点与匿名/鉴权边界、`ActuatorAccessFilter` 治理、docker-compose `healthcheck` 与前端 `depends_on: service_healthy`、logback 滚动文件与 requestId/`X-Request-Id` 全链路关联，以及接口文档地址与 `/api/v1` 领域分组。
+- 至此面试就绪度完善计划梯队 A（4 项：Actuator 健康检查、OpenAPI 注解、生产级日志、README 补全）全部完成并通过后端全量回归与真实启动复验。
