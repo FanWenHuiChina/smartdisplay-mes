@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
     public Result<Void> handleException(Exception e, HttpServletRequest request) {
         log.error("系统异常: ", e);
         auditFailureService.record(request, e.getClass().getSimpleName(), 500, e.getMessage());
-        return Result.fail("系统异常: " + e.getMessage());
+        return Result.fail("系统异常，请稍后重试或联系管理员");
     }
 
     private String validationMessage(BindException e) {

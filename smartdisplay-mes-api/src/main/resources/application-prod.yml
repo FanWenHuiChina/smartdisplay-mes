@@ -1,0 +1,8 @@
+# 生产 profile 加固（配合 ProductionSecurityGuard）：
+# - 对外关闭接口文档，避免 API 结构暴露（演示用 docker profile 仍保留 Swagger）；
+# - 安全注入由 ProductionSecurityGuard 在启动时强制校验。
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
