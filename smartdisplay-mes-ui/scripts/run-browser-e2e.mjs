@@ -471,7 +471,7 @@ async function main() {
       }
       const payload = {
         taskType: 'MOVE',
-        batchNo: 'PI2606-A',
+        batchNo: 'PI260606-A',
         targetLocation: 'WIP-A-02',
         operator: '${escapeJs(username)}',
         sourceLocation: 'WIP-A-01',
