@@ -2,13 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: smartdisplay-mes-postgres
+    mem_limit: 512m
+    cpus: 1.0
     environment:
       POSTGRES_DB: smartdisplay_mes
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: mes123456
       TZ: Asia/Shanghai
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -24,6 +26,8 @@ services:
       context: ./smartdisplay-mes-api
       dockerfile: Dockerfile
     container_name: smartdisplay-mes-api
+    mem_limit: 1g
+    cpus: 1.5
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +54,8 @@ services:
       context: ./smartdisplay-mes-ui
       dockerfile: Dockerfile
     container_name: smartdisplay-mes-ui
+    mem_limit: 128m
+    cpus: 0.5
     depends_on:
       backend:
         condition: service_healthy
