@@ -93,7 +93,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: smartdisplay-mes-ui/package-lock.json
 
@@ -161,7 +161,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Start pilot stack
         run: docker compose up -d --build
