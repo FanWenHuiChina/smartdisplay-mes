@@ -10,6 +10,7 @@ import com.visionox.mes.lot.dto.TrackOutRequest;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
+import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
 import com.visionox.mes.quality.entity.ExceptionEvent;
@@ -33,6 +34,8 @@ import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,6 +81,10 @@ public class QualityService {
     private final HoldRecordMapper holdRecordMapper;
     private final AuditLogService auditLogService;
     private final RolePermissionService rolePermissionService;
+
+    @Autowired
+    @Lazy
+    private MaterialService materialService;
 
     /**
      * Track Out 后执行质量判定，返回最终出站结果。
@@ -143,10 +150,20 @@ public class QualityService {
     }
 
     public List<Map<String, Object>> exceptionRows(String lotNo) {
+        return exceptionRows(lotNo, null, null);
+    }
+
+    public List<Map<String, Object>> exceptionRows(String lotNo, String sourceModule, String status) {
         LambdaQueryWrapper<ExceptionEvent> wrapper = new LambdaQueryWrapper<>();
         applyLotDataScope(wrapper);
         if (lotNo != null && !lotNo.isBlank()) {
             wrapper.eq(ExceptionEvent::getLotNo, lotNo);
+        }
+        if (sourceModule != null && !sourceModule.isBlank()) {
+            wrapper.eq(ExceptionEvent::getSourceModule, sourceModule.trim().toUpperCase(Locale.ROOT));
+        }
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(ExceptionEvent::getStatus, status.trim().toUpperCase(Locale.ROOT));
         }
         wrapper.orderByDesc(ExceptionEvent::getOccurredTime).last("LIMIT 100");
         return exceptionEventMapper.selectList(wrapper).stream()
@@ -198,6 +215,65 @@ public class QualityService {
         data.put("adapterCode", "simulated-qms-adapter");
         data.put("sourceSystem", text(source, "sourceSystem", "qms-adapter"));
         data.put("messageType", "INSPECTION_RESULT");
+        data.put("lotNo", lotNo);
+        data.put("result", hasNg ? "NG" : "OK");
+        data.put("inspectionCount", inspections.size());
+        data.put("defectCount", defectCount);
+        data.put("holdApplied", hasNg);
+        data.put("inspections", inspections.stream().map(this::inspectionRow).collect(Collectors.toList()));
+        if (event != null) {
+            data.put("exceptionEvent", exceptionRow(event));
+        }
+        return data;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> createManualInspection(Map<String, Object> request) {
+        Map<String, Object> source = new LinkedHashMap<>(request == null ? Map.of() : request);
+        source.putIfAbsent("sourceSystem", "mes-quality-workbench");
+        source.putIfAbsent("defectCode", "D-MANUAL-NG");
+        String lotNo = requiredQmsText(source, "lotNo", "质量检验录入缺少Lot号");
+        Lot lot = lotMapper.selectOne(new LambdaQueryWrapper<Lot>().eq(Lot::getLotNo, lotNo).last("LIMIT 1"));
+        if (lot == null) {
+            throw new BusinessException("质量检验录入Lot不存在: " + lotNo);
+        }
+
+        String inspector = text(source, "inspector", text(source, "operator", AuthContext.username()));
+        LotStepRecord stepRecord = externalStepRecord(lot, source);
+        List<QualityInspection> inspections = new ArrayList<>();
+        int defectCount = 0;
+
+        for (Map<String, Object> item : qmsInspectionItems(source)) {
+            String itemResult = normalizeQmsResult(text(item, "result", text(source, "result", "OK")));
+            QualityInspection inspection = buildExternalInspection(lot, stepRecord, source, item, inspector, itemResult);
+            inspection.setSource("MES_MANUAL");
+            inspection.setRemark(text(item, "remark", text(source, "remark", "MES质量工作台手工录入")));
+            inspectionMapper.insert(inspection);
+            inspections.add(inspection);
+            if ("NG".equals(itemResult)) {
+                defectCount++;
+                createDefect(inspection,
+                        text(item, "defectCode", text(source, "defectCode", "D-MANUAL-NG")),
+                        text(item, "defectName", text(item, "defectDescription",
+                                inspection.getItemName() + "不合格")),
+                        text(item, "defectLevel", text(source, "defectLevel", "MAJOR")));
+            }
+        }
+
+        boolean hasNg = inspections.stream().anyMatch(inspection -> "NG".equals(inspection.getResult()));
+        audit("QUALITY_INSPECTION", lotNo, "LOT",
+                "MES质量检验录入 result=" + (hasNg ? "NG" : "OK") + ", items=" + inspections.size(), inspector,
+                JSONUtil.toJsonStr(source));
+
+        ExceptionEvent event = null;
+        if (hasNg) {
+            event = createException(lot, stepRecord, inspections);
+            autoHold(lotNo, "QUALITY", "MES质量检验不合格，异常单 " + event.getEventNo() + " 自动 Hold", inspector);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sourceSystem", "mes-quality-workbench");
+        data.put("messageType", "MANUAL_INSPECTION");
         data.put("lotNo", lotNo);
         data.put("result", hasNg ? "NG" : "OK");
         data.put("inspectionCount", inspections.size());
@@ -320,6 +396,18 @@ public class QualityService {
         row.put("operator", operator);
         row.put("refreshedAt", now);
         row.put("tasks", escalatedRows);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("scannedCount", tasks.size());
+        summary.put("escalatedCount", escalatedRows.size());
+        summary.put("affectedMrbNos", new ArrayList<>(affectedMrbNos));
+        summary.put("eventNo", eventNo);
+        summary.put("mrbNo", mrbNo);
+        summary.put("limit", limit);
+        summary.put("escalatedTasks", escalatedRows);
+        audit("MRB_APPROVAL_SLA_REFRESH", "BATCH", "MRB_APPROVAL",
+                "MRB审批SLA刷新 scanned=" + tasks.size() + ", escalated=" + escalatedRows.size(),
+                operator, JSONUtil.toJsonStr(Map.of("request", request == null ? Map.of() : request, "summary", summary)));
         return row;
     }
 
@@ -411,6 +499,16 @@ public class QualityService {
 
         audit("EXCEPTION_CLOSE", event.getEventNo(), "EXCEPTION",
                 "异常关闭: action=" + action + ", conclusion=" + conclusion, operator, JSONUtil.toJsonStr(request));
+
+        if ("MATERIAL_LOCATION_TASK".equals(event.getSourceRefType())
+                && event.getSourceRefNo() != null && !event.getSourceRefNo().isBlank()) {
+            try {
+                materialService.recordLocationTaskExceptionClosure(event, operator);
+            } catch (Exception ex) {
+                log.warn("回写WMS库位任务MRB关闭失败，已降级不阻断主流程: eventNo={}, taskNo={}, reason={}",
+                        event.getEventNo(), event.getSourceRefNo(), ex.getMessage());
+            }
+        }
         return exceptionRow(event);
     }
 
@@ -720,6 +818,9 @@ public class QualityService {
         row.put("stepCode", event.getStepCode());
         row.put("equipmentCode", event.getEquipmentCode());
         row.put("sourceModule", event.getSourceModule());
+        row.put("sourceRefType", event.getSourceRefType());
+        row.put("sourceRefNo", event.getSourceRefNo());
+        row.put("sourcePayload", event.getSourcePayload());
         row.put("title", event.getTitle());
         row.put("description", event.getDescription());
         row.put("status", event.getStatus());

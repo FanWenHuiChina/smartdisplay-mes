@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -79,6 +80,54 @@ class TrackInServiceTest {
                 .hasMessageContaining("PROCESSING");
 
         verify(routeService, never()).validateTrackInStep(any(), any(), any());
+        verify(lotMapper, never()).updateById(any());
+        verify(stepRecordMapper, never()).insert(any());
+    }
+
+    @Test
+    void trackInChecksShouldReturnPassMatrixWhenAllRulesPass() {
+        Lot lot = lot("LOT001", "READY", 0);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(equipmentMapper.selectOne(any())).thenReturn(equipment("COATER_01", "IDLE", "[\"COATING\"]"));
+        when(recipeService.findActiveRecipe("OLED_PANEL", "COATING", "COATER_01")).thenReturn(recipe("RCP_COAT_01"));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
+
+        Map<String, Object> result = trackInService.trackInChecks(trackInRequest());
+
+        assertThat(result)
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("requestedStepCode", "COATING")
+                .containsEntry("equipmentCode", "COATER_01")
+                .containsEntry("recipeCode", "RCP_COAT_01")
+                .containsEntry("trackInReady", true)
+                .containsEntry("blockingFailedCount", 0L);
+        assertThat(result.get("checks")).asList().hasSize(8);
+        verify(routeService).validateTrackInStep("OLED_PANEL", "COATING", "COATING");
+        verify(materialService).validateReadiness(lot, "COATING");
+        verify(lotMapper, never()).updateById(any());
+        verify(stepRecordMapper, never()).insert(any());
+    }
+
+    @Test
+    void trackInChecksShouldReturnBlockingReasonWithoutWritingWhenEquipmentCannotRunStep() {
+        Lot lot = lot("LOT001", "READY", 0);
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(equipmentMapper.selectOne(any())).thenReturn(equipment("COATER_01", "DOWN", "[\"EXPOSURE\"]"));
+        when(workShiftMapper.selectList(any())).thenReturn(List.of(activeShift()));
+
+        Map<String, Object> result = trackInService.trackInChecks(trackInRequest());
+
+        assertThat(result)
+                .containsEntry("trackInReady", false)
+                .containsEntry("equipmentStatus", "DOWN");
+        assertThat(result.get("blockingFailedCount")).isEqualTo(4L);
+        assertThat(result.get("checks").toString())
+                .contains("设备状态")
+                .contains("设备能力")
+                .contains("Recipe")
+                .contains("物料齐套");
+        verify(recipeService, never()).findActiveRecipe(any(), any(), any());
+        verify(materialService, never()).validateReadiness(any(), any());
         verify(lotMapper, never()).updateById(any());
         verify(stepRecordMapper, never()).insert(any());
     }

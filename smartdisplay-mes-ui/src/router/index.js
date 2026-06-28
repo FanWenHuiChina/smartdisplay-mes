@@ -79,11 +79,15 @@ const routes = [
       },
       {
         path: 'lot',
-        redirect: '/execution'
+        name: 'LotManagement',
+        meta: { menu: 'execution' },
+        component: () => import('../views/lot/index.vue')
       },
       {
         path: 'recipe',
-        redirect: '/master'
+        name: 'RecipeManagement',
+        meta: { menu: 'recipe' },
+        component: () => import('../views/recipe/index.vue')
       }
     ]
   }

@@ -66,6 +66,22 @@ public class EapGatewayService {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, Object> messageDetail(String messageNo) {
+        EquipmentGatewayMessage message = messageMapper.selectOne(new LambdaQueryWrapper<EquipmentGatewayMessage>()
+                .eq(EquipmentGatewayMessage::getMessageNo, messageNo));
+        if (message == null) {
+            throw new BusinessException("Equipment gateway message not found: " + messageNo);
+        }
+        Map<String, Object> row = messageRow(message);
+        row.put("payloadSnapshot", parseSnapshot(message.getPayloadSnapshot()));
+        row.put("normalizedPayloadSnapshot", parseSnapshot(message.getNormalizedPayloadSnapshot()));
+        row.put("responseSnapshot", parseSnapshot(message.getResponseSnapshot()));
+        row.put("occurredTime", message.getOccurredTime());
+        row.put("processedTime", message.getProcessedTime());
+        row.put("diagnostic", messageDiagnostic(message));
+        return row;
+    }
+
     public List<Map<String, Object>> healthChecks(String gatewayCode) {
         LambdaQueryWrapper<EquipmentGatewayHealthCheck> wrapper = new LambdaQueryWrapper<>();
         if (gatewayCode != null && !gatewayCode.isBlank()) {
@@ -100,7 +116,7 @@ public class EapGatewayService {
         gateway.setProtocolType(normalizeProtocol(requiredText(safeRequest, "protocolType")));
         EapProtocolDriver driver = protocolDriverRegistry.resolve(gateway.getProtocolType());
         gateway.setDriverCode(text(safeRequest, "driverCode", driver.driverCode()));
-        gateway.setDriverMode(text(safeRequest, "driverMode", "SIMULATED").toUpperCase(Locale.ROOT));
+        gateway.setDriverMode(text(safeRequest, "driverMode", defaultDriverMode(driver)).toUpperCase(Locale.ROOT));
         gateway.setEndpointUri(requiredText(safeRequest, "endpointUri"));
         gateway.setLineCode(text(safeRequest, "lineCode", "LINE_01"));
         gateway.setEquipmentCodes(equipmentCodesJson(value(safeRequest, "equipmentCodes")));
@@ -198,7 +214,6 @@ public class EapGatewayService {
         return Map.of("check", healthCheckRow(check), "gateway", gatewayRow(gateway), "driverResult", driverResult);
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> ingestMessage(Map<String, Object> request, EapAdapter adapter) {
         Map<String, Object> safeRequest = safeRequest(request);
         LocalDateTime now = LocalDateTime.now();
@@ -254,6 +269,7 @@ public class EapGatewayService {
             message.setProcessStatus("FAILED");
             message.setErrorMessage(truncate(ex.getMessage(), 500));
             message.setProcessedTime(LocalDateTime.now());
+            message.setResponseSnapshot(JSONUtil.toJsonStr(failedResponse(ex, gatewayCode, message)));
             messageMapper.updateById(message);
             if (gateway != null) {
                 gateway.setStatus("DEGRADED");
@@ -261,7 +277,10 @@ public class EapGatewayService {
                 gateway.setUpdatedTime(LocalDateTime.now());
                 gatewayMapper.updateById(gateway);
             }
-            throw ex;
+            auditFailure("EAP_GATEWAY_MESSAGE_FAILED", message.getMessageNo(), "EQUIPMENT_GATEWAY_MESSAGE",
+                    "gateway=" + gatewayCode + ", type=" + message.getMessageType() + ", error=" + message.getErrorMessage(),
+                    text(safeRequest, "operator", currentUser()), message.getPayloadSnapshot());
+            return Map.of("message", messageRow(message), "accepted", false, "errorMessage", message.getErrorMessage());
         }
     }
 
@@ -334,6 +353,66 @@ public class EapGatewayService {
         row.put("time", formatTime(message.getOccurredTime()));
         row.put("type", statusType(message.getProcessStatus()));
         return row;
+    }
+
+    private Map<String, Object> messageDiagnostic(EquipmentGatewayMessage message) {
+        Map<String, Object> diagnostic = new LinkedHashMap<>();
+        diagnostic.put("canRetry", "FAILED".equalsIgnoreCase(valueOr(message.getProcessStatus(), "")));
+        diagnostic.put("failureCategory", failureCategory(message.getErrorMessage()));
+        diagnostic.put("operatorAction", operatorAction(message.getErrorMessage()));
+        diagnostic.put("hasNormalizedPayload", message.getNormalizedPayloadSnapshot() != null
+                && !message.getNormalizedPayloadSnapshot().isBlank());
+        diagnostic.put("hasAdapterResponse", message.getResponseSnapshot() != null
+                && !message.getResponseSnapshot().isBlank());
+        return diagnostic;
+    }
+
+    private Map<String, Object> failedResponse(RuntimeException ex, String gatewayCode, EquipmentGatewayMessage message) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("accepted", false);
+        response.put("gatewayCode", gatewayCode);
+        response.put("messageNo", message.getMessageNo());
+        response.put("messageType", message.getMessageType());
+        response.put("errorClass", ex.getClass().getSimpleName());
+        response.put("errorMessage", truncate(ex.getMessage(), 500));
+        response.put("failedAt", LocalDateTime.now().toString());
+        return response;
+    }
+
+    private Object parseSnapshot(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) {
+            return null;
+        }
+        try {
+            return JSONUtil.parse(snapshot);
+        } catch (RuntimeException ex) {
+            return snapshot;
+        }
+    }
+
+    private String failureCategory(String errorMessage) {
+        String error = valueOr(errorMessage, "").toLowerCase(Locale.ROOT);
+        if (error.contains("frame") || error.contains("stream/function") || error.contains("nodeid")
+                || error.contains("signature")) {
+            return "PROTOCOL_FRAME";
+        }
+        if (error.contains("unsupported")) {
+            return "MESSAGE_TYPE";
+        }
+        if (error.contains("equipment")) {
+            return "EQUIPMENT";
+        }
+        return error.isBlank() ? "NONE" : "ADAPTER";
+    }
+
+    private String operatorAction(String errorMessage) {
+        return switch (failureCategory(errorMessage)) {
+            case "PROTOCOL_FRAME" -> "检查协议帧字段、设备编码和网关协议类型是否匹配。";
+            case "MESSAGE_TYPE" -> "确认消息类型在 STATUS/CYCLE/PARAMETER/RECIPE_DOWNLOAD 范围内。";
+            case "EQUIPMENT" -> "确认设备主数据存在、状态可用，并检查设备编码是否正确。";
+            case "ADAPTER" -> "查看响应快照与适配器日志，必要时联系设备工程师复核。";
+            default -> "该消息已正常处理，无需处置。";
+        };
     }
 
     private String normalizeProtocol(String value) {
@@ -425,6 +504,11 @@ public class EapGatewayService {
         return JSONUtil.toJsonStr(snapshot);
     }
 
+    private String defaultDriverMode(EapProtocolDriver driver) {
+        Object mode = driver.capabilities().get("driverMode");
+        return mode == null || String.valueOf(mode).isBlank() ? "SIMULATED" : String.valueOf(mode);
+    }
+
     private Integer booleanFlag(Object value, int fallback) {
         if (value == null || String.valueOf(value).isBlank()) {
             return fallback;
@@ -455,6 +539,14 @@ public class EapGatewayService {
             auditLogService.record(action, bizNo, bizType, description, operator, "equipment-gateway-service", snapshot);
         } catch (Exception e) {
             log.warn("equipment gateway audit write failed: action={}, bizNo={}, reason={}", action, bizNo, e.getMessage());
+        }
+    }
+
+    private void auditFailure(String action, String bizNo, String bizType, String description, String operator, String snapshot) {
+        try {
+            auditLogService.recordFailure(action, bizNo, bizType, description, operator, "equipment-gateway-service", snapshot);
+        } catch (Exception e) {
+            log.warn("equipment gateway failure audit write failed: action={}, bizNo={}, reason={}", action, bizNo, e.getMessage());
         }
     }
 

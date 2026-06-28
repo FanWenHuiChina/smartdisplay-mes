@@ -24,6 +24,23 @@ class AuditFailureResolverTest {
     }
 
     @Test
+    void resolveShouldMapLotBatchHoldAndReleaseFailure() {
+        Optional<AuditFailureTarget> holdTarget = resolver.resolve(
+                new MockHttpServletRequest("POST", "/api/v1/lots/batch-hold"));
+        Optional<AuditFailureTarget> releaseTarget = resolver.resolve(
+                new MockHttpServletRequest("POST", "/api/v1/lots/batch-release"));
+
+        assertThat(holdTarget).isPresent();
+        assertThat(holdTarget.get().action()).isEqualTo("LOT_BATCH_HOLD");
+        assertThat(holdTarget.get().bizNo()).isNull();
+        assertThat(holdTarget.get().bizType()).isEqualTo("LOT");
+        assertThat(releaseTarget).isPresent();
+        assertThat(releaseTarget.get().action()).isEqualTo("LOT_BATCH_RELEASE");
+        assertThat(releaseTarget.get().bizNo()).isNull();
+        assertThat(releaseTarget.get().bizType()).isEqualTo("LOT");
+    }
+
+    @Test
     void resolveShouldRemoveContextPathBeforeMapping() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/orders/MO001/release");
         request.setContextPath("/api");
@@ -70,6 +87,30 @@ class AuditFailureResolverTest {
         assertThat(target.get().action()).isEqualTo("MATERIAL_IQC");
         assertThat(target.get().bizNo()).isEqualTo("PI_INK_B001");
         assertThat(target.get().bizType()).isEqualTo("MATERIAL_BATCH");
+    }
+
+    @Test
+    void resolveShouldMapMaterialLocationTaskReviewFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/location-tasks/MLT-001/review");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("MATERIAL_LOCATION_TASK_REVIEW");
+        assertThat(target.get().bizNo()).isEqualTo("MLT-001");
+        assertThat(target.get().bizType()).isEqualTo("MATERIAL_LOCATION_TASK");
+    }
+
+    @Test
+    void resolveShouldMapMaterialLocationTaskDispositionFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/location-tasks/MLT-001/disposition");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("MATERIAL_LOCATION_TASK_DISPOSITION");
+        assertThat(target.get().bizNo()).isEqualTo("MLT-001");
+        assertThat(target.get().bizType()).isEqualTo("MATERIAL_LOCATION_TASK");
     }
 
     @Test
@@ -129,6 +170,18 @@ class AuditFailureResolverTest {
         assertThat(target).isPresent();
         assertThat(target.get().action()).isEqualTo("SUPPLIER_QUALIFICATION_REVIEW_DECIDE");
         assertThat(target.get().bizNo()).isEqualTo("SQR-001");
+        assertThat(target.get().bizType()).isEqualTo("SUPPLIER_REVIEW");
+    }
+
+    @Test
+    void resolveShouldMapSupplierQualificationReviewGenerateDueFailure() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/material/suppliers/qualification-reviews/generate-due");
+
+        Optional<AuditFailureTarget> target = resolver.resolve(request);
+
+        assertThat(target).isPresent();
+        assertThat(target.get().action()).isEqualTo("SUPPLIER_QUALIFICATION_REVIEW_GENERATE");
+        assertThat(target.get().bizNo()).isNull();
         assertThat(target.get().bizType()).isEqualTo("SUPPLIER_REVIEW");
     }
 

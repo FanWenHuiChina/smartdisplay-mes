@@ -9,6 +9,7 @@
 # Java / Maven
 target/
 .m2/
+smartdisplay-mes-api/workspacemes.m2/
 *.log
 mes.log*
 release.properties

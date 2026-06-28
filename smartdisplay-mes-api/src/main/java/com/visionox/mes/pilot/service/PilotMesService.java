@@ -49,6 +49,7 @@ import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,14 +64,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * 生产级试点接口聚合服务。
  *
  * <p>当前版本优先打通单基地单产线试点闭环：真实读取已有 Recipe、Lot、
- * 设备、工序、工单、质量和异常表；尚未建表的物料、AI数据先由模拟适配器返回，
- * 后续再替换为正式领域表。</p>
+ * 设备、工序、工单、质量、物料、审计和异常表。演示 fallback 必须显式开启，
+ * 生产默认不静默返回样例数据。</p>
  */
 @Service
 @Slf4j
@@ -112,6 +114,10 @@ public class PilotMesService {
     private final EquipmentService equipmentService;
     private final EapAdapter eapAdapter;
     private final EapGatewayService eapGatewayService;
+    private final LotTraceAssembler traceAssembler;
+
+    @Value("${mes.pilot.fallback-enabled:false}")
+    private boolean pilotFallbackEnabled;
 
     public Map<String, Object> overview() {
         List<Lot> lots = allLots();
@@ -155,13 +161,26 @@ public class PilotMesService {
         return orderMapper.selectPage(new Page<>(current, size), wrapper);
     }
 
+    public Map<String, Object> orderReleaseChecks(String orderNo, int lotQty) {
+        ProductionOrder order = findOrderByNo(orderNo);
+        return buildOrderReleaseChecks(order, Math.max(1, lotQty));
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ProductionOrder createOrder(Map<String, Object> request) {
         ProductionOrder order = new ProductionOrder();
         order.setOrderNo(text(request, "orderNo", "MO" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now())));
-        order.setProductCode(text(request, "productCode", "AMOLED_65"));
-        order.setProductName(text(request, "productName", order.getProductCode() + " 柔性屏"));
-        order.setPlannedQty(intValue(value(request, "plannedQty"), 1000));
+        String productCode = text(request, "productCode", "");
+        if (productCode.isBlank()) {
+            throw new BusinessException("创建工单必须指定产品编码");
+        }
+        order.setProductCode(productCode);
+        order.setProductName(text(request, "productName", productCode + " 柔性屏"));
+        int plannedQty = intValue(value(request, "plannedQty"), 0);
+        if (plannedQty <= 0) {
+            throw new BusinessException("创建工单必须填写大于0的计划数量");
+        }
+        order.setPlannedQty(plannedQty);
         order.setCompletedQty(0);
         order.setPriority(intValue(value(request, "priority"), 0));
         order.setLineCode(text(request, "lineCode", "LINE_01"));
@@ -177,14 +196,16 @@ public class PilotMesService {
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> releaseOrder(String orderNo, Map<String, Object> request) {
-        ProductionOrder order = orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, orderNo));
+        ProductionOrder order = findOrderByNo(orderNo);
         if (order == null) {
             throw new BusinessException("工单不存在: " + orderNo);
         }
         Map<String, Object> before = orderSnapshot(order);
         int lotQty = Math.max(1, intValue(value(request, "lotQty"), 100));
+        Map<String, Object> releaseChecks = buildOrderReleaseChecks(order, lotQty);
+        assertReleaseChecksPassed(releaseChecks);
         int lotCount = Math.max(1, (int) Math.ceil(order.getPlannedQty() * 1.0 / lotQty));
-        String firstStepCode = firstRouteStepCode(order.getProductCode());
+        String firstStepCode = objectText(releaseChecks.get("firstStepCode"), firstRouteStepCode(order.getProductCode()));
         String operator = currentUser();
         List<Lot> lots = new ArrayList<>();
         List<SerialNumber> createdSerialNumbers = new ArrayList<>();
@@ -228,6 +249,208 @@ public class PilotMesService {
                 "createdSnCount", createdSerialNumbers.size(),
                 "createdSnPreview", createdSerialNumbers.stream().limit(10).map(SerialNumber::getSn).toList()
         );
+    }
+
+    private ProductionOrder findOrderByNo(String orderNo) {
+        if (!hasText(orderNo)) {
+            return null;
+        }
+        return orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, orderNo));
+    }
+
+    private Map<String, Object> buildOrderReleaseChecks(ProductionOrder order, int lotQty) {
+        int normalizedLotQty = Math.max(1, lotQty);
+        List<Map<String, Object>> checks = new ArrayList<>();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("checkedTime", LocalDateTime.now());
+        result.put("lotQty", normalizedLotQty);
+        result.put("orderNo", order == null ? "" : order.getOrderNo());
+
+        if (order == null) {
+            checks.add(releaseCheck("orderStatus", "工单状态", false, true, "red", "工单不存在或无权限访问"));
+            checks.add(releaseCheck("product", "产品资料", false, true, "gray", "缺少工单，无法解析产品"));
+            checks.add(releaseCheck("route", "Route版本", false, true, "gray", "缺少工单，无法读取生效路线"));
+            checks.add(releaseCheck("bom", "BOM", false, true, "gray", "缺少工单，无法读取生效BOM"));
+            checks.add(releaseCheck("recipe", "Recipe覆盖", false, true, "gray", "缺少工单，无法校验Recipe"));
+            checks.add(releaseCheck("equipment", "设备能力", false, true, "gray", "缺少工单，无法校验产线设备"));
+            checks.add(releaseCheck("lotSplit", "Lot拆分", false, true, "gray", "缺少工单，无法计算Lot数量"));
+            checks.add(releaseCheck("permissionAudit", "权限审计", currentRoleHasButton("order:release"), false,
+                    currentRoleHasButton("order:release") ? "green" : "amber", permissionAuditText()));
+            return releaseCheckResult(result, checks);
+        }
+
+        result.put("productCode", order.getProductCode());
+        result.put("lineCode", order.getLineCode());
+        result.put("plannedQty", order.getPlannedQty());
+        result.put("status", order.getStatus());
+
+        boolean created = "CREATED".equals(order.getStatus());
+        checks.add(releaseCheck("orderStatus", "工单状态", created, true, created ? "green" : "red",
+                created ? "CREATED，可释放" : "当前状态 " + valueOr(order.getStatus(), "-") + " 不允许释放"));
+
+        Map<String, Object> product = products().stream()
+                .filter(row -> Objects.equals(order.getProductCode(), row.get("productCode")))
+                .findFirst()
+                .orElse(Map.of());
+        boolean productReady = !product.isEmpty() && "ACTIVE".equals(product.get("status"));
+        boolean productBound = hasText(order.getProductCode());
+        checks.add(releaseCheck("product", "产品资料", productBound, true,
+                productReady ? "green" : productBound ? "amber" : "red",
+                productReady ? order.getProductCode() + " 已启用"
+                        : productBound ? order.getProductCode() + " 已绑定，生产适配由Route/BOM/Recipe交叉校验"
+                        : "产品编码为空"));
+
+        Route activeRoute = null;
+        List<String> routeSteps = List.of();
+        String routeError = "";
+        if (hasText(order.getProductCode())) {
+            try {
+                activeRoute = routeService.findActiveRoute(order.getProductCode());
+                routeSteps = safeList(routeService.activeStepCodes(order.getProductCode()));
+            } catch (Exception e) {
+                routeError = e.getMessage();
+            }
+        }
+        boolean routeReady = activeRoute != null && !routeSteps.isEmpty();
+        String firstStepCode = routeSteps.isEmpty() ? "" : routeSteps.get(0);
+        result.put("routeCode", activeRoute == null ? "" : activeRoute.getRouteCode());
+        result.put("routeVersion", activeRoute == null ? "" : activeRoute.getRouteVersion());
+        result.put("firstStepCode", firstStepCode);
+        result.put("routeSteps", routeSteps);
+        checks.add(releaseCheck("route", "Route版本", routeReady, true, routeReady ? "green" : "red",
+                routeReady
+                        ? activeRoute.getRouteCode() + " / " + valueOr(activeRoute.getRouteVersion(), "-") + "，首站 " + firstStepCode
+                        : "未找到生效Route或工序: " + valueOr(routeError, order.getProductCode())));
+
+        Map<String, Object> bom = Map.of();
+        String bomError = "";
+        if (hasText(order.getProductCode())) {
+            try {
+                Map<String, Object> activeBom = materialService.activeBomSummary(order.getProductCode());
+                bom = activeBom == null ? Map.of() : activeBom;
+            } catch (Exception e) {
+                bomError = e.getMessage();
+            }
+        }
+        boolean bomReady = !bom.isEmpty() && "ACTIVE".equals(bom.get("status"));
+        result.put("bomCode", objectText(bom.get("bomCode"), ""));
+        result.put("bomVersion", objectText(bom.get("bomVersion"), ""));
+        checks.add(releaseCheck("bom", "BOM", bomReady, true, bomReady ? "green" : "red",
+                bomReady
+                        ? bom.get("bomCode") + " / " + bom.get("bomVersion") + "，关键物料 " + bom.getOrDefault("keyItems", 0)
+                        : "未找到生效BOM: " + valueOr(bomError, order.getProductCode())));
+
+        List<Equipment> lineEquipments = safeList(equipmentMapper.selectList(new LambdaQueryWrapper<Equipment>()
+                .eq(Equipment::getLineCode, order.getLineCode())));
+        List<String> missingEquipmentSteps = routeSteps.stream()
+                .filter(step -> lineEquipments.stream().noneMatch(equipment -> usableEquipment(equipment) && supportsStep(equipment, step)))
+                .toList();
+        boolean equipmentReady = routeReady && missingEquipmentSteps.isEmpty();
+        result.put("equipmentCount", lineEquipments.size());
+        result.put("missingEquipmentSteps", missingEquipmentSteps);
+        checks.add(releaseCheck("equipment", "设备能力", equipmentReady, true, equipmentReady ? "green" : "red",
+                equipmentReady
+                        ? order.getLineCode() + " 覆盖 " + routeSteps.size() + " 个工序"
+                        : "缺少可用设备能力: " + String.join("/", missingEquipmentSteps)));
+
+        List<Recipe> activeRecipes = safeList(recipeMapper.selectList(new LambdaQueryWrapper<Recipe>()
+                .eq(Recipe::getProductCode, order.getProductCode())
+                .eq(Recipe::getStatus, "ACTIVE")));
+        Set<String> capableEquipments = lineEquipments.stream()
+                .filter(this::usableEquipment)
+                .map(Equipment::getEquipmentCode)
+                .filter(this::hasText)
+                .collect(Collectors.toSet());
+        List<String> missingRecipeSteps = routeSteps.stream()
+                .filter(step -> activeRecipes.stream().noneMatch(recipe -> step.equals(recipe.getStepCode())
+                        && (!hasText(recipe.getEquipmentCode()) || capableEquipments.contains(recipe.getEquipmentCode()))))
+                .toList();
+        boolean recipeReady = routeReady && missingRecipeSteps.isEmpty();
+        result.put("recipeCount", activeRecipes.size());
+        result.put("missingRecipeSteps", missingRecipeSteps);
+        checks.add(releaseCheck("recipe", "Recipe覆盖", recipeReady, true, recipeReady ? "green" : "red",
+                recipeReady
+                        ? "产品+工序+设备 Recipe 覆盖 " + routeSteps.size() + "/" + routeSteps.size()
+                        : "缺少生效Recipe: " + String.join("/", missingRecipeSteps)));
+
+        int plannedQty = order.getPlannedQty() == null ? 0 : order.getPlannedQty();
+        int lotCount = plannedQty <= 0 ? 0 : Math.max(1, (int) Math.ceil(plannedQty * 1.0 / normalizedLotQty));
+        result.put("expectedLotCount", lotCount);
+        boolean lotSplitReady = plannedQty > 0 && normalizedLotQty > 0;
+        checks.add(releaseCheck("lotSplit", "Lot拆分", lotSplitReady, true, lotSplitReady ? "green" : "red",
+                lotSplitReady ? "计划 " + plannedQty + "，按 " + normalizedLotQty + " 拆 " + lotCount + " 个 Lot" : "计划数量必须大于0"));
+
+        boolean permissionReady = currentRoleHasButton("order:release");
+        checks.add(releaseCheck("permissionAudit", "权限审计", permissionReady, false,
+                permissionReady ? "green" : "amber", permissionAuditText()));
+        return releaseCheckResult(result, checks);
+    }
+
+    private void assertReleaseChecksPassed(Map<String, Object> releaseChecks) {
+        if (Boolean.TRUE.equals(releaseChecks.get("releasable"))) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> checks = (List<Map<String, Object>>) releaseChecks.getOrDefault("checks", List.of());
+        String reasons = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .map(check -> check.get("title") + "=" + check.get("text"))
+                .collect(Collectors.joining("; "));
+        throw new BusinessException("工单释放预校验未通过: " + reasons);
+    }
+
+    private Map<String, Object> releaseCheckResult(Map<String, Object> result, List<Map<String, Object>> checks) {
+        long passedCount = checks.stream().filter(check -> Boolean.TRUE.equals(check.get("passed"))).count();
+        long blockingFailedCount = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .count();
+        result.put("checks", checks);
+        result.put("passedCount", passedCount);
+        result.put("total", checks.size());
+        result.put("blockingFailedCount", blockingFailedCount);
+        result.put("releasable", blockingFailedCount == 0);
+        return result;
+    }
+
+    private Map<String, Object> releaseCheck(String key, String title, boolean passed, boolean blocking,
+                                             String type, String text) {
+        Map<String, Object> check = new LinkedHashMap<>();
+        check.put("key", key);
+        check.put("title", title);
+        check.put("passed", passed);
+        check.put("blocking", blocking);
+        check.put("type", type);
+        check.put("text", text);
+        return check;
+    }
+
+    private boolean currentRoleHasButton(String button) {
+        try {
+            RolePermissionService.PermissionSnapshot snapshot = rolePermissionService.permissionSnapshot(AuthContext.role());
+            return snapshot != null && ("ADMIN".equals(snapshot.role()) || snapshot.buttons().contains(button));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String permissionAuditText() {
+        String role = AuthContext.role();
+        return currentRoleHasButton("order:release")
+                ? role + " 可释放，ORDER_RELEASE 审计已配置"
+                : role + " 无释放按钮权限，写接口将由RBAC拦截";
+    }
+
+    private boolean usableEquipment(Equipment equipment) {
+        if (equipment == null) {
+            return false;
+        }
+        return "IDLE".equals(equipment.getStatus()) || "RUNNING".equals(equipment.getStatus());
+    }
+
+    private <T> List<T> safeList(List<T> rows) {
+        return rows == null ? List.of() : rows;
     }
 
     private List<SerialNumber> createSerialNumbers(ProductionOrder order, Lot lot, String operator) {
@@ -278,13 +501,48 @@ public class PilotMesService {
                 trackIn.getOperator(), auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
     }
 
+    public Map<String, Object> trackInChecks(String lotNo, Map<String, Object> request) {
+        Lot lot = findLot(lotNo);
+        TrackInRequest trackIn = new TrackInRequest();
+        trackIn.setLotNo(lotNo);
+        String stepCode = text(request, "stepCode", lot.getCurrentStepCode());
+        trackIn.setStepCode(stepCode);
+        trackIn.setEquipmentCode(text(request, "equipmentCode", defaultEquipmentCode(stepCode)));
+        trackIn.setOperator(text(request, "operator", currentUser()));
+        Map<String, Object> checks = new LinkedHashMap<>(trackInService.trackInChecks(trackIn));
+        checks.put("selectedEquipmentCode", trackIn.getEquipmentCode());
+        checks.put("operator", trackIn.getOperator());
+        return enrichTrackInChecks(checks);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> enrichTrackInChecks(Map<String, Object> result) {
+        List<Map<String, Object>> checks = new ArrayList<>((List<Map<String, Object>>) result.getOrDefault("checks", List.of()));
+        boolean permissionReady = currentRoleHasButton("lot:track-in");
+        checks.add(releaseCheck("permission", "操作权限", permissionReady, true,
+                permissionReady ? "green" : "red",
+                permissionReady ? AuthContext.role() + " 可执行 Track In" : AuthContext.role() + " 无 Track In 权限"));
+        checks.add(releaseCheck("audit", "审计留痕", true, false, "blue", "Track In 成功后写入 TRACK_IN 审计"));
+        long passedCount = checks.stream().filter(check -> Boolean.TRUE.equals(check.get("passed"))).count();
+        long blockingFailedCount = checks.stream()
+                .filter(check -> !Boolean.FALSE.equals(check.get("blocking")))
+                .filter(check -> !Boolean.TRUE.equals(check.get("passed")))
+                .count();
+        result.put("checks", checks);
+        result.put("passedCount", passedCount);
+        result.put("total", checks.size());
+        result.put("blockingFailedCount", blockingFailedCount);
+        result.put("trackInReady", blockingFailedCount == 0);
+        return result;
+    }
+
     public Map<String, Object> trackOut(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);
         TrackOutRequest trackOut = new TrackOutRequest();
         trackOut.setLotNo(lotNo);
         trackOut.setResult(text(request, "result", "OK"));
-        trackOut.setProcessParams(text(request, "processParams", "{\"temperature\":150,\"speed\":300}"));
+        trackOut.setProcessParams(text(request, "processParams", "{}"));
         trackOut.setRemark(text(request, "remark", "试点接口出站"));
         String finalResult = trackInService.trackOut(trackOut);
         if (!"NG".equals(finalResult)) {
@@ -311,6 +569,27 @@ public class PilotMesService {
                 auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
     }
 
+    public Map<String, Object> batchHold(Map<String, Object> request) {
+        Map<String, Object> safeRequest = safeRequest(request);
+        List<String> lotNos = batchLotNos(safeRequest);
+        String operator = text(safeRequest, "holdBy", text(safeRequest, "operator", currentUser()));
+        String batchNo = text(safeRequest, "batchNo", batchNo("HOLD"));
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String lotNo : lotNos) {
+            Map<String, Object> lotRequest = batchLotRequest(safeRequest, batchNo, operator, "holdBy", "BATCH_HOLD");
+            try {
+                hold(lotNo, lotRequest);
+                results.add(batchLotResult(lotNo, true, "HELD", ""));
+            } catch (Exception e) {
+                results.add(batchLotResult(lotNo, false, "FAILED", exceptionMessage(e)));
+            }
+        }
+        Map<String, Object> summary = batchSummary(batchNo, "HOLD", lotNos, results);
+        audit("LOT_BATCH_HOLD", batchNo, "批量Hold成功 " + summary.get("successCount") + "，失败 " + summary.get("failedCount"),
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest, "summary", summary)));
+        return summary;
+    }
+
     public void release(String lotNo, Map<String, Object> request) {
         Lot lot = findLot(lotNo);
         Map<String, Object> before = lotSnapshot(lot);
@@ -322,6 +601,27 @@ public class PilotMesService {
         closeExceptionIfProvided(lotNo, request, "RELEASE", release.getDisposition());
         audit("LOT_RELEASE", lotNo, release.getDisposition(), release.getReleaseBy(),
                 auditSnapshot(before, lotSnapshot(findLot(lotNo)), safeRequest(request)));
+    }
+
+    public Map<String, Object> batchRelease(Map<String, Object> request) {
+        Map<String, Object> safeRequest = safeRequest(request);
+        List<String> lotNos = batchLotNos(safeRequest);
+        String operator = text(safeRequest, "releaseBy", text(safeRequest, "operator", currentUser()));
+        String batchNo = text(safeRequest, "batchNo", batchNo("RELEASE"));
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String lotNo : lotNos) {
+            Map<String, Object> lotRequest = batchLotRequest(safeRequest, batchNo, operator, "releaseBy", "BATCH_RELEASE");
+            try {
+                release(lotNo, lotRequest);
+                results.add(batchLotResult(lotNo, true, "RELEASED", ""));
+            } catch (Exception e) {
+                results.add(batchLotResult(lotNo, false, "FAILED", exceptionMessage(e)));
+            }
+        }
+        Map<String, Object> summary = batchSummary(batchNo, "RELEASE", lotNos, results);
+        audit("LOT_BATCH_RELEASE", batchNo, "批量Release成功 " + summary.get("successCount") + "，失败 " + summary.get("failedCount"),
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest, "summary", summary)));
+        return summary;
     }
 
     public void rework(String lotNo, Map<String, Object> request) {
@@ -383,13 +683,13 @@ public class PilotMesService {
     public List<Map<String, Object>> boms() {
         try {
             List<Map<String, Object>> rows = materialService.boms();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("BOM正式表读取失败，已降级到试点BOM数据: {}", e.getMessage());
+            return fallbackListOnFailure("BOM", e, fallbackBoms());
         }
-        return fallbackBoms();
+        return fallbackListOnEmpty(fallbackBoms());
     }
 
     public List<Map<String, Object>> bomChangeRequests(String status) {
@@ -419,12 +719,16 @@ public class PilotMesService {
     public List<Map<String, Object>> routes() {
         try {
             List<Map<String, Object>> routes = routeService.activeRouteSummaries();
-            if (!routes.isEmpty()) {
+            if (routes != null && !routes.isEmpty()) {
                 return routes;
             }
         } catch (Exception e) {
-            log.warn("Route正式表读取失败，已降级到试点Route数据: {}", e.getMessage());
+            return fallbackListOnFailure("Route", e, fallbackRoutes());
         }
+        return fallbackListOnEmpty(fallbackRoutes());
+    }
+
+    private List<Map<String, Object>> fallbackRoutes() {
         return List.of(Map.of(
                 "routeCode", "RTE_G6_V08",
                 "productCode", "AMOLED_65",
@@ -447,24 +751,25 @@ public class PilotMesService {
     public List<Map<String, Object>> equipmentEvents() {
         try {
             List<Map<String, Object>> rows = equipmentService.events(null, null);
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("设备事件正式表读取失败，已降级到试点设备事件: {}", e.getMessage());
+            return fallbackListOnFailure("设备事件", e, fallbackEquipmentEvents());
         }
-        return fallbackEquipmentEvents();
+        return fallbackListOnEmpty(fallbackEquipmentEvents());
     }
 
     public List<Map<String, Object>> equipmentEvents(String equipmentCode, String status) {
         try {
-            return equipmentService.events(equipmentCode, status);
+            List<Map<String, Object>> rows = equipmentService.events(equipmentCode, status);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("设备事件正式表读取失败，已降级到试点设备事件: {}", e.getMessage());
-            if ((equipmentCode == null || equipmentCode.isBlank()) && (status == null || status.isBlank())) {
-                return fallbackEquipmentEvents();
-            }
-            return List.of();
+            List<Map<String, Object>> fallbackRows =
+                    (equipmentCode == null || equipmentCode.isBlank()) && (status == null || status.isBlank())
+                            ? fallbackEquipmentEvents()
+                            : List.of();
+            return fallbackListOnFailure("设备事件", e, fallbackRows);
         }
     }
 
@@ -524,6 +829,10 @@ public class PilotMesService {
         }
     }
 
+    public Map<String, Object> equipmentGatewayMessageDetail(String messageNo) {
+        return eapGatewayService.messageDetail(messageNo);
+    }
+
     public List<Map<String, Object>> equipmentGatewayDrivers() {
         return eapGatewayService.drivers();
     }
@@ -562,8 +871,7 @@ public class PilotMesService {
         try {
             return equipmentService.oeeSummary(lineCode);
         } catch (Exception e) {
-            log.warn("设备OEE正式统计失败，已降级到试点OEE数据: {}", e.getMessage());
-            return fallbackEquipmentOee(lineCode);
+            return fallbackMapOnFailure("设备OEE", e, fallbackEquipmentOee(lineCode));
         }
     }
 
@@ -606,6 +914,10 @@ public class PilotMesService {
 
     public Map<String, Object> ingestQmsInspection(Map<String, Object> request) {
         return qualityService.reportQmsInspection(adapterPayload(request, "qms-adapter", "simulated-qms-adapter"));
+    }
+
+    public Map<String, Object> createQualityInspection(Map<String, Object> request) {
+        return qualityService.createManualInspection(safeRequest(request));
     }
 
     public Map<String, Object> checkWmsMaterialReadiness(Map<String, Object> request) {
@@ -705,8 +1017,11 @@ public class PilotMesService {
             if (batches instanceof List<?> list && !list.isEmpty()) {
                 return data;
             }
+            if (!pilotFallbackEnabled) {
+                return data;
+            }
         } catch (Exception e) {
-            log.warn("物料正式表读取失败，已降级到试点物料数据: {}", e.getMessage());
+            return fallbackMapOnFailure("物料齐套", e, fallbackMaterialReadiness());
         }
         return fallbackMaterialReadiness();
     }
@@ -714,13 +1029,13 @@ public class PilotMesService {
     public List<Map<String, Object>> carriers() {
         try {
             List<Map<String, Object>> rows = materialService.carriers();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("载具正式表读取失败，已降级到试点载具数据: {}", e.getMessage());
+            return fallbackListOnFailure("载具", e, fallbackCarriers());
         }
-        return fallbackCarriers();
+        return fallbackListOnEmpty(fallbackCarriers());
     }
 
     public Map<String, Object> bindCarrier(String carrierNo, Map<String, Object> request) {
@@ -744,7 +1059,7 @@ public class PilotMesService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("lot", lot);
         data.put("order", orderMapper.selectOne(new LambdaQueryWrapper<ProductionOrder>().eq(ProductionOrder::getOrderNo, lot.getOrderNo())));
-        data.put("route", routes().get(0));
+        data.put("route", traceRoute(lot.getProductCode()));
         data.put("serialNumbers", serialNumbers);
         data.put("serialNumberSummary", serialNumberSummary(lotNo, serialNumbers));
         data.put("carriers", carrierTraceRows(lotNo));
@@ -755,9 +1070,31 @@ public class PilotMesService {
         data.put("materialConsumptions", materialConsumptions(lotNo));
         data.put("auditLogs", auditLogs(lotNo));
         List<Map<String, Object>> matches = List.of(traceLotMatch(lot));
-        data.put("impactSummary", traceImpactSummary(matches, data));
-        data.put("relatedDimensions", traceRelatedDimensions(matches, data));
+        data.put("impactSummary", traceAssembler.impactSummary(matches, data));
+        data.put("relatedDimensions", traceAssembler.relatedDimensions(matches, data));
         return data;
+    }
+
+    private Map<String, Object> traceRoute(String productCode) {
+        try {
+            Route route = routeService.findActiveRoute(productCode);
+            List<String> steps = safeList(routeService.activeStepCodes(productCode));
+            return Map.of(
+                    "routeCode", valueOr(route.getRouteCode(), ""),
+                    "productCode", valueOr(route.getProductCode(), productCode),
+                    "version", valueOr(route.getRouteVersion(), ""),
+                    "status", valueOr(route.getStatus(), ""),
+                    "steps", steps
+            );
+        } catch (BusinessException e) {
+            log.warn("追溯Route证据读取失败: product={}, reason={}", productCode, e.getMessage());
+            return Map.of(
+                    "productCode", valueOr(productCode, ""),
+                    "status", "MISSING",
+                    "steps", List.of(),
+                    "error", e.getMessage()
+            );
+        }
     }
 
     public Map<String, Object> traceSn(String sn) {
@@ -806,29 +1143,29 @@ public class PilotMesService {
         ));
         data.put("matches", matches);
         data.put("trace", trace);
-        data.put("impactSummary", traceImpactSummary(matches, trace));
-        data.put("relatedDimensions", traceRelatedDimensions(matches, trace));
+        data.put("impactSummary", traceAssembler.impactSummary(matches, trace));
+        data.put("relatedDimensions", traceAssembler.relatedDimensions(matches, trace));
         return data;
     }
 
     public List<Map<String, Object>> qualityInspections(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return qualityService.inspectionRows(lotNo);
+            List<Map<String, Object>> rows = qualityService.inspectionRows(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("质量正式表读取失败，已降级到试点质量数据: {}", e.getMessage());
+            return fallbackListOnFailure("质量检验", e, fallbackQualityInspections(lotNo));
         }
-        return fallbackQualityInspections(lotNo);
     }
 
     public List<Map<String, Object>> materialConsumptions(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return materialService.materialConsumptions(lotNo);
+            List<Map<String, Object>> rows = materialService.materialConsumptions(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("物料消耗正式表读取失败，已降级到试点消耗数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料消耗", e, fallbackMaterialConsumptions(lotNo));
         }
-        return fallbackMaterialConsumptions(lotNo);
     }
 
     private List<Map<String, Object>> carrierTraceRows(String lotNo) {
@@ -836,7 +1173,7 @@ public class PilotMesService {
             List<Map<String, Object>> rows = materialService.carriersByLot(lotNo);
             return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("Carrier姝ｅ紡琛ㄨ鍙栧け璐ワ紝Lot杩芥函宸插拷鐣arrier璇佹嵁: {}", e.getMessage());
+            log.warn("Carrier正式表读取失败，Lot追溯已忽略Carrier证据: {}", e.getMessage());
             return List.of();
         }
     }
@@ -883,25 +1220,25 @@ public class PilotMesService {
     public List<Map<String, Object>> materialSupplierPerformance() {
         try {
             List<Map<String, Object>> rows = materialService.supplierPerformance();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("供应商绩效评分正式表读取失败，已降级到试点供应商评分数据: {}", e.getMessage());
+            return fallbackListOnFailure("供应商绩效评分", e, fallbackMaterialSupplierPerformance());
         }
-        return fallbackMaterialSupplierPerformance();
+        return fallbackListOnEmpty(fallbackMaterialSupplierPerformance());
     }
 
     public List<Map<String, Object>> materialSupplierTrends(int months) {
         try {
             List<Map<String, Object>> rows = materialService.supplierScoreTrends(months);
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("供应商月度评分趋势正式表读取失败，已降级到试点供应商趋势数据: {}", e.getMessage());
+            return fallbackListOnFailure("供应商月度评分趋势", e, fallbackMaterialSupplierTrends());
         }
-        return fallbackMaterialSupplierTrends();
+        return fallbackListOnEmpty(fallbackMaterialSupplierTrends());
     }
 
     public List<Map<String, Object>> materialSuppliers() {
@@ -924,6 +1261,10 @@ public class PilotMesService {
         return materialService.createSupplierQualificationReviewTask(supplierCode, safeRequest(request));
     }
 
+    public Map<String, Object> generateDueMaterialSupplierQualificationReviews(Map<String, Object> request) {
+        return materialService.generateDueSupplierQualificationReviewTasks(safeRequest(request));
+    }
+
     public Map<String, Object> decideMaterialSupplierQualificationReview(String taskNo, Map<String, Object> request) {
         return materialService.decideSupplierQualificationReviewTask(taskNo, safeRequest(request));
     }
@@ -939,25 +1280,33 @@ public class PilotMesService {
     public List<Map<String, Object>> materialLocations() {
         try {
             List<Map<String, Object>> rows = materialService.materialLocations();
-            if (!rows.isEmpty()) {
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("物料库位策略正式表读取失败，已降级到试点库位策略数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料库位策略", e, fallbackMaterialLocations());
         }
-        return fallbackMaterialLocations();
+        return fallbackListOnEmpty(fallbackMaterialLocations());
     }
 
-    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo) {
+    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo,
+                                                           String reviewResult, String dispositionStatus,
+                                                           Boolean pendingDispositionOnly) {
         try {
-            List<Map<String, Object>> rows = materialService.materialLocationTasks(status, batchNo);
-            if (!rows.isEmpty()) {
+            List<Map<String, Object>> rows = materialService.materialLocationTasks(status, batchNo,
+                    reviewResult, dispositionStatus, pendingDispositionOnly);
+            if (rows != null && !rows.isEmpty()) {
                 return rows;
             }
         } catch (Exception e) {
-            log.warn("物料库位任务正式表读取失败，已降级到试点库位任务数据: {}", e.getMessage());
+            return fallbackListOnFailure("物料库位任务", e,
+                    fallbackMaterialLocationTasks(status, batchNo, reviewResult, dispositionStatus, pendingDispositionOnly));
         }
-        return fallbackMaterialLocationTasks(status, batchNo);
+        if (hasLocationTaskQueryFilter(status, batchNo, reviewResult, dispositionStatus, pendingDispositionOnly)) {
+            return List.of();
+        }
+        return fallbackListOnEmpty(fallbackMaterialLocationTasks(status, batchNo, reviewResult,
+                dispositionStatus, pendingDispositionOnly));
     }
 
     public Map<String, Object> createMaterialLocationTask(Map<String, Object> request) {
@@ -968,8 +1317,20 @@ public class PilotMesService {
         return materialService.assignLocationTask(taskNo, safeRequest(request));
     }
 
+    public Map<String, Object> claimMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.claimLocationTask(taskNo, safeRequest(request));
+    }
+
     public Map<String, Object> completeMaterialLocationTask(String taskNo, Map<String, Object> request) {
         return materialService.completeLocationTask(taskNo, safeRequest(request));
+    }
+
+    public Map<String, Object> reviewMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.reviewLocationTask(taskNo, safeRequest(request));
+    }
+
+    public Map<String, Object> dispositionMaterialLocationTask(String taskNo, Map<String, Object> request) {
+        return materialService.dispositionLocationTask(taskNo, safeRequest(request));
     }
 
     public Map<String, Object> cancelMaterialLocationTask(String taskNo, Map<String, Object> request) {
@@ -983,11 +1344,24 @@ public class PilotMesService {
     public List<Map<String, Object>> qualityExceptions(String lotNo) {
         assertLotAccessibleIfPresent(lotNo);
         try {
-            return qualityService.exceptionRows(lotNo);
+            List<Map<String, Object>> rows = qualityService.exceptionRows(lotNo);
+            return rows == null ? List.of() : rows;
         } catch (Exception e) {
-            log.warn("异常事件正式表读取失败，已降级到试点异常数据: {}", e.getMessage());
+            return fallbackListOnFailure("异常事件", e, fallbackExceptionEvents(lotNo));
         }
-        return fallbackExceptionEvents(lotNo);
+    }
+
+    public List<Map<String, Object>> qualityExceptions(String lotNo, String sourceModule, String status) {
+        if (!hasText(sourceModule) && !hasText(status)) {
+            return qualityExceptions(lotNo);
+        }
+        assertLotAccessibleIfPresent(lotNo);
+        try {
+            List<Map<String, Object>> rows = qualityService.exceptionRows(lotNo, sourceModule, status);
+            return rows == null ? List.of() : rows;
+        } catch (Exception e) {
+            return fallbackListOnFailure("异常事件", e, fallbackExceptionEvents(lotNo));
+        }
     }
 
     public List<Map<String, Object>> qualityMrbRecords(String eventNo) {
@@ -1022,6 +1396,32 @@ public class PilotMesService {
         return qualityService.closeException(eventNo, safeRequest(request));
     }
 
+    private List<Map<String, Object>> fallbackListOnEmpty(List<Map<String, Object>> fallbackRows) {
+        return pilotFallbackEnabled ? fallbackRows : List.of();
+    }
+
+    private List<Map<String, Object>> fallbackListOnFailure(String dataName,
+                                                            Exception e,
+                                                            List<Map<String, Object>> fallbackRows) {
+        if (pilotFallbackEnabled) {
+            log.warn("{}正式数据读取失败，已启用试点fallback: {}", dataName, e.getMessage());
+            return fallbackRows;
+        }
+        log.warn("{}正式数据读取失败，未启用试点fallback: {}", dataName, e.getMessage());
+        throw new BusinessException(dataName + "正式数据读取失败，未启用试点fallback");
+    }
+
+    private Map<String, Object> fallbackMapOnFailure(String dataName,
+                                                     Exception e,
+                                                     Map<String, Object> fallbackData) {
+        if (pilotFallbackEnabled) {
+            log.warn("{}正式数据读取失败，已启用试点fallback: {}", dataName, e.getMessage());
+            return fallbackData;
+        }
+        log.warn("{}正式数据读取失败，未启用试点fallback: {}", dataName, e.getMessage());
+        throw new BusinessException(dataName + "正式数据读取失败，未启用试点fallback");
+    }
+
     private List<Map<String, Object>> fallbackQualityInspections(String lotNo) {
         String targetLotNo = valueOr(lotNo, "LOT202406001");
         return List.of(
@@ -1031,11 +1431,14 @@ public class PilotMesService {
     }
 
     public Map<String, Object> dashboardYield() {
-        List<Map<String, Object>> defectTopN = fallbackDefectTopN();
+        List<Map<String, Object>> defectTopN;
         try {
             defectTopN = qualityService.defectTopN(5);
+            if (defectTopN == null) {
+                defectTopN = List.of();
+            }
         } catch (Exception e) {
-            log.warn("缺陷TopN正式表读取失败，已降级到试点看板数据: {}", e.getMessage());
+            defectTopN = fallbackListOnFailure("缺陷TopN", e, fallbackDefectTopN());
         }
         return Map.of(
                 "trend", yieldTrend(),
@@ -1077,31 +1480,47 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "YIELD_DAILY", reportNo, "AI_REPORT", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_YIELD_REPORT", reportNo, "生成 AI 良率日报", currentUser());
+        audit("AI_YIELD_REPORT", reportNo, "生成 AI 良率日报", currentUser(),
+                aiAuditSnapshot(reportNo, "YIELD_DAILY", promptVersion, model, request));
         return report;
     }
 
     public Map<String, Object> aiEquipmentAnalyze(Map<String, Object> request) {
-        String equipmentCode = text(request, "equipmentCode", "EVAP_01");
+        String equipmentCode = text(request, "equipmentCode", "");
+        if (equipmentCode.isBlank()) {
+            throw new BusinessException("设备异常分析必须指定设备编码");
+        }
+        String lotNo = text(request, "lotNo", "");
         String reportNo = "AIR-EQP-" + System.currentTimeMillis();
         Map<String, Object> modelConfig = aiModelConfig("EQUIPMENT_ANALYSIS", "equipment-analyze-v2", "mock-structured-output");
         String model = text(modelConfig, "modelName", "mock-structured-output");
         String promptVersion = text(modelConfig, "promptTemplateVersion", "equipment-analyze-v2");
+        List<Map<String, Object>> equipmentEvents = targetEquipmentEvents(equipmentCode);
+        List<Map<String, Object>> lotContexts = equipmentLotContexts(equipmentCode, lotNo);
+        List<Map<String, Object>> recentDefects = recentDefectsForEquipment(equipmentCode);
         Map<String, Object> inputSnapshot = new LinkedHashMap<>();
         inputSnapshot.put("request", safeRequest(request));
         inputSnapshot.put("equipmentCode", equipmentCode);
-        inputSnapshot.put("events", equipmentEvents());
+        inputSnapshot.put("events", equipmentEvents);
+        inputSnapshot.put("lots", lotContexts);
+        inputSnapshot.put("recentDefects", recentDefects);
         inputSnapshot.put("yield", dashboardYield());
         inputSnapshot.put("modelConfig", modelConfig);
-        List<Map<String, Object>> sources = aiKnowledgeService.searchSources(equipmentCode + " 设备报警 真空 波动 Mura SOP", 2);
+        List<Map<String, Object>> sources = aiKnowledgeService.searchSources(
+                equipmentCode + " 设备报警 真空 波动 Mura SOP " + String.join(" ", defectNames(recentDefects)), 2);
         Map<String, Object> evidence = evidenceSummary(sources, text(modelConfig, "retrievalStrategy", "MES_AND_RAG"));
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("riskLevel", "P2");
+        output.put("riskLevel", equipmentRiskLevel(equipmentEvents, recentDefects, evidence));
         output.put("equipmentCode", equipmentCode);
+        output.put("eventCount", equipmentEvents.size());
+        output.put("lotCount", lotContexts.size());
+        output.put("defectCount", recentDefects.stream().mapToInt(row -> intValue(row.get("qty"), 0)).sum());
         output.put("possibleCauses", List.of("腔体真空波动", "材料蒸镀速率偏移", "PM 后参数未完全稳定"));
         output.put("checkSteps", List.of("确认最近 2 小时报警趋势", "复核真空泵状态", "抽查当前 Lot AOI 缺陷分布"));
         output.put("sources", sources.isEmpty() ? List.of(Map.of("warning", "知识库依据不足，请补充设备手册或SOP片段")) : sources);
         output.put("writeActionAllowed", false);
+        output.put("lotContexts", lotContexts);
+        output.put("recentDefects", recentDefects);
         output.putAll(evidence);
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("reportNo", reportNo);
@@ -1113,7 +1532,8 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "EQUIPMENT_ANALYSIS", equipmentCode, "EQUIPMENT", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_EQUIPMENT_ANALYZE", equipmentCode, "生成 AI 设备异常分析: " + reportNo, currentUser());
+        audit("AI_EQUIPMENT_ANALYZE", equipmentCode, "生成 AI 设备异常分析: " + reportNo, currentUser(),
+                aiAuditSnapshot(reportNo, "EQUIPMENT_ANALYSIS", promptVersion, model, request));
         return report;
     }
 
@@ -1139,7 +1559,8 @@ public class PilotMesService {
         report.put("createdTime", LocalDateTime.now());
         aiRecordService.record(reportNo, "SOP_QA", question, "SOP_KB", promptVersion, model,
                 inputSnapshot, output, currentUser(), aiMetadata(modelConfig, report));
-        audit("AI_KB_ASK", reportNo, "生成 AI SOP 问答", currentUser());
+        audit("AI_KB_ASK", reportNo, "生成 AI SOP 问答", currentUser(),
+                aiAuditSnapshot(reportNo, "SOP_QA", promptVersion, model, request));
         return report;
     }
 
@@ -1234,6 +1655,78 @@ public class PilotMesService {
         return evidence;
     }
 
+    private List<Map<String, Object>> targetEquipmentEvents(String equipmentCode) {
+        List<Map<String, Object>> rows = equipmentEvents(equipmentCode, null);
+        if (rows != null && !rows.isEmpty()) {
+            return rows.stream().limit(8).collect(Collectors.toList());
+        }
+        return equipmentEvents().stream()
+                .filter(row -> Objects.equals(equipmentCode, String.valueOf(row.get("equipmentCode"))))
+                .limit(8)
+                .collect(Collectors.toList());
+    }
+
+    private List<Map<String, Object>> equipmentLotContexts(String equipmentCode, String lotNo) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (lotNo != null && !lotNo.isBlank()) {
+            Lot lot = findLot(lotNo);
+            rows.add(lotSnapshot(lot));
+        }
+        try {
+            List<Lot> activeLots = lotMapper.selectList(lotScopedWrapper()
+                    .eq(Lot::getCurrentEquipmentCode, equipmentCode)
+                    .orderByDesc(Lot::getUpdatedTime)
+                    .last("LIMIT 5"));
+            if (activeLots == null) {
+                return rows;
+            }
+            for (Lot lot : activeLots) {
+                if (rows.stream().noneMatch(row -> Objects.equals(row.get("lotNo"), lot.getLotNo()))) {
+                    rows.add(lotSnapshot(lot));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AI设备分析关联Lot读取失败，已仅使用请求上下文: equipment={}, reason={}", equipmentCode, e.getMessage());
+        }
+        return rows;
+    }
+
+    private List<Map<String, Object>> recentDefectsForEquipment(String equipmentCode) {
+        try {
+            return qualityService.defectTopN(5);
+        } catch (Exception e) {
+            log.warn("AI设备分析近期缺陷读取失败，已降级到空缺陷证据: equipment={}, reason={}", equipmentCode, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> defectNames(List<Map<String, Object>> defects) {
+        if (defects == null) {
+            return List.of();
+        }
+        return defects.stream()
+                .map(row -> text(row, "defectName", text(row, "defectCode", "")))
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.toList());
+    }
+
+    private String equipmentRiskLevel(List<Map<String, Object>> events,
+                                      List<Map<String, Object>> defects,
+                                      Map<String, Object> evidence) {
+        boolean criticalEvent = events != null && events.stream()
+                .map(row -> String.valueOf(row.getOrDefault("eventLevel", row.getOrDefault("severity", ""))).toUpperCase(Locale.ROOT))
+                .anyMatch(level -> level.contains("P1") || level.contains("CRITICAL"));
+        int defectQty = defects == null ? 0 : defects.stream().mapToInt(row -> intValue(row.get("qty"), 0)).sum();
+        String evidenceLevel = text(evidence, "evidenceLevel", "INSUFFICIENT");
+        if (criticalEvent || defectQty >= 20) {
+            return "P1";
+        }
+        if (defectQty >= 8 || "HIGH".equals(evidenceLevel) || (events != null && events.size() >= 3)) {
+            return "P2";
+        }
+        return "P3";
+    }
+
     private Map<String, Object> aiMetadata(Map<String, Object> modelConfig, Map<String, Object> report) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("modelProvider", modelConfig.get("modelProvider"));
@@ -1310,13 +1803,57 @@ public class PilotMesService {
     public List<Map<String, Object>> auditLogs(String bizNo) {
         try {
             List<AuditLog> logs = auditLogService.list(bizNo, 50);
-            if (!logs.isEmpty()) {
+            if (logs != null && !logs.isEmpty()) {
                 return logs.stream().map(this::auditRow).collect(Collectors.toList());
             }
-        } catch (Exception ignored) {
-            // 数据库尚未创建 sys_audit_log 时，试点接口继续返回模拟审计，避免阻塞演示链路。
+        } catch (Exception e) {
+            return fallbackListOnFailure("系统审计", e, fallbackAuditLogs(bizNo));
         }
-        return fallbackAuditLogs(bizNo);
+        return fallbackListOnEmpty(fallbackAuditLogs(bizNo));
+    }
+
+    public Page<Map<String, Object>> pageAuditLogs(Long current,
+                                                   Long size,
+                                                   String bizNo,
+                                                   String action,
+                                                   String result,
+                                                   String source,
+                                                   String operator,
+                                                   String startTime,
+                                                   String endTime) {
+        long safeCurrent = Math.max(1L, current == null ? 1L : current);
+        long safeSize = Math.min(Math.max(1L, size == null ? 20L : size), 100L);
+        LocalDateTime parsedStartTime = parseAuditTime(startTime, false);
+        LocalDateTime parsedEndTime = parseAuditTime(endTime, true);
+        try {
+            Page<AuditLog> page = auditLogService.page(
+                    safeCurrent,
+                    safeSize,
+                    bizNo,
+                    action,
+                    result,
+                    source,
+                    operator,
+                    parsedStartTime,
+                    parsedEndTime
+            );
+            Page<Map<String, Object>> mapped = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+            mapped.setRecords(page.getRecords().stream().map(this::auditRow).collect(Collectors.toList()));
+            return mapped;
+        } catch (Exception e) {
+            if (!pilotFallbackEnabled) {
+                log.warn("系统审计分页正式表读取失败，未启用试点fallback: {}", e.getMessage());
+                throw new BusinessException("系统审计正式数据读取失败，未启用试点fallback");
+            }
+            List<Map<String, Object>> fallback = fallbackAuditLogs(bizNo).stream()
+                    .filter(row -> auditFallbackMatches(row, action, result, source, operator))
+                    .toList();
+            Page<Map<String, Object>> page = new Page<>(safeCurrent, safeSize, fallback.size());
+            int from = (int) Math.min((safeCurrent - 1) * safeSize, fallback.size());
+            int to = (int) Math.min(from + safeSize, fallback.size());
+            page.setRecords(fallback.subList(from, to));
+            return page;
+        }
     }
 
     public List<ProcessStep> processSteps() {
@@ -1329,8 +1866,22 @@ public class PilotMesService {
         return equipmentMapper.selectList(wrapper);
     }
 
-    public Page<Recipe> pageRecipes(long current, long size) {
-        return recipeMapper.selectPage(new Page<>(current, size), new LambdaQueryWrapper<Recipe>().orderByDesc(Recipe::getCreatedTime));
+    public Page<Recipe> pageRecipes(long current, long size, String productCode, String stepCode, String equipmentCode, String status) {
+        LambdaQueryWrapper<Recipe> wrapper = new LambdaQueryWrapper<>();
+        if (hasText(productCode)) {
+            wrapper.eq(Recipe::getProductCode, productCode);
+        }
+        if (hasText(stepCode)) {
+            wrapper.eq(Recipe::getStepCode, stepCode);
+        }
+        if (hasText(equipmentCode)) {
+            wrapper.eq(Recipe::getEquipmentCode, equipmentCode);
+        }
+        if (hasText(status)) {
+            wrapper.eq(Recipe::getStatus, status);
+        }
+        wrapper.orderByDesc(Recipe::getCreatedTime);
+        return recipeMapper.selectPage(new Page<>(current, size), wrapper);
     }
 
     public List<RecipeParam> recipeParams(Long recipeId) {
@@ -1580,92 +2131,8 @@ public class PilotMesService {
         return snapshot;
     }
 
-    private Map<String, Object> traceImpactSummary(List<Map<String, Object>> matches, Map<String, Object> trace) {
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("matchedLotCount", matches.size());
-        summary.put("holdLotCount", matches.stream().filter(row -> "HOLD".equals(row.get("status"))).count());
-        summary.put("serialNumberCount", longValue(fieldValue(trace.get("serialNumberSummary"), "totalCount"), listValue(trace.get("serialNumbers")).size()));
-        summary.put("carrierCount", listValue(trace.get("carriers")).size());
-        summary.put("ngInspectionCount", listValue(trace.get("qualityRecords")).stream()
-                .filter(row -> !"OK".equals(fieldText(row, "result")))
-                .count());
-        summary.put("materialBatchCount", distinctTextCount(listValue(trace.get("materialConsumptions")), "batchNo"));
-        summary.put("defectCodeCount", distinctTextCount(listValue(trace.get("qualityRecords")), "defectCode"));
-        summary.put("equipmentCount", distinctTextCount(listValue(trace.get("stepRecords")), "equipmentCode"));
-        return summary;
-    }
-
-    private Map<String, Object> traceRelatedDimensions(List<Map<String, Object>> matches, Map<String, Object> trace) {
-        Map<String, Object> dimensions = new LinkedHashMap<>();
-        dimensions.put("orderNos", distinctTextValues(matches, "orderNo"));
-        dimensions.put("serialNumbers", distinctTextValues(listValue(trace.get("serialNumbers")), "sn"));
-        dimensions.put("carrierNos", distinctTextValues(listValue(trace.get("carriers")), "carrierNo"));
-        dimensions.put("equipmentCodes", distinctTextValues(listValue(trace.get("stepRecords")), "equipmentCode"));
-        dimensions.put("materialBatches", distinctTextValues(listValue(trace.get("materialConsumptions")), "batchNo"));
-        dimensions.put("defectCodes", distinctTextValues(listValue(trace.get("qualityRecords")), "defectCode"));
-        return dimensions;
-    }
-
     private List<?> listValue(Object value) {
         return value instanceof List<?> list ? list : List.of();
-    }
-
-    private int distinctTextCount(List<?> rows, String fieldName) {
-        return distinctTextValues(rows, fieldName).size();
-    }
-
-    private List<String> distinctTextValues(List<?> rows, String fieldName) {
-        Map<String, Boolean> values = new LinkedHashMap<>();
-        for (Object row : rows) {
-            String text = fieldText(row, fieldName);
-            if (!text.isBlank()) {
-                values.put(text, true);
-            }
-        }
-        return new ArrayList<>(values.keySet());
-    }
-
-    private String fieldText(Object row, String fieldName) {
-        if (row instanceof Map<?, ?> map) {
-            return objectText(map.get(fieldName), "");
-        }
-        if (row instanceof LotStepRecord record) {
-            return switch (fieldName) {
-                case "lotNo" -> objectText(record.getLotNo(), "");
-                case "stepCode" -> objectText(record.getStepCode(), "");
-                case "equipmentCode" -> objectText(record.getEquipmentCode(), "");
-                case "recipeCode" -> objectText(record.getRecipeCode(), "");
-                case "result" -> objectText(record.getResult(), "");
-                default -> "";
-            };
-        }
-        if (row instanceof Lot lot) {
-            return switch (fieldName) {
-                case "lotNo" -> objectText(lot.getLotNo(), "");
-                case "orderNo" -> objectText(lot.getOrderNo(), "");
-                case "productCode" -> objectText(lot.getProductCode(), "");
-                case "status" -> objectText(lot.getStatus(), "");
-                default -> "";
-            };
-        }
-        if (row instanceof SerialNumber serialNumber) {
-            return switch (fieldName) {
-                case "sn" -> objectText(serialNumber.getSn(), "");
-                case "lotNo" -> objectText(serialNumber.getLotNo(), "");
-                case "orderNo" -> objectText(serialNumber.getOrderNo(), "");
-                case "productCode" -> objectText(serialNumber.getProductCode(), "");
-                case "status" -> objectText(serialNumber.getStatus(), "");
-                default -> "";
-            };
-        }
-        return "";
-    }
-
-    private Object fieldValue(Object row, String fieldName) {
-        if (row instanceof Map<?, ?> map) {
-            return map.get(fieldName);
-        }
-        return null;
     }
 
     private boolean sameText(Object value, String expected) {
@@ -1739,6 +2206,9 @@ public class PilotMesService {
     private List<Map<String, Object>> alertQueue() {
         try {
             List<Map<String, Object>> rows = qualityService.exceptionRows(null);
+            if (rows == null) {
+                return List.of();
+            }
             return rows.stream()
                     .limit(5)
                     .map(row -> Map.<String, Object>of(
@@ -1749,8 +2219,11 @@ public class PilotMesService {
                     ))
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.warn("异常队列正式表读取失败，已降级到试点告警队列: {}", e.getMessage());
+            return fallbackListOnFailure("异常队列", e, fallbackAlertQueue());
         }
+    }
+
+    private List<Map<String, Object>> fallbackAlertQueue() {
         return List.of(
                 Map.of("title", "LOT260606-017 涂胶膜厚超限", "level", "P1", "type", "QUALITY", "status", "OPEN"),
                 Map.of("title", "EVAP_01 真空波动", "level", "P2", "type", "EQUIPMENT", "status", "PROCESSING"),
@@ -1972,19 +2445,69 @@ public class PilotMesService {
         return row;
     }
 
-    private List<Map<String, Object>> fallbackMaterialLocationTasks(String status, String batchNo) {
-        List<Map<String, Object>> rows = List.of(
-                fallbackMaterialLocationTask("MLT-FB-001", "PUTAWAY", "PI260606-A", "PI_INK", "PI胶",
-                        "WMS-IN", "WMS-A01", 820, 820, "g", "DONE", "来料上架", "wms1001", "09:20", "green"),
-                fallbackMaterialLocationTask("MLT-FB-002", "MOVE", "ENCAP260604-C", "ENCAP_GLUE", "封装胶",
-                        "WMS-IN", "WMS-B03", 540, 540, "g", "DONE", "产线补料前移库", "wms1002", "10:35", "green"),
-                fallbackMaterialLocationTask("MLT-FB-003", "COUNT", "OLED-R-260605-B", "OLED_R", "红光有机材料",
-                        "COLD-02", "COLD-02", 310, 310, "g", "DONE", "低温库日盘", "wms1001", "13:10", "green")
-        );
+    private List<Map<String, Object>> fallbackMaterialLocationTasks(String status, String batchNo,
+                                                                    String reviewResult, String dispositionStatus,
+                                                                    Boolean pendingDispositionOnly) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.add(fallbackReviewedLocationTask("MLT-FB-001", "PUTAWAY", "PI260606-A", "PI_INK", "PI胶",
+                "WMS-IN", "WMS-A01", 820, 820, "g", "DONE", "来料上架", "wms1001", "09:20",
+                "APPROVED", "上架记录与库位一致", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-002", "MOVE", "ENCAP260604-C", "ENCAP_GLUE", "封装胶",
+                "WMS-IN", "WMS-B03", 540, 540, "g", "DONE", "产线补料前移库", "wms1002", "10:35",
+                "APPROVED", "移库记录已复核", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-003", "COUNT", "OLED-R-260605-B", "OLED_R", "红光有机材料",
+                "COLD-02", "COLD-02", 310, 310, "g", "DONE", "低温库日盘", "wms1001", "13:10",
+                "APPROVED", "盘点数量与系统一致", "CLOSED", "green"));
+        rows.add(fallbackReviewedLocationTask("MLT-FB-004", "COUNT", "PI260606-A", "PI_INK", "PI胶",
+                "WMS-A01", "WMS-A01", 820, 816, "g", "DONE", "复核发现实盘数量差异", "wms1001", "14:05",
+                "REJECTED", "复核驳回：实盘 816g，系统 820g，待处置", "PENDING", "red"));
         return rows.stream()
-                .filter(row -> status == null || status.isBlank() || status.equals(row.get("status")))
-                .filter(row -> batchNo == null || batchNo.isBlank() || batchNo.equals(row.get("batchNo")))
+                .filter(row -> !Boolean.TRUE.equals(pendingDispositionOnly)
+                        || (sameText(row.get("status"), "DONE")
+                        && sameText(row.get("reviewResult"), "REJECTED")
+                        && sameText(row.get("dispositionStatus"), "PENDING")))
+                .filter(row -> status == null || status.isBlank() || sameText(row.get("status"), status))
+                .filter(row -> batchNo == null || batchNo.isBlank() || sameText(row.get("batchNo"), batchNo))
+                .filter(row -> reviewResult == null || reviewResult.isBlank() || sameText(row.get("reviewResult"), reviewResult))
+                .filter(row -> dispositionStatus == null || dispositionStatus.isBlank()
+                        || sameText(row.get("dispositionStatus"), dispositionStatus))
                 .collect(Collectors.toList());
+    }
+
+    private boolean hasLocationTaskQueryFilter(String status, String batchNo,
+                                               String reviewResult, String dispositionStatus,
+                                               Boolean pendingDispositionOnly) {
+        return Boolean.TRUE.equals(pendingDispositionOnly)
+                || hasText(status)
+                || hasText(batchNo)
+                || hasText(reviewResult)
+                || hasText(dispositionStatus);
+    }
+
+    private Map<String, Object> fallbackReviewedLocationTask(String taskNo, String taskType,
+                                                             String batchNo, String materialCode,
+                                                             String materialName, String sourceLocation,
+                                                             String targetLocation, int plannedQty,
+                                                             int actualQty, String unit, String status,
+                                                             String reason, String operator,
+                                                             String executedTime, String reviewResult,
+                                                             String reviewConclusion, String dispositionStatus,
+                                                             String type) {
+        Map<String, Object> row = fallbackMaterialLocationTask(taskNo, taskType, batchNo, materialCode,
+                materialName, sourceLocation, targetLocation, plannedQty, actualQty, unit, status,
+                reason, operator, executedTime, type);
+        row.put("reviewer", "wms-lead");
+        row.put("reviewResult", reviewResult);
+        row.put("reviewConclusion", reviewConclusion);
+        row.put("reviewedTime", executedTime);
+        row.put("dispositionStatus", dispositionStatus);
+        if ("REJECTED".equals(reviewResult)) {
+            row.put("exceptionReason", reviewConclusion);
+        } else {
+            row.put("dispositionResult", "APPROVED");
+            row.put("dispositionConclusion", reviewConclusion);
+        }
+        return row;
     }
 
     private Map<String, Object> fallbackMaterialLocationTask(String taskNo, String taskType,
@@ -2088,9 +2611,15 @@ public class PilotMesService {
                 return steps;
             }
         } catch (Exception e) {
-            log.warn("生效Route读取失败，已降级到试点默认路线: product={}, reason={}", productCode, e.getMessage());
+            if (!pilotFallbackEnabled) {
+                log.warn("生效Route正式数据读取失败，未启用试点fallback: product={}, reason={}",
+                        productCode, e.getMessage());
+                throw new BusinessException("生效Route正式数据读取失败，未启用试点fallback");
+            }
+            log.warn("生效Route正式数据读取失败，已启用试点fallback: product={}, reason={}",
+                    productCode, e.getMessage());
         }
-        return DEFAULT_ROUTE;
+        return pilotFallbackEnabled ? DEFAULT_ROUTE : List.of();
     }
 
     private String defaultEquipmentCode(String stepCode) {
@@ -2157,19 +2686,71 @@ public class PilotMesService {
         }
     }
 
+    private String aiAuditSnapshot(String reportNo, String reportType, String promptVersion,
+                                  String model, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("reportNo", reportNo);
+        snapshot.put("reportType", reportType);
+        snapshot.put("promptTemplateVersion", promptVersion);
+        snapshot.put("model", model);
+        snapshot.put("request", safeRequest(request));
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
     private String currentUser() {
         return AuthContext.username();
     }
 
     private Map<String, Object> auditRow(AuditLog log) {
-        return Map.of(
-                "time", log.getCreatedTime() == null ? "" : log.getCreatedTime().toLocalTime().withNano(0).toString(),
-                "user", valueOr(log.getOperator(), "system"),
-                "object", valueOr(log.getBizNo(), "-"),
-                "action", valueOr(log.getAction(), "-"),
-                "result", valueOr(log.getResult(), "-"),
-                "source", valueOr(log.getSource(), "-")
-        );
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("time", log.getCreatedTime() == null ? "" : log.getCreatedTime().toLocalTime().withNano(0).toString());
+        row.put("createdTime", log.getCreatedTime() == null ? "" : log.getCreatedTime().toString());
+        row.put("user", valueOr(log.getOperator(), "system"));
+        row.put("object", valueOr(log.getBizNo(), "-"));
+        row.put("bizType", valueOr(log.getBizType(), "-"));
+        row.put("action", valueOr(log.getAction(), "-"));
+        row.put("result", valueOr(log.getResult(), "-"));
+        row.put("source", valueOr(log.getSource(), "-"));
+        row.put("description", valueOr(log.getDescription(), ""));
+        row.put("requestMethod", valueOr(log.getRequestMethod(), ""));
+        row.put("requestUri", valueOr(log.getRequestUri(), ""));
+        row.put("clientIp", valueOr(log.getClientIp(), ""));
+        row.put("userAgent", valueOr(log.getUserAgent(), ""));
+        row.put("requestSnapshot", valueOr(log.getRequestSnapshot(), ""));
+        return row;
+    }
+
+    private LocalDateTime parseAuditTime(String value, boolean endOfDay) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String text = value.trim();
+        try {
+            if (text.length() == 10) {
+                LocalDate date = LocalDate.parse(text);
+                return endOfDay ? date.atTime(23, 59, 59) : date.atStartOfDay();
+            }
+            return LocalDateTime.parse(text);
+        } catch (Exception e) {
+            throw new BusinessException("审计时间格式不正确: " + value);
+        }
+    }
+
+    private boolean auditFallbackMatches(Map<String, Object> row, String action, String result, String source, String operator) {
+        if (hasText(action) && !String.valueOf(row.getOrDefault("action", "")).toUpperCase(Locale.ROOT)
+                .contains(action.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        if (hasText(result) && !String.valueOf(row.getOrDefault("result", "")).toUpperCase(Locale.ROOT)
+                .contains(result.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        if (hasText(source) && !String.valueOf(row.getOrDefault("source", "")).toUpperCase(Locale.ROOT)
+                .contains(source.trim().toUpperCase(Locale.ROOT))) {
+            return false;
+        }
+        return !hasText(operator) || String.valueOf(row.getOrDefault("user", "")).toUpperCase(Locale.ROOT)
+                .contains(operator.trim().toUpperCase(Locale.ROOT));
     }
 
     private List<Map<String, Object>> fallbackAuditLogs(String bizNo) {
@@ -2248,6 +2829,80 @@ public class PilotMesService {
         holdRecord.setStatus("RELEASED");
         holdRecordMapper.updateById(holdRecord);
         lot.setHoldFlag(0);
+    }
+
+    private List<String> batchLotNos(Map<String, Object> request) {
+        Object rawLotNos = value(request, "lotNos");
+        if (rawLotNos == null) {
+            rawLotNos = value(request, "lots");
+        }
+        List<String> lotNos = new ArrayList<>();
+        if (rawLotNos instanceof Iterable<?> iterable) {
+            iterable.forEach(item -> addBatchLotNo(lotNos, item));
+        } else if (rawLotNos instanceof Object[] array) {
+            for (Object item : array) {
+                addBatchLotNo(lotNos, item);
+            }
+        } else if (rawLotNos != null) {
+            for (String item : String.valueOf(rawLotNos).split(",")) {
+                addBatchLotNo(lotNos, item);
+            }
+        }
+        if (lotNos.isEmpty()) {
+            throw new BusinessException("批量操作至少需要选择1个Lot");
+        }
+        if (lotNos.size() > 50) {
+            throw new BusinessException("批量操作单次最多支持50个Lot");
+        }
+        return lotNos;
+    }
+
+    private void addBatchLotNo(List<String> lotNos, Object value) {
+        String lotNo = objectText(value, "").trim();
+        if (!lotNo.isBlank() && !lotNos.contains(lotNo)) {
+            lotNos.add(lotNo);
+        }
+    }
+
+    private Map<String, Object> batchLotRequest(Map<String, Object> request, String batchNo,
+                                                String operator, String operatorField, String sourceAction) {
+        Map<String, Object> lotRequest = new LinkedHashMap<>(request);
+        lotRequest.put("batchNo", batchNo);
+        lotRequest.put("sourceAction", sourceAction);
+        lotRequest.put("operator", operator);
+        lotRequest.put(operatorField, operator);
+        return lotRequest;
+    }
+
+    private Map<String, Object> batchLotResult(String lotNo, boolean success, String status, String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("lotNo", lotNo);
+        result.put("success", success);
+        result.put("status", status);
+        result.put("message", message);
+        return result;
+    }
+
+    private Map<String, Object> batchSummary(String batchNo, String action, List<String> lotNos,
+                                             List<Map<String, Object>> results) {
+        long successCount = results.stream().filter(row -> Boolean.TRUE.equals(row.get("success"))).count();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("batchNo", batchNo);
+        summary.put("action", action);
+        summary.put("total", lotNos.size());
+        summary.put("successCount", successCount);
+        summary.put("failedCount", lotNos.size() - successCount);
+        summary.put("lotNos", lotNos);
+        summary.put("results", results);
+        return summary;
+    }
+
+    private String batchNo(String action) {
+        return "LOT-BATCH-" + action + "-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
+    }
+
+    private String exceptionMessage(Exception e) {
+        return e.getMessage() == null || e.getMessage().isBlank() ? e.getClass().getSimpleName() : e.getMessage();
     }
 
     private Object value(Map<String, Object> request, String key) {
@@ -2358,6 +3013,10 @@ public class PilotMesService {
 
     private String valueOr(String value, String fallback) {
         return Objects.requireNonNullElse(value, fallback);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String objectText(Object value, String fallback) {

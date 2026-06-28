@@ -92,6 +92,28 @@ powershell -ExecutionPolicy Bypass -File tools\run-pilot-performance-baseline.ps
 
 单轮脚本会按订单列表 P95 < 500ms、Lot 列表 P95 < 500ms、良率看板 < 2000ms、Lot 追溯 < 1000ms 做判定，并输出 Markdown/JSON 报告。多轮基线脚本会连续执行多轮单轮冒烟，汇总 P95、标准差、漂移比例和稳定性告警；最新通过报告见 `docs/SmartDisplay-MES-performance-baseline-20260608-061856.md`。
 
+## 监控、健康检查与日志
+
+### Spring Boot Actuator
+
+引入 `spring-boot-starter-actuator`，暴露 `health`、`info`、`metrics`：
+
+- `GET /api/actuator/health`：聚合存活/就绪探针与数据库、磁盘健康，正常返回 `{"status":"UP"}`，对匿名开放，供 Docker/K8s liveness/readiness 与监控直接探测。
+- `GET /api/actuator/info`：展示应用与构建信息（由 `spring-boot-maven-plugin` 的 `build-info` 目标生成 `build-info.properties`，含构建时间/版本）。
+- `GET /api/actuator/metrics`：运行指标，**需携带 JWT** 才能访问。
+
+> Spring MVC 的 `HandlerInterceptor` 不作用于 Actuator 独立的 endpoint handler mapping，因此 actuator 的访问控制由专门的 servlet 过滤器 `ActuatorAccessFilter` 负责：`health/info` 匿名放行（探针/监控），其余端点需有效 JWT，避免运行指标对外匿名泄露。
+
+`docker-compose.yml` 后端服务据此配置了 `healthcheck`（探测 `/api/actuator/health`），前端 `depends_on` 升级为 `condition: service_healthy`，实现"后端就绪后再启动前端"。
+
+### 日志
+
+日志由 `logback-spring.xml` 统一管理：控制台 + 滚动文件（按天 + 50MB 切分、gzip 历史、保留 14 天/总量上限 1GB），并按 Spring profile 区分（`default` 本地 DEBUG，`docker/prod` INFO 并降噪 SQL 日志）。
+
+每个请求由 `AuditRequestContextFilter` 生成或透传 `requestId`（优先沿用上游 `X-Request-Id`），写入 SLF4J MDC 并回写响应头 `X-Request-Id`，所有日志行均带 `[requestId]`，便于全链路关联。
+
+接口文档：`http://localhost:8080/api/swagger-ui.html`（Knife4j/Swagger），`/api/v1` 端点已按认证、工单、Lot 执行、质量与 MRB、物料与 WMS、设备、追溯、看板、AI 等领域 `@Operation` 标签分组并附中文摘要。
+
 ## 交付文档
 
 - [落地进度](docs/SmartDisplay-MES生产级试点落地进度.md)

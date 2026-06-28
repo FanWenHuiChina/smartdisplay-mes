@@ -16,8 +16,16 @@ export const holdLot = (lotNo, data) => {
   return request.post(`/v1/lots/${lotNo}/hold`, data)
 }
 
+export const batchHoldLots = (data) => {
+  return request.post('/v1/lots/batch-hold', data)
+}
+
 export const releaseLot = (lotNo, data) => {
   return request.post(`/v1/lots/${lotNo}/release`, data)
+}
+
+export const batchReleaseLots = (data) => {
+  return request.post('/v1/lots/batch-release', data)
 }
 
 export const reworkLot = (lotNo, data) => {

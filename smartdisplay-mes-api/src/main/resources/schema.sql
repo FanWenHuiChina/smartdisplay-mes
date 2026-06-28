@@ -29,6 +29,9 @@ COMMENT ON TABLE md_recipe IS 'Recipe配方主表';
 CREATE UNIQUE INDEX uk_recipe_product_step_equip_ver
 ON md_recipe(product_code, step_code, equipment_code, recipe_version)
 WHERE deleted = 0;
+CREATE UNIQUE INDEX uk_recipe_single_active_context
+ON md_recipe(product_code, step_code, equipment_code)
+WHERE deleted = 0 AND status = 'ACTIVE';
 
 -- 索引优化
 CREATE INDEX idx_recipe_product ON md_recipe(product_code);

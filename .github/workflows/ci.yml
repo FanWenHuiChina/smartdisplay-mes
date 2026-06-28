@@ -7,6 +7,25 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      run_performance_baseline:
+        description: Run Docker performance baseline after normal gates
+        required: true
+        default: false
+        type: boolean
+      performance_rounds:
+        description: Performance baseline rounds
+        required: true
+        default: "3"
+      performance_samples:
+        description: API samples per round
+        required: true
+        default: "20"
+      performance_import_count:
+        description: ERP import count per round
+        required: true
+        default: "1000"
 
 concurrency:
   group: smartdisplay-mes-ci-${{ github.ref }}
@@ -34,6 +53,29 @@ jobs:
       - name: Run backend tests
         run: mvn -B test
 
+      - name: Summarize backend coverage
+        if: always()
+        run: |
+          $csv = "target/site/jacoco/jacoco.csv"
+          if (Test-Path $csv) {
+            $rows = Import-Csv $csv
+            $covered = ($rows | Measure-Object -Property LINE_COVERED -Sum).Sum
+            $missed = ($rows | Measure-Object -Property LINE_MISSED -Sum).Sum
+            $total = $covered + $missed
+            $pct = if ($total -gt 0) { [math]::Round(100.0 * $covered / $total, 1) } else { 0 }
+            "## Backend line coverage: $pct% ($covered/$total lines)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } else {
+            "JaCoCo report not found" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco-coverage
+          path: smartdisplay-mes-api/target/site/jacoco/**
+          if-no-files-found: warn
+
       - name: Package backend
         run: mvn -B -DskipTests "-Dspring-boot.repackage.skip=true" package
 
@@ -51,7 +93,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: smartdisplay-mes-ui/package-lock.json
 
@@ -103,4 +145,93 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\verify-flyway-migrations.ps1
 
       - name: Verify Docker Compose config
-        run: docker compose -f smartdisplay-mes-api\docker-compose.yml config
+        run: docker compose config
+
+  browser-e2e:
+    name: Docker browser E2E
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+      - delivery-gates
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Start pilot stack
+        run: docker compose up -d --build
+
+      - name: Run browser E2E
+        working-directory: smartdisplay-mes-ui
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8888
+          E2E_APP_TIMEOUT_MS: "180000"
+        run: node scripts/run-browser-e2e.mjs
+
+      - name: Upload browser E2E reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e-reports
+          path: docs/SmartDisplay-MES-browser-e2e-*.*
+          if-no-files-found: ignore
+
+      - name: Stop pilot stack
+        if: always()
+        run: docker compose down -v
+
+  performance-baseline:
+    name: Manual Docker performance baseline
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_performance_baseline }}
+    needs:
+      - browser-e2e
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start pilot stack
+        run: docker compose up -d --build
+
+      - name: Wait for API proxy
+        run: |
+          for attempt in {1..90}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888/api/v1/auth/login || true)
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "API proxy is ready with HTTP $code"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Run performance baseline
+        shell: pwsh
+        run: >
+          ./tools/run-pilot-performance-baseline.ps1
+          -BaseUrl http://127.0.0.1:8888/api
+          -Username planner
+          -Password 123456
+          -Rounds ${{ inputs.performance_rounds }}
+          -Samples ${{ inputs.performance_samples }}
+          -ImportCount ${{ inputs.performance_import_count }}
+
+      - name: Upload performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline-reports
+          path: |
+            docs/SmartDisplay-MES-performance-baseline-*.*
+            docs/performance-baseline-rounds/**
+          if-no-files-found: ignore
+
+      - name: Stop pilot stack
+        if: always()
+        run: docker compose down -v

@@ -54,12 +54,19 @@ public class ErpOrderAdapterService {
         int createdCount = 0;
         int skippedCount = 0;
         List<String> sampleOrderNos = new ArrayList<>();
+        List<Map<String, Object>> skippedDetails = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = rows.get(i);
             String orderNo = orderNos.get(i);
-            if (existingOrderNos.contains(orderNo) || !importedOrderNos.add(orderNo)) {
+            if (existingOrderNos.contains(orderNo)) {
                 skippedCount++;
+                skippedDetails.add(skippedDetail(orderNo, "EXISTING", row));
+                continue;
+            }
+            if (!importedOrderNos.add(orderNo)) {
+                skippedCount++;
+                skippedDetails.add(skippedDetail(orderNo, "DUPLICATE_IN_BATCH", row));
                 continue;
             }
             ProductionOrder order = new ProductionOrder();
@@ -90,14 +97,27 @@ public class ErpOrderAdapterService {
         result.put("failedCount", 0);
         result.put("sampleLimit", SAMPLE_LIMIT);
         result.put("sampleOrderNos", sampleOrderNos);
+        result.put("skippedDetails", skippedDetails);
         result.put("truncated", createdCount > SAMPLE_LIMIT);
         result.put("status", "COMPLETED");
         result.put("createdTime", now);
 
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("request", safeRequest);
+        snapshot.put("summary", result);
+
         auditLogService.record("ERP_ORDER_IMPORT", batchNo, "ERP_ADAPTER",
                 "ERP模拟工单导入: received=" + rows.size() + ", created=" + createdCount + ", skipped=" + skippedCount,
-                currentOperator, "erp-adapter", JSONUtil.toJsonStr(result));
+                currentOperator, "erp-adapter", JSONUtil.toJsonStr(snapshot));
         return result;
+    }
+
+    private Map<String, Object> skippedDetail(String orderNo, String reason, Map<String, Object> row) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("orderNo", orderNo);
+        detail.put("skipReason", reason);
+        detail.put("productCode", text(row, "productCode", ""));
+        return detail;
     }
 
     private List<Map<String, Object>> normalizeRows(Map<String, Object> request) {

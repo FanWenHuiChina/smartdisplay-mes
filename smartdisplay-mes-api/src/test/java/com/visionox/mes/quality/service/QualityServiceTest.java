@@ -7,6 +7,7 @@ import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
 import com.visionox.mes.lot.mapper.HoldRecordMapper;
 import com.visionox.mes.lot.mapper.LotMapper;
+import com.visionox.mes.material.service.MaterialService;
 import com.visionox.mes.quality.entity.ExceptionEvent;
 import com.visionox.mes.quality.entity.QualityDefectRecord;
 import com.visionox.mes.quality.entity.QualityInspection;
@@ -85,8 +86,16 @@ class QualityServiceTest {
     @Mock
     private RolePermissionService rolePermissionService;
 
+    @Mock
+    private MaterialService materialService;
+
     @InjectMocks
     private QualityService qualityService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void wireLazyMaterialService() {
+        org.springframework.test.util.ReflectionTestUtils.setField(qualityService, "materialService", materialService);
+    }
 
     @Test
     void evaluateTrackOutShouldCreateExceptionAndAutoHoldWhenManualResultIsNg() {
@@ -186,6 +195,66 @@ class QualityServiceTest {
         verify(auditLogService).record(eq("QMS_INSPECTION_REPORT"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("quality-service"), any());
         verify(auditLogService).record(eq("EXCEPTION_CREATE"), any(), eq("EXCEPTION"), any(), eq("system"), eq("quality-service"), isNull());
         verify(auditLogService).record(eq("LOT_HOLD"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"), eq("quality-service"), isNull());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createManualInspectionShouldPersistDefectExceptionAndHoldWhenNg() {
+        Lot lot = lot("LOT002");
+        lot.setCurrentStepCode("INSPECTION");
+        lot.setCurrentEquipmentCode("AOI_01");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectCount(any())).thenReturn(0L);
+
+        Map<String, Object> result = qualityService.createManualInspection(Map.of(
+                "lotNo", "LOT002",
+                "operator", "qe1002",
+                "result", "NG",
+                "items", List.of(Map.of(
+                        "itemCode", "MURA",
+                        "itemName", "Mura复检",
+                        "result", "NG",
+                        "defectCode", "D-MURA",
+                        "defectPosition", "PANEL-CENTER"
+                ))
+        ));
+
+        assertThat(result)
+                .containsEntry("sourceSystem", "mes-quality-workbench")
+                .containsEntry("messageType", "MANUAL_INSPECTION")
+                .containsEntry("lotNo", "LOT002")
+                .containsEntry("result", "NG")
+                .containsEntry("inspectionCount", 1)
+                .containsEntry("defectCount", 1)
+                .containsEntry("holdApplied", true);
+        assertThat((List<Map<String, Object>>) result.get("inspections")).hasSize(1);
+        assertThat(result.get("exceptionEvent")).isNotNull();
+
+        ArgumentCaptor<QualityInspection> inspectionCaptor = ArgumentCaptor.forClass(QualityInspection.class);
+        verify(inspectionMapper).insert(inspectionCaptor.capture());
+        QualityInspection inspection = inspectionCaptor.getValue();
+        assertThat(inspection.getLotNo()).isEqualTo("LOT002");
+        assertThat(inspection.getStepCode()).isEqualTo("INSPECTION");
+        assertThat(inspection.getEquipmentCode()).isEqualTo("AOI_01");
+        assertThat(inspection.getResult()).isEqualTo("NG");
+        assertThat(inspection.getDefectCode()).isEqualTo("D-MURA");
+        assertThat(inspection.getDefectPosition()).isEqualTo("PANEL-CENTER");
+        assertThat(inspection.getSource()).isEqualTo("MES_MANUAL");
+
+        ArgumentCaptor<QualityDefectRecord> defectCaptor = ArgumentCaptor.forClass(QualityDefectRecord.class);
+        verify(defectRecordMapper).insert(defectCaptor.capture());
+        assertThat(defectCaptor.getValue().getDefectCode()).isEqualTo("D-MURA");
+
+        ArgumentCaptor<ExceptionEvent> eventCaptor = ArgumentCaptor.forClass(ExceptionEvent.class);
+        verify(exceptionEventMapper).insert(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getLotNo()).isEqualTo("LOT002");
+
+        assertThat(lot.getStatus()).isEqualTo("HOLD");
+        assertThat(lot.getHoldFlag()).isEqualTo(1);
+        verify(lotMapper).updateById(lot);
+        verify(holdRecordMapper).insert(any(HoldRecord.class));
+        verify(auditLogService).record(eq("QUALITY_INSPECTION"), eq("LOT002"), eq("LOT"), any(), eq("qe1002"), eq("quality-service"), any());
+        verify(auditLogService).record(eq("LOT_HOLD"), eq("LOT002"), eq("LOT"), any(), eq("qe1002"), eq("quality-service"), isNull());
     }
 
     @Test
@@ -336,6 +405,40 @@ class QualityServiceTest {
     }
 
     @Test
+    void exceptionRowsShouldFilterBySourceModuleAndStatus() {
+        ExceptionEvent event = exceptionEvent("EX-WMS-001", "OPEN");
+        event.setEventType("MATERIAL");
+        event.setEventLevel("P2");
+        event.setLotNo(null);
+        event.setStepCode(null);
+        event.setEquipmentCode(null);
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-WMS-001");
+        event.setSourcePayload("{\"taskNo\":\"MLT-WMS-001\",\"batchNo\":\"PI_INK_B010\"}");
+        event.setTitle("WMS库位任务复核差异升级");
+        when(exceptionEventMapper.selectList(any())).thenReturn(List.of(event));
+        when(mrbRecordMapper.selectCount(any())).thenReturn(0L);
+        when(mrbAttachmentMapper.selectCount(any())).thenReturn(0L);
+        when(mrbMinutesMapper.selectCount(any())).thenReturn(0L);
+
+        List<Map<String, Object>> rows = qualityService.exceptionRows(null, "wms_location_task", "open");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("eventNo", "EX-WMS-001")
+                .containsEntry("eventType", "MATERIAL")
+                .containsEntry("eventLevel", "P2")
+                .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("sourceRefType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("sourceRefNo", "MLT-WMS-001")
+                .containsEntry("sourcePayload", "{\"taskNo\":\"MLT-WMS-001\",\"batchNo\":\"PI_INK_B010\"}")
+                .containsEntry("status", "OPEN")
+                .containsEntry("ownerRole", "QE");
+        verify(exceptionEventMapper).selectList(any());
+    }
+
+    @Test
     void closeExceptionShouldRequireConclusion() {
         when(exceptionEventMapper.selectOne(any())).thenReturn(exceptionEvent("EX001", "MRB_REVIEWED"));
 
@@ -466,6 +569,15 @@ class QualityServiceTest {
         verify(mrbRecordMapper).updateById(record);
         verify(auditLogService).record(eq("MRB_APPROVAL_ESCALATE"), eq("MRBT001"), eq("MRB_APPROVAL"),
                 any(), eq("qe1001"), eq("quality-service"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MRB_APPROVAL_SLA_REFRESH"), eq("BATCH"), eq("MRB_APPROVAL"),
+                any(), eq("qe1001"), eq("quality-service"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"scannedCount\":1")
+                .contains("\"escalatedCount\":1")
+                .contains("MRB001")
+                .contains("\"request\"")
+                .contains("\"summary\"");
     }
 
     @Test

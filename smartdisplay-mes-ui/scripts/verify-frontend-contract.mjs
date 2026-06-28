@@ -63,6 +63,8 @@ const router = read('src/router/index.js')
 const request = read('src/api/request.js')
 const authApi = read('src/api/auth.js')
 const pilotApi = read('src/api/pilot.js')
+const lotApi = read('src/api/lot.js')
+const recipeApi = read('src/api/recipe.js')
 const permissions = read('src/utils/permissions.js')
 const devFallbackUtil = read('src/utils/devFallback.js')
 const viteConfig = read('vite.config.js')
@@ -85,9 +87,11 @@ check('router:login-route', router.includes("path: '/login'"))
 for (const route of requiredRoutes) {
   check(`router:${route}`, router.includes(`path: '${route}'`))
 }
-for (const redirect of ['dashboard', 'lot', 'recipe']) {
-  check(`router:${redirect}-redirect`, router.includes(`path: '${redirect}'`) && router.includes('redirect:'))
-}
+check('router:dashboard-redirect', router.includes("path: 'dashboard'") && router.includes("redirect: '/overview'"))
+check('router:lot-page-route', hasAll(router, ["path: 'lot'", "name: 'LotManagement'", "../views/lot/index.vue"]))
+check('router:recipe-page-route', hasAll(router, ["path: 'recipe'", "name: 'RecipeManagement'", "../views/recipe/index.vue"]))
+check('router:lot-not-redirect', !router.includes("path: 'lot',\n        redirect:"))
+check('router:recipe-not-redirect', !router.includes("path: 'recipe',\n        redirect:"))
 check('router:auth-guard', hasAll(router, ['beforeEach', "localStorage.getItem('token')", 'hasMenu', 'firstAccessiblePath']))
 check('router:preview-permission', hasAll(router, ['preview', 'setPreviewPermissions']))
 
@@ -104,12 +108,16 @@ const requiredApiExports = [
   ['getYieldDashboard', '/v1/dashboard/yield'],
   ['getOrders', '/v1/orders'],
   ['createOrder', '/v1/orders'],
+  ['getOrderReleaseChecks', '/v1/orders/${orderNo}/release-checks'],
   ['releaseOrder', '/v1/orders/${orderNo}/release'],
   ['getLots', '/v1/lots'],
+  ['getTrackInChecks', '/v1/lots/${lotNo}/track-in-checks'],
   ['trackInLot', '/v1/lots/${lotNo}/track-in'],
   ['trackOutLot', '/v1/lots/${lotNo}/track-out'],
   ['holdLot', '/v1/lots/${lotNo}/hold'],
+  ['batchHoldLots', '/v1/lots/batch-hold'],
   ['releaseLot', '/v1/lots/${lotNo}/release'],
+  ['batchReleaseLots', '/v1/lots/batch-release'],
   ['reworkLot', '/v1/lots/${lotNo}/rework'],
   ['scrapLot', '/v1/lots/${lotNo}/scrap'],
   ['getProducts', '/v1/master/products'],
@@ -131,6 +139,7 @@ const requiredApiExports = [
   ['getTraceSn', '/v1/trace/sn/${sn}'],
   ['searchTrace', '/v1/trace/search'],
   ['getQualityInspections', '/v1/quality/inspections'],
+  ['createQualityInspection', '/v1/quality/inspections'],
   ['getQualityExceptions', '/v1/quality/exceptions'],
   ['getQualityMrbRecords', '/v1/quality/exceptions/${eventNo}/mrb-records'],
   ['getQualityMrbMinutes', '/v1/quality/mrb-records/${mrbNo}/minutes'],
@@ -157,6 +166,7 @@ const requiredApiExports = [
   ['checkEquipmentGatewayHealth', '/v1/equipment/gateways/${gatewayCode}/health-check'],
   ['getEquipmentGatewayHealthChecks', '/v1/equipment/gateway-health-checks'],
   ['getEquipmentGatewayMessages', '/v1/equipment/gateway-messages'],
+  ['getEquipmentGatewayMessageDetail', '/v1/equipment/gateway-messages/${messageNo}'],
   ['getEquipmentGatewayDrivers', '/v1/equipment/gateway-drivers'],
   ['getEquipmentParameterSamples', '/v1/equipment/parameters'],
   ['reportEquipmentParameters', '/v1/equipment/parameters/report'],
@@ -193,7 +203,10 @@ const requiredApiExports = [
   ['getMaterialLocationTasks', '/v1/material/location-tasks'],
   ['createMaterialLocationTask', '/v1/material/location-tasks'],
   ['assignMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/assign'],
+  ['claimMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/claim'],
   ['completeMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/complete'],
+  ['reviewMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/review'],
+  ['dispositionMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/disposition'],
   ['cancelMaterialLocationTask', '/v1/material/location-tasks/${taskNo}/cancel'],
   ['getCarriers', '/v1/carriers'],
   ['bindCarrier', '/v1/carriers/${carrierNo}/bind'],
@@ -220,6 +233,33 @@ for (const [name, endpoint] of requiredApiExports) {
   check(`api:${name}`, hasExport(pilotApi, name, endpoint), endpoint)
 }
 
+const requiredLotApiExports = [
+  ['getLotList', '/v1/lots'],
+  ['trackIn', '/v1/lots/${lotNo}/track-in'],
+  ['trackOut', '/v1/lots/${lotNo}/track-out'],
+  ['holdLot', '/v1/lots/${lotNo}/hold'],
+  ['batchHoldLots', '/v1/lots/batch-hold'],
+  ['releaseLot', '/v1/lots/${lotNo}/release'],
+  ['batchReleaseLots', '/v1/lots/batch-release'],
+  ['reworkLot', '/v1/lots/${lotNo}/rework'],
+  ['scrapLot', '/v1/lots/${lotNo}/scrap']
+]
+
+for (const [name, endpoint] of requiredLotApiExports) {
+  check(`api:lot:${name}`, hasExport(lotApi, name, endpoint), endpoint)
+}
+
+const requiredRecipeApiExports = [
+  ['getRecipeList', '/v1/recipes'],
+  ['getRecipeDetail', '/v1/recipes/${id}'],
+  ['searchRecipe', '/v1/recipes/search'],
+  ['publishRecipe', '/v1/recipes/${id}/publish']
+]
+
+for (const [name, endpoint] of requiredRecipeApiExports) {
+  check(`api:recipe:${name}`, hasExport(recipeApi, name, endpoint), endpoint)
+}
+
 const requiredRoles = ['ADMIN', 'PLANNER', 'OPERATOR', 'QE', 'PE', 'EE']
 for (const role of requiredRoles) {
   check(`rbac:role:${role}`, permissions.includes(`${role}:`) || permissions.includes(`${role}`))
@@ -239,6 +279,7 @@ const requiredButtons = [
   'lot:release',
   'lot:rework',
   'lot:scrap',
+  'quality:inspection-create',
   'quality:mrb-review',
   'quality:mrb-approve',
   'quality:mrb-escalate',
@@ -267,12 +308,14 @@ const pageContracts = [
   ['views/overview/index.vue', ['getOverview'], []],
   ['views/order/index.vue', ['getOrders', 'getLots', 'importErpOrders', 'releaseOrder'], ['order:create', 'order:release']],
   ['views/master/index.vue', ['getSites', 'getProductionLines', 'getShifts', 'getBoms', 'getBomChangeRequests', 'getRecipes', 'publishRecipe', 'publishBomChange'], ['recipe:publish', 'bom:change']],
-  ['views/execution/index.vue', ['getLots', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
-  ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
-  ['views/quality/index.vue', ['getQualityInspections', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
-  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'completeMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
+  ['views/lot/index.vue', ['getLotList', 'batchHoldLots', 'batchReleaseLots'], ['lot:track-in', 'lot:track-out', 'lot:hold', 'lot:release', 'lot:rework', 'lot:scrap']],
+  ['views/recipe/index.vue', ['getRecipeList', 'getRecipeDetail', 'publishRecipe'], ['recipe:publish']],
+  ['views/execution/index.vue', ['getLots', 'getTrackInChecks', 'trackInLot', 'trackOutLot', 'holdLot'], ['lot:track-in', 'lot:track-out', 'lot:hold']],
+  ['views/equipment/index.vue', ['getEquipments', 'getEquipmentEvents', 'createEquipmentEvent', 'ingestEapMessage', 'registerEquipmentGateway', 'checkEquipmentGatewayHealth', 'getEquipmentGatewayMessageDetail'], ['equipment:event-create', 'equipment:eap-ingest', 'equipment:eap-gateway']],
+  ['views/quality/index.vue', ['getQualityInspections', 'createQualityInspection', 'getQualityExceptions', 'getQualityMrbRecords', 'getQualityMrbApprovals', 'refreshQualityMrbApprovalSla', 'approveQualityMrbTask', 'rejectQualityMrbTask', 'reviewQualityException', 'closeQualityException', 'ingestQmsInspection'], ['quality:inspection-create', 'quality:mrb-review', 'quality:mrb-approve', 'quality:mrb-escalate', 'quality:exception-close']],
+  ['views/material/index.vue', ['getMaterialBatches', 'receiveMaterial', 'freezeMaterial', 'unfreezeMaterial', 'returnMaterial', 'countMaterialInventory', 'createMaterialIncomingInspection', 'checkWmsMaterialReadiness', 'ingestWmsInventoryTransaction', 'getMaterialSupplierPerformance', 'getMaterialSupplierTrends', 'getMaterialSuppliers', 'evaluateMaterialSupplierQualification', 'getSupplierQualificationReviews', 'createSupplierQualificationReview', 'generateDueSupplierQualificationReviews', 'decideSupplierQualificationReview', 'getSupplierCorrectiveActions', 'createSupplierCorrectiveAction', 'closeSupplierCorrectiveAction', 'getMaterialLocations', 'getMaterialLocationTasks', 'createMaterialLocationTask', 'assignMaterialLocationTask', 'claimMaterialLocationTask', 'completeMaterialLocationTask', 'reviewMaterialLocationTask', 'dispositionMaterialLocationTask', 'cancelMaterialLocationTask', 'getCarriers', 'bindCarrier', 'unbindCarrier'], ['material:wms', 'material:iqc', 'material:supplier-manage']],
   ['views/trace/index.vue', ['searchTrace'], []],
-  ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
+  ['views/ai/index.vue', ['getYieldDashboard', 'createYieldReport', 'analyzeEquipment', 'askKnowledgeBase', 'getAiModelConfigs', 'getAiReportRecords', 'getKnowledgeDocuments', 'importKnowledgeDocument', 'createKnowledgeIndexJob'], ['ai:yield-report', 'ai:equipment-analyze', 'ai:kb-ask', 'ai:kb-import', 'ai:kb-index']],
   ['views/system/index.vue', ['getSystemSummary', 'getAuditLogs', 'getSystemUsers', 'getPermissionChangeRequests', 'createPermissionChangeRequest', 'reviewPermissionChangeRequest', 'reloadPermissions'], ['system:permission-change']]
 ]
 
@@ -294,6 +337,7 @@ for (const [relativePath, apiNames, buttonKeys] of pageContracts) {
 
 const aiView = read('src/views/ai/index.vue')
 check('page:views/ai/index.vue:hybrid-local-index', aiView.includes("runKnowledgeIndex('HYBRID_LOCAL')"), 'AI page must expose local hybrid RAG indexing')
+check('page:views/ai/index.vue:equipment-analysis-workbench', hasAll(aiView, ['analyzeEquipment', 'runEquipmentAnalyze', 'equipmentAnalysis', "hasButton('ai:equipment-analyze')", 'equipmentLotContexts', 'equipmentSources']), 'AI page must expose equipment anomaly analysis with MES context and RAG evidence')
 
 const masterView = read('src/views/master/index.vue')
 check('page:views/master/index.vue:bom-change-validation-file', masterView.includes('validationFileName') && masterView.includes('validationFileHash'), 'BOM change submit must carry substitute validation attachment metadata')
@@ -301,6 +345,10 @@ check('page:views/master/index.vue:bom-change-attachment-count', masterView.incl
 
 const orderView = read('src/views/order/index.vue')
 check('page:views/order/index.vue:erp-adapter-import', hasAll(orderView, ['importErpOrders', 'submitErpImport', 'erpImportResult']), 'Order page must expose ERP adapter import and show the latest import result')
+check('page:views/order/index.vue:erp-import-audit-receipt', hasAll(orderView, ['erpImportCards', 'erpSampleOrders', 'ERP_ORDER_IMPORT']), 'Order page must show ERP adapter import batch, sample orders and audit action')
+check('page:views/order/index.vue:release-checks-api-driven', hasAll(orderView, ['getOrderReleaseChecks', 'loadReleaseChecks', 'releaseCheckResult', 'releaseCheckBadgeText', 'releaseButtonDisabled']), 'Order release checks must be driven by /orders/{orderNo}/release-checks')
+check('page:views/order/index.vue:no-static-release-check-badge', !orderView.includes('7/8 通过'), 'Order page must not hard-code release check pass count')
+check('page:views/order/index.vue:release-checks-block-release', hasAll(orderView, ['releaseCheckResult.value?.releasable', '工单释放预校验未通过']), 'Order release action must block when backend release checks fail')
 check('page:views/order/index.vue:query-filters', hasAll(orderView, ['orderFilters', 'v-model.trim="orderFilters.keyword"', 'params.status = orderFilters.value.status', 'displayOrders']), 'Order page must wire query filters to API status and visible rows')
 check('page:views/order/index.vue:no-simulated-release-button', !orderView.includes('模拟释放'), 'Order page must not keep an unconnected simulated release button')
 check('page:views/order/index.vue:no-unwired-buttons', unwiredButtons(orderView).length === 0, `unwired buttons: ${unwiredButtons(orderView).join(', ')}`)
@@ -314,9 +362,23 @@ for (const relativePath of listVueFiles('src/views')) {
 const qualityView = read('src/views/quality/index.vue')
 check('page:views/quality/index.vue:mrb-scrap-action', qualityView.includes("handleReview(item, 'SCRAP')"), 'quality MRB queue must expose SCRAP disposition action')
 check('page:views/quality/index.vue:mrb-review-close-permission-split', hasAll(qualityView, ['canReviewAction', 'canCloseAction', "hasButton('quality:mrb-review')", "hasButton('quality:exception-close')"]), 'MRB review and close actions must use separate button permissions')
+check('page:views/quality/index.vue:manual-inspection-submit', hasAll(qualityView, ['createQualityInspection', 'submitQualityInspection', "qmsForm.mode === 'MES'", "hasButton('quality:inspection-create')"]), 'quality page must expose MES manual inspection write path separately from QMS adapter')
+check('page:views/quality/index.vue:wms-exception-source-filter', hasAll(qualityView, ['exceptionFilters', 'exceptionQuery', 'sourceModule', 'WMS_LOCATION_TASK', 'WMS库位任务', 'getQualityExceptions(exceptionQuery())']), 'quality page must expose WMS material exception source filtering')
+check('page:views/quality/index.vue:wms-exception-action-boundary', hasAll(qualityView, ['lotActionable', "item.lotActionable", "!item.lotActionable", "handleReview(item, 'CONTINUE_HOLD')", '复判']), 'quality page must avoid Lot disposition labels for WMS/material exceptions without Lot context')
+check('page:views/quality/index.vue:wms-exception-source-evidence', hasAll(qualityView, ['sourceRefNo', 'sourcePayload', 'sourceBatchNo', 'parseSourcePayload', 'sourceEvidenceText', '来源任务', '批次']), 'quality page must display structured WMS source task and batch evidence')
 
 const traceView = read('src/views/trace/index.vue')
 check('page:views/trace/index.vue:serial-number-evidence', hasAll(traceView, ['serialNumbers', 'serialNumberSummary', 'serialNumberCount']), 'Trace page must display production SN binding evidence returned by /trace/search')
+
+const materialView = read('src/views/material/index.vue')
+check('page:views/material/index.vue:wms-split-location-task', hasAll(materialView, ['SPLIT', '拆批', 'childBatchNo', '拆出数量', 'createMaterialLocationTask', 'completeMaterialLocationTask']), 'Material page must expose WMS split batch location task with child batch evidence')
+check('page:views/material/index.vue:wms-location-task-claim', hasAll(materialView, ['claimMaterialLocationTask', 'claimLocationTask', 'canClaim', '认领']), 'Material page must expose WMS location task self-claim action distinct from assign')
+check('page:views/material/index.vue:wms-location-task-review', hasAll(materialView, ['reviewMaterialLocationTask', 'reviewLocationTask', 'canReview', 'reviewer', 'reviewedTime', '待复核']), 'Material page must expose WMS location task review evidence and action')
+check('page:views/material/index.vue:wms-location-task-review-result', hasAll(materialView, ['reviewResult', 'reviewConclusion', '复核通过', '复核驳回', "reviewLocationTask(task, 'APPROVED')", "reviewLocationTask(task, 'REJECTED')"]), 'Material page must expose WMS location task approved/rejected review result evidence')
+check('page:views/material/index.vue:wms-location-task-disposition', hasAll(materialView, ['dispositionMaterialLocationTask', 'dispositionLocationTask', 'canDisposition', 'dispositionStatus', 'dispositionResult', 'ACCEPT_DEVIATION', 'ADJUST_INVENTORY', 'ESCALATE', '接收差异', '调库', '升级']), 'Material page must expose WMS rejected review disposition, explicit inventory adjustment action and escalation action')
+check('page:views/material/index.vue:wms-location-task-pending-disposition-queue', hasAll(materialView, ['pendingDispositionTasks', 'pendingDispositionSummary', 'pendingDispositionOnly', '复核差异待处置', '暂无复核差异待处置任务']), 'Material page must expose a dedicated pending rejected-review disposition queue backed by API filters')
+check('page:views/material/index.vue:wms-location-task-sla', hasAll(materialView, ['priority', 'dueHours', 'SLA小时', 'slaStatus', 'slaText', 'OVERDUE', 'DUE_SOON', 'locationTaskSlaText']), 'Material page must expose WMS location task priority and SLA evidence')
+check('page:views/material/index.vue:wms-location-task-exception-closure', hasAll(materialView, ['linkedExceptionEventNo', 'exceptionCloseAction', 'exceptionCloseConclusion', 'exceptionClosedBy', 'exceptionClosedTime', 'exceptionCloseText', 'locationTaskExceptionCloseText', 'MRB已关闭', 'MRB待关闭']), 'Material page must expose WMS escalation exception MRB closure writeback evidence')
 
 const layoutView = read('src/views/layout/MainLayout.vue')
 check('layout:dashboard-badges-api-driven', hasAll(layoutView, ['getOverview', 'dashboardBadges', 'badgeKey', 'loadNavigationSummary']), 'Layout dashboard badges must be driven by /dashboard/overview')
@@ -327,11 +389,24 @@ const systemView = read('src/views/system/index.vue')
 check('page:views/system/index.vue:summary-driven-roles', hasAll(systemView, ['getSystemSummary', 'systemSummary', 'permissionSnapshots', 'mapRolePermission']), 'System role matrix must be driven by /system/summary permissions')
 check('page:views/system/index.vue:permission-diff', hasAll(systemView, ['comparePermissionChange', 'permissionDiffRows', 'beforeSnapshot', 'afterSnapshot']), 'System permission changes must expose before/after diff')
 check('page:views/system/index.vue:permission-reject', hasAll(systemView, ['rejectPermissionChange', "decision: 'REJECT'"]), 'System permission changes must support reject decision')
+check('page:views/system/index.vue:audit-snapshot-review', hasAll(systemView, ['requestSnapshot', 'selectedAuditLog', 'auditSnapshotSections', 'showAuditSnapshot', 'formatSnapshotBlock']), 'System audit logs must expose structured request snapshots for review')
+check('page:views/system/index.vue:audit-pagination', hasAll(systemView, ['auditPagination', 'auditQueryParams', 'applyAuditPage', 'handleAuditSizeChange', 'handleAuditPageChange']), 'System audit logs must use backend pagination state')
+check('page:views/system/index.vue:audit-filters', hasAll(systemView, ['v-model="filters.result"', 'v-model.trim="filters.source"', 'v-model.trim="filters.operator"', 'v-model="filters.startTime"', 'v-model="filters.endTime"', 'queryAuditLogs']), 'System audit logs must expose result/source/operator/date filters')
+check('page:views/system/index.vue:audit-context-export', hasAll(systemView, ['requestMethod', 'requestUri', 'clientIp', 'userAgent', 'createdTime', 'bizType']), 'System audit export must include request context fields')
 
 const lotView = read('src/views/lot/index.vue')
+const recipeView = read('src/views/recipe/index.vue')
 const executionView = read('src/views/execution/index.vue')
+check('page:views/lot/index.vue:workbench-style', hasAll(lotView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Lot page must use current light workbench components')
 check('page:views/lot/index.vue:track-in-rework-status', lotView.includes("['READY', 'REWORK'].includes(row.status)"), 'Lot page Track In action must allow rework lots')
+check('page:views/lot/index.vue:batch-disposition', hasAll(lotView, ['selectedLotNos', 'batchHoldLots', 'batchReleaseLots', 'submitBatchHold', 'submitBatchRelease', 'batchActionResult']), 'Lot page must expose batch Hold/Release actions with backend audit batch result')
+check('page:views/recipe/index.vue:workbench-style', hasAll(recipeView, ['page-head', 'mes-card', 'mes-table', 'mes-btn']), 'Recipe page must use current light workbench components')
+check('page:views/recipe/index.vue:v1-api-import', recipeView.includes("@/api/recipe") && !recipeView.includes("@/api/pilot"), 'Recipe page must use dedicated v1 recipe API wrapper')
+check('page:views/recipe/index.vue:publish-action', hasAll(recipeView, ['handlePublish', 'publishRecipe', "hasButton('recipe:publish')"]), 'Recipe page must expose permission-gated publish action')
 check('page:views/execution/index.vue:track-in-rework-status', executionView.includes("['READY', 'REWORK'].includes(lot.status)"), 'Execution page Track In action must allow rework lots')
+check('page:views/execution/index.vue:track-in-checks-api-driven', hasAll(executionView, ['getTrackInChecks', 'loadTrackInChecks', 'trackInCheckResult', 'trackInCheckBadgeText', 'trackInReady']), 'Execution Track In validation matrix must be driven by /lots/{lotNo}/track-in-checks')
+check('page:views/execution/index.vue:track-in-checks-block-track-in', hasAll(executionView, ['checkResult?.trackInReady', 'Track In 预校验未通过']), 'Execution Track In action must block when backend validation checks fail')
+check('page:views/execution/index.vue:no-static-track-in-check-badge', !executionView.includes('8 项校验') && !executionView.includes('8项校验'), 'Execution page must not hard-code Track In validation count')
 
 check('package:verify-script', packageJson.scripts?.['verify:frontend-contract'] === 'node scripts/verify-frontend-contract.mjs')
 

@@ -44,7 +44,16 @@ public class AuditFailureResolver {
                 return target("ORDER_RELEASE", parts[offset + 1], "ORDER");
             }
         }
-        if ("lots".equals(domain) && parts.length >= offset + 3) {
+        if ("lots".equals(domain)) {
+            if (matches(parts, offset, "lots", "batch-hold")) {
+                return target("LOT_BATCH_HOLD", null, "LOT");
+            }
+            if (matches(parts, offset, "lots", "batch-release")) {
+                return target("LOT_BATCH_RELEASE", null, "LOT");
+            }
+            if (parts.length < offset + 3) {
+                return Optional.empty();
+            }
             String lotNo = parts[offset + 1];
             return switch (parts[offset + 2]) {
                 case "track-in" -> target("TRACK_IN", lotNo, "LOT");
@@ -207,6 +216,9 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "material", "suppliers", "*", "qualification-reviews")) {
             return target("SUPPLIER_QUALIFICATION_REVIEW_CREATE", parts[offset + 2], "SUPPLIER");
         }
+        if (matches(parts, offset, "material", "suppliers", "qualification-reviews", "generate-due")) {
+            return target("SUPPLIER_QUALIFICATION_REVIEW_GENERATE", null, "SUPPLIER_REVIEW");
+        }
         if (matches(parts, offset, "material", "suppliers", "qualification-reviews", "*", "decision")) {
             return target("SUPPLIER_QUALIFICATION_REVIEW_DECIDE", parts[offset + 3], "SUPPLIER_REVIEW");
         }
@@ -222,8 +234,17 @@ public class AuditFailureResolver {
         if (matches(parts, offset, "material", "location-tasks", "*", "assign")) {
             return target("MATERIAL_LOCATION_TASK_ASSIGN", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }
+        if (matches(parts, offset, "material", "location-tasks", "*", "claim")) {
+            return target("MATERIAL_LOCATION_TASK_CLAIM", parts[offset + 2], "MATERIAL_LOCATION_TASK");
+        }
         if (matches(parts, offset, "material", "location-tasks", "*", "complete")) {
             return target("MATERIAL_LOCATION_TASK_COMPLETE", parts[offset + 2], "MATERIAL_LOCATION_TASK");
+        }
+        if (matches(parts, offset, "material", "location-tasks", "*", "review")) {
+            return target("MATERIAL_LOCATION_TASK_REVIEW", parts[offset + 2], "MATERIAL_LOCATION_TASK");
+        }
+        if (matches(parts, offset, "material", "location-tasks", "*", "disposition")) {
+            return target("MATERIAL_LOCATION_TASK_DISPOSITION", parts[offset + 2], "MATERIAL_LOCATION_TASK");
         }
         if (matches(parts, offset, "material", "location-tasks", "*", "cancel")) {
             return target("MATERIAL_LOCATION_TASK_CANCEL", parts[offset + 2], "MATERIAL_LOCATION_TASK");

@@ -26,11 +26,18 @@
 
     <div class="mes-card section-gap">
       <div class="mes-card__head">
-        <div class="mes-card__title">QMS 模拟检验上报</div>
+        <div class="mes-card__title">检验录入 / QMS Adapter</div>
         <span class="status-tag" :class="qmsResultType">{{ qmsResultText }}</span>
       </div>
       <div class="mes-card__body">
         <div class="qms-form">
+          <div class="mes-field">
+            <label>来源</label>
+            <select v-model="qmsForm.mode" class="mes-select">
+              <option value="MES">MES 手工录入</option>
+              <option value="QMS">QMS Adapter</option>
+            </select>
+          </div>
           <div class="mes-field">
             <label>Lot</label>
             <input v-model="qmsForm.lotNo" class="mes-input" placeholder="请输入 Lot" />
@@ -93,12 +100,12 @@
             <span>{{ qmsSubmitHint }}</span>
           </div>
           <button
-            v-if="canMrbAction"
+            v-if="canSubmitInspection"
             class="mes-btn primary"
             :disabled="qmsSubmitting"
-            @click="submitQmsInspection"
+            @click="submitQualityInspection"
           >
-            {{ qmsSubmitting ? '上报中' : '提交 QMS 上报' }}
+            {{ qmsSubmitting ? '提交中' : submitInspectionLabel }}
           </button>
         </div>
       </div>
@@ -126,30 +133,57 @@
           <div class="mes-card__title">MRB 待处置</div>
           <span class="status-tag red">{{ openExceptionCount }} 单</span>
         </div>
-        <div class="mes-card__body cards">
-          <div
-            v-for="item in mrbItems"
-            :key="item.eventNo"
-            class="mini-card"
-            :class="{ selected: selectedEventNo === item.eventNo }"
-            @click="selectMrbItem(item)"
-          >
-            <div class="mini-top">
-              <span>{{ item.title }}</span>
-              <span class="status-tag" :class="item.type">{{ item.status }}</span>
+        <div class="mes-card__body">
+          <div class="exception-filters">
+            <div class="mes-field">
+              <label>异常来源</label>
+              <select v-model="exceptionFilters.sourceModule" class="mes-select" @change="loadQualityData">
+                <option value="">全部来源</option>
+                <option value="QUALITY">质量检验</option>
+                <option value="WMS_LOCATION_TASK">WMS库位任务</option>
+              </select>
             </div>
-            <div class="mini-meta">{{ item.meta }}</div>
-            <div class="mini-stock">
-              <span>MRB {{ item.recordCount }}</span>
-              <span>纪要 {{ item.minutesCount }}</span>
-              <span>附件 {{ item.attachmentCount }}</span>
+            <div class="mes-field">
+              <label>异常状态</label>
+              <select v-model="exceptionFilters.status" class="mes-select" @change="loadQualityData">
+                <option value="">全部状态</option>
+                <option value="OPEN">OPEN</option>
+                <option value="MRB_PENDING">MRB_PENDING</option>
+                <option value="MRB_REVIEWED">MRB_REVIEWED</option>
+                <option value="CLOSED">CLOSED</option>
+              </select>
             </div>
-            <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
-            <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
-              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
-              <button v-if="canReviewAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
-              <button v-if="canReviewAction" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
-              <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
+          </div>
+          <div class="cards">
+            <div
+              v-for="item in mrbItems"
+              :key="item.eventNo"
+              class="mini-card"
+              :class="{ selected: selectedEventNo === item.eventNo }"
+              @click="selectMrbItem(item)"
+            >
+              <div class="mini-top">
+                <span>{{ item.title }}</span>
+                <span class="status-tag" :class="item.type">{{ item.status }}</span>
+              </div>
+              <div class="mini-meta">{{ item.meta }}</div>
+              <div class="mini-stock">
+                <span>{{ item.sourceText }}</span>
+                <span v-if="item.sourceRefNo">来源任务 {{ item.sourceRefNo }}</span>
+                <span v-if="item.sourceBatchNo">批次 {{ item.sourceBatchNo }}</span>
+                <span>MRB {{ item.recordCount }}</span>
+                <span>纪要 {{ item.minutesCount }}</span>
+                <span>附件 {{ item.attachmentCount }}</span>
+              </div>
+              <div v-if="item.sourceEvidence" class="mini-evidence">{{ item.sourceEvidence }}</div>
+              <div v-if="item.conclusion" class="mini-conclusion">{{ item.conclusion }}</div>
+              <div v-if="item.status !== 'CLOSED' && (canReviewAction || canCloseAction)" class="mini-actions">
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'RELEASE')">放行</button>
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'REWORK')">返工</button>
+                <button v-if="canReviewAction && item.lotActionable" class="mini-action danger" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'SCRAP')">报废</button>
+                <button v-if="canReviewAction && !item.lotActionable" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleReview(item, 'CONTINUE_HOLD')">复判</button>
+                <button v-if="canCloseAction" class="mini-action" :disabled="actionLoading === item.eventNo" @click.stop="handleClose(item)">关闭</button>
+              </div>
             </div>
           </div>
         </div>
@@ -276,7 +310,7 @@
             <thead><tr><th>Lot</th><th>工序</th><th>检测项</th><th>测量值</th><th>结果</th></tr></thead>
             <tbody>
               <tr v-for="record in inspectionRows" :key="record.key" :class="{ danger: record.result === 'NG' }">
-                <td>{{ record.lotNo }}</td>
+                <td class="mono">{{ record.lotNo }}</td>
                 <td>{{ record.stepCode }}</td>
                 <td>{{ record.itemName }}</td>
                 <td>{{ record.valueText }}</td>
@@ -291,11 +325,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   approveQualityMrbTask,
   closeQualityException,
+  createQualityInspection,
   getQualityExceptions,
   getQualityInspections,
   getQualityMrbApprovals,
@@ -309,31 +344,37 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackInspections = [
+const fallbackInspections = __DEV_MOCK_FALLBACK__ ? [
   { inspectionNo: 'QI-FALLBACK-001', lotNo: 'LOT202406006', stepCode: 'COATING', itemCode: 'THICKNESS', itemName: '涂胶厚度', measuredValue: 2.26, upperLimit: 2.2, lowerLimit: 1.8, unit: 'μm', result: 'NG', defectCode: 'D-THICKNESS' },
   { inspectionNo: 'QI-FALLBACK-002', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', itemCode: 'VACUUM', itemName: '真空度', measuredValue: 0.00062, upperLimit: 0.0005, lowerLimit: 0.00001, unit: 'Pa', result: 'NG', defectCode: 'D-VACUUM' },
   { inspectionNo: 'QI-FALLBACK-003', lotNo: 'LOT202406001', stepCode: 'COATING', itemCode: 'THICKNESS', itemName: '涂胶厚度', measuredValue: 2.04, upperLimit: 2.2, lowerLimit: 1.8, unit: 'μm', result: 'OK' }
-]
+] : []
 
-const fallbackExceptions = [
-  { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
-  { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' }
-]
+const fallbackExceptions = __DEV_MOCK_FALLBACK__ ? [
+  { eventNo: 'EX-FALLBACK-001', title: '涂胶膜厚超限', eventType: 'QUALITY', eventLevel: 'P1', sourceModule: 'QUALITY', lotNo: 'LOT202406006', stepCode: 'COATING', equipmentCode: 'COATER_02', status: 'OPEN', ownerRole: 'QE' },
+  { eventNo: 'EX-FALLBACK-002', title: '蒸镀真空度波动', eventType: 'EQUIPMENT', eventLevel: 'P2', sourceModule: 'EAP', lotNo: 'LOT202406004', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', status: 'PROCESSING', ownerRole: 'EE' },
+  { eventNo: 'EX-FALLBACK-WMS', title: 'WMS复核差异升级', eventType: 'MATERIAL', eventLevel: 'P2', sourceModule: 'WMS_LOCATION_TASK', sourceRefType: 'MATERIAL_LOCATION_TASK', sourceRefNo: 'MLT-FALLBACK-001', sourcePayload: '{"taskNo":"MLT-FALLBACK-001","taskType":"COUNT","batchNo":"PI-FALLBACK-001","reviewResult":"REJECTED","dispositionResult":"ESCALATE"}', lotNo: '', stepCode: '', equipmentCode: '', status: 'OPEN', ownerRole: 'QE' }
+] : []
 
-const fallbackDefects = [
+const fallbackDefects = __DEV_MOCK_FALLBACK__ ? [
   { defectCode: 'D-THICKNESS', defectName: '涂胶厚度超限', level: 'MAJOR', qty: 2 },
   { defectCode: 'D-VACUUM', defectName: '真空度超限', level: 'MAJOR', qty: 1 },
   { defectCode: 'D-MURA', defectName: 'Mura', level: 'MAJOR', qty: 1 }
-]
+] : []
 
-const fallbackMrbRecords = [
+const fallbackMrbRecords = __DEV_MOCK_FALLBACK__ ? [
   { mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', reviewType: 'REVIEW', dispositionAction: 'CONTINUE_HOLD', opinion: '等待补充膜厚复测记录。', meetingNo: 'MRB-DEMO-001', participants: 'qe,pe,ee', riskLevel: 'P1', approvalStatus: 'APPROVED', reviewer: 'qe', attachmentCount: 1, reviewTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackMrbApprovals = [
+const fallbackMrbApprovals = __DEV_MOCK_FALLBACK__ ? [
   { taskNo: 'MRBT-FALLBACK-QE', mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', approvalRole: 'QE', approvalStatus: 'APPROVED', approver: 'qe', opinion: '质量复测通过', dueTime: new Date().toISOString(), slaLevel: 'CRITICAL', slaHours: 2, escalationCount: 0 },
   { taskNo: 'MRBT-FALLBACK-PE', mrbNo: 'MRB-FALLBACK-001', eventNo: 'EX-FALLBACK-001', approvalRole: 'PE', approvalStatus: 'ESCALATED', approver: '-', opinion: '-', dueTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(), slaLevel: 'CRITICAL', slaHours: 3, escalatedTo: 'pm1001', escalationCount: 1 }
-]
+] : []
+
+const defaultDefectCodes = {
+  MES: 'D-MANUAL-NG',
+  QMS: 'D-QMS-NG'
+}
 
 const inspections = ref(__DEV_MOCK_FALLBACK__ ? fallbackInspections : [])
 const exceptions = ref(__DEV_MOCK_FALLBACK__ ? fallbackExceptions : [])
@@ -344,6 +385,10 @@ const mrbRecords = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbRecords : [])
 const mrbApprovals = ref(__DEV_MOCK_FALLBACK__ ? fallbackMrbApprovals : [])
 const qmsSubmitting = ref(false)
 const qmsResult = ref(null)
+const exceptionFilters = reactive({
+  sourceModule: '',
+  status: ''
+})
 
 const mrbForm = reactive({
   meetingNo: 'MRB-DEMO-001',
@@ -356,6 +401,7 @@ const mrbForm = reactive({
 })
 
 const qmsForm = reactive({
+  mode: 'MES',
   lotNo: __DEV_MOCK_FALLBACK__ ? fallbackInspections[0]?.lotNo || '' : '',
   result: 'OK',
   itemCode: 'VISUAL_CHECK',
@@ -366,9 +412,18 @@ const qmsForm = reactive({
   unit: '',
   stepCode: '',
   equipmentCode: '',
-  defectCode: 'D-QMS-NG',
+  defectCode: defaultDefectCodes.MES,
   operator: localStorage.getItem('username') || 'qe1001',
-  remark: 'QMS模拟检验上报'
+  remark: defaultInspectionRemark('MES')
+})
+
+watch(() => qmsForm.mode, (mode, previousMode) => {
+  if (!qmsForm.defectCode || qmsForm.defectCode === defaultDefectCodes[previousMode]) {
+    qmsForm.defectCode = defaultDefectCodes[mode] || defaultDefectCodes.MES
+  }
+  if (!qmsForm.remark || qmsForm.remark === defaultInspectionRemark(previousMode)) {
+    qmsForm.remark = defaultInspectionRemark(mode)
+  }
 })
 
 const openExceptionCount = computed(() => exceptions.value.filter(item => item.status !== 'CLOSED').length)
@@ -386,24 +441,39 @@ const metrics = computed(() => [
   { label: '缺陷类型', tag: 'TopN', type: 'purple', value: String(defectTopN.value.length), left: '按数量', right: '质量看板' }
 ])
 
-const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => ({
-  eventNo: item.eventNo,
-  title: `${item.lotNo || '-'} ${item.title || item.eventType}`,
-  status: item.status || 'OPEN',
-  type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
-  meta: `${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
-  mrbResult: item.mrbResult,
-  dispositionAction: item.dispositionAction,
-  conclusion: item.closeConclusion,
-  rootCause: item.rootCause,
-  recordCount: item.mrbRecordCount || 0,
-  attachmentCount: item.mrbAttachmentCount || 0,
-  minutesCount: item.mrbMinutesCount || 0
-})))
+const mrbItems = computed(() => exceptions.value.slice(0, 5).map(item => {
+  const sourcePayload = parseSourcePayload(item.sourcePayload)
+  const sourceRefNo = item.sourceRefNo || sourcePayload.taskNo || ''
+  const sourceBatchNo = sourcePayload.batchNo || ''
+  return {
+    eventNo: item.eventNo,
+    title: `${item.lotNo || item.eventNo || '-'} ${item.title || item.eventType}`,
+    status: item.status || 'OPEN',
+    type: item.status === 'CLOSED' ? 'green' : item.eventLevel === 'P1' ? 'red' : 'amber',
+    sourceModule: item.sourceModule,
+    sourceRefType: item.sourceRefType,
+    sourceRefNo,
+    sourceBatchNo,
+    sourcePayload,
+    sourceEvidence: sourceEvidenceText(item, sourcePayload, sourceRefNo),
+    sourceText: exceptionSourceText(item.sourceModule),
+    lotActionable: Boolean(item.lotNo) && item.sourceModule !== 'WMS_LOCATION_TASK',
+    meta: `${exceptionSourceText(item.sourceModule)} / ${item.stepCode || '-'} / ${item.equipmentCode || '-'} / ${item.ownerRole || 'QE'} / ${item.mrbOpinion || item.description || '等待处置'}`,
+    mrbResult: item.mrbResult,
+    dispositionAction: item.dispositionAction,
+    conclusion: item.closeConclusion,
+    rootCause: item.rootCause,
+    recordCount: item.mrbRecordCount || 0,
+    attachmentCount: item.mrbAttachmentCount || 0,
+    minutesCount: item.mrbMinutesCount || 0
+  }
+}))
 
 const canReviewAction = computed(() => hasButton('quality:mrb-review'))
 const canCloseAction = computed(() => hasButton('quality:exception-close'))
 const canMrbAction = computed(() => canReviewAction.value || canCloseAction.value)
+const canInspectionCreate = computed(() => hasButton('quality:inspection-create'))
+const canSubmitInspection = computed(() => qmsForm.mode === 'MES' ? canInspectionCreate.value : canMrbAction.value)
 const canApproveAction = computed(() => hasButton('quality:mrb-approve'))
 const canEscalateAction = computed(() => hasButton('quality:mrb-escalate'))
 const qmsResultType = computed(() => {
@@ -412,14 +482,44 @@ const qmsResultType = computed(() => {
   return 'green'
 })
 const qmsResultText = computed(() => {
-  if (!qmsResult.value) return '待上报'
+  if (!qmsResult.value) return '待提交'
   return `${qmsResult.value.result || '-'} / ${qmsResult.value.inspectionCount || 0}项`
 })
 const qmsSubmitHint = computed(() => {
-  if (!qmsForm.lotNo) return '选择 Lot 后可模拟外部 QMS 推送'
+  if (!qmsForm.lotNo) return qmsForm.mode === 'MES' ? '选择 Lot 后可录入 MES 质检结果' : '选择 Lot 后可模拟外部 QMS 推送'
   if (qmsForm.result === 'NG') return 'NG 将自动生成异常并 Hold Lot'
-  return 'OK 上报只写检验记录和审计'
+  return qmsForm.mode === 'MES' ? 'OK 录入会写检验记录和审计' : 'OK 上报只写检验记录和审计'
 })
+const submitInspectionLabel = computed(() => qmsForm.mode === 'MES' ? '提交 MES 质检' : '提交 QMS 上报')
+
+function exceptionSourceText(sourceModule) {
+  if (sourceModule === 'WMS_LOCATION_TASK') return 'WMS库位任务'
+  if (sourceModule === 'QUALITY') return '质量检验'
+  if (sourceModule === 'EAP') return 'EAP设备'
+  return sourceModule || 'MES异常'
+}
+
+function parseSourcePayload(payload) {
+  if (!payload) return {}
+  if (typeof payload === 'object') return payload
+  try {
+    return JSON.parse(payload)
+  } catch (error) {
+    console.warn('异常来源快照解析失败', error)
+    return {}
+  }
+}
+
+function sourceEvidenceText(item, payload, sourceRefNo) {
+  if (item.sourceModule !== 'WMS_LOCATION_TASK') return ''
+  const parts = [
+    payload.taskType ? `任务类型 ${payload.taskType}` : '',
+    payload.reviewResult ? `复核 ${payload.reviewResult}` : '',
+    payload.dispositionResult ? `处置 ${payload.dispositionResult}` : '',
+    sourceRefNo ? `任务 ${sourceRefNo}` : ''
+  ].filter(Boolean)
+  return parts.length ? parts.join(' / ') : item.description || ''
+}
 
 const defects = computed(() => defectTopN.value.map(item => ({
   code: item.defectCode,
@@ -545,6 +645,10 @@ function optionalDecimal(value) {
     throw new Error('QMS数值字段必须是数字')
   }
   return number
+}
+
+function defaultInspectionRemark(mode) {
+  return mode === 'QMS' ? 'QMS模拟检验上报' : 'MES质量工作台手工录入'
 }
 
 function actionLabel(action) {
@@ -747,9 +851,33 @@ async function handleClose(item) {
   }
 }
 
-async function submitQmsInspection() {
-  if (!canMrbAction.value) {
-    ElMessage.warning('当前角色无权执行 QMS 检验上报')
+function inspectionPayload() {
+  const itemCode = qmsForm.mode === 'MES' ? 'MANUAL_RESULT' : 'QMS_RESULT'
+  const itemName = qmsForm.mode === 'MES' ? 'MES检验结果' : 'QMS检验结果'
+  const item = {
+    itemCode: qmsForm.itemCode || itemCode,
+    itemName: qmsForm.itemName || qmsForm.itemCode || itemName,
+    result: qmsForm.result,
+    measuredValue: optionalDecimal(qmsForm.measuredValue),
+    lowerLimit: optionalDecimal(qmsForm.lowerLimit),
+    upperLimit: optionalDecimal(qmsForm.upperLimit),
+    unit: qmsForm.unit,
+    defectCode: qmsForm.result === 'NG' ? qmsForm.defectCode : undefined,
+    remark: qmsForm.remark
+  }
+  return {
+    lotNo: qmsForm.lotNo,
+    stepCode: qmsForm.stepCode || undefined,
+    equipmentCode: qmsForm.equipmentCode || undefined,
+    operator: qmsForm.operator || localStorage.getItem('username') || 'qe1001',
+    result: qmsForm.result,
+    items: [item]
+  }
+}
+
+async function submitQualityInspection() {
+  if (!canSubmitInspection.value) {
+    ElMessage.warning(qmsForm.mode === 'MES' ? '当前角色无权录入 MES 质检结果' : '当前角色无权执行 QMS 检验上报')
     return
   }
   if (!qmsForm.lotNo) {
@@ -758,30 +886,16 @@ async function submitQmsInspection() {
   }
   try {
     qmsSubmitting.value = true
-    const item = {
-      itemCode: qmsForm.itemCode || 'QMS_RESULT',
-      itemName: qmsForm.itemName || qmsForm.itemCode || 'QMS检验结果',
-      result: qmsForm.result,
-      measuredValue: optionalDecimal(qmsForm.measuredValue),
-      lowerLimit: optionalDecimal(qmsForm.lowerLimit),
-      upperLimit: optionalDecimal(qmsForm.upperLimit),
-      unit: qmsForm.unit,
-      defectCode: qmsForm.result === 'NG' ? qmsForm.defectCode : undefined,
-      remark: qmsForm.remark
-    }
-    const result = await ingestQmsInspection({
-      lotNo: qmsForm.lotNo,
-      stepCode: qmsForm.stepCode || undefined,
-      equipmentCode: qmsForm.equipmentCode || undefined,
-      operator: qmsForm.operator || localStorage.getItem('username') || 'qe1001',
-      result: qmsForm.result,
-      items: [item]
-    })
+    const payload = inspectionPayload()
+    const result = qmsForm.mode === 'MES'
+      ? await createQualityInspection(payload)
+      : await ingestQmsInspection(payload)
     qmsResult.value = result
-    ElMessage.success(result?.holdApplied ? 'QMS NG 已上报并触发 Hold' : 'QMS 检验已上报')
+    const sourceLabel = qmsForm.mode === 'MES' ? 'MES 质检' : 'QMS 检验'
+    ElMessage.success(result?.holdApplied ? `${sourceLabel} NG 已触发 Hold` : `${sourceLabel}已提交`)
     await loadQualityData()
   } catch (error) {
-    ElMessage.warning(error?.message || 'QMS 检验上报失败')
+    ElMessage.warning(error?.message || '检验提交失败')
   } finally {
     qmsSubmitting.value = false
   }
@@ -791,7 +905,7 @@ async function loadQualityData() {
   try {
     const [inspectionData, exceptionData, yieldData] = await Promise.all([
       getQualityInspections(),
-      getQualityExceptions(),
+      getQualityExceptions(exceptionQuery()),
       getYieldDashboard()
     ])
     if (Array.isArray(inspectionData) && inspectionData.length) inspections.value = inspectionData
@@ -818,12 +932,26 @@ async function loadQualityData() {
   }
 }
 
+function exceptionQuery() {
+  const query = {}
+  if (exceptionFilters.sourceModule) query.sourceModule = exceptionFilters.sourceModule
+  if (exceptionFilters.status) query.status = exceptionFilters.status
+  return query
+}
+
 onMounted(loadQualityData)
 </script>
 
 <style scoped>
 .mini-card {
   cursor: pointer;
+}
+
+.exception-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .mini-card.selected {
@@ -839,6 +967,17 @@ onMounted(loadQualityData)
   margin-top: 8px;
   color: var(--mes-weak);
   font-size: 12px;
+}
+
+.mini-evidence {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 6px;
+  background: var(--mes-paper-muted);
+  color: var(--mes-sub);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .mini-actions {
@@ -941,6 +1080,10 @@ onMounted(loadQualityData)
 
 @media (max-width: 960px) {
   .mrb-form {
+    grid-template-columns: 1fr;
+  }
+
+  .exception-filters {
     grid-template-columns: 1fr;
   }
 

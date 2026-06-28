@@ -126,27 +126,27 @@ const traceQuery = ref(__DEV_MOCK_FALLBACK__ ? 'LOT202406001' : '')
 const loading = ref(false)
 const errorMessage = ref('')
 
-const fallbackTraceInfo = [
+const fallbackTraceInfo = __DEV_MOCK_FALLBACK__ ? [
   { label: '查询类型', value: 'Lot' },
   { label: '产品', value: 'AMOLED_65 柔性屏' },
   { label: '工单', value: 'MO20260606012' },
   { label: '路线', value: 'RTE_G6_V08' },
   { label: '首选 Lot', value: 'LOT202406001' },
   { label: '状态', value: 'HOLD', tag: true, tagType: 'red' }
-]
+] : []
 
-const fallbackTimeline = [
+const fallbackTimeline = __DEV_MOCK_FALLBACK__ ? [
   { title: '工单释放并生成 Lot', time: '08:10', meta: 'MO20260606012 / route=RTE_G6_V08 / creator=planner01', type: 'green' },
   { title: 'COATING Track In', time: '09:18', meta: 'EQ=COATER_02 / Recipe=RCP_COAT_65_V12 / 物料 PI-ADH-240606-A', type: 'amber' },
   { title: 'Track Out NG 并自动 Hold', time: '10:06', meta: '膜厚 1.72um，规格 1.8-2.2um；质量待复判', type: 'red' },
   { title: 'MRB 处置中', time: '当前', meta: '质量复判 -> 工艺确认 -> Release / Rework / Scrap', type: 'purple' }
-]
+] : []
 
-const fallbackEvidences = [
+const fallbackEvidences = __DEV_MOCK_FALLBACK__ ? [
   { title: 'Recipe 快照', status: '已锁定', type: 'blue', meta: 'RCP_COAT_65_V12 / 温度 150.2C / 压力 0.82kPa / 速度 302mm/s' },
   { title: '设备事件', status: '相关', type: 'amber', meta: 'COATER_02 在 09:40 出现压力波动告警。' },
   { title: '物料批次', status: '待排查', type: 'amber', meta: 'PI-ADH-240606-A 同批影响 6 Lot。' }
-]
+] : []
 
 const traceInfo = ref(__DEV_MOCK_FALLBACK__ ? fallbackTraceInfo : [])
 const timeline = ref(__DEV_MOCK_FALLBACK__ ? fallbackTimeline : [])

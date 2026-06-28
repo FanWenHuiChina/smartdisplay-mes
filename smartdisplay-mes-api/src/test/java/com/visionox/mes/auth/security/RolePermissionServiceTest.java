@@ -47,6 +47,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/track-in"))).isTrue();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/track-out"))).isTrue();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/LOT001/hold"))).isFalse();
+        assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/lots/batch-hold"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/adapters/erp/orders"))).isFalse();
     }
 
@@ -54,10 +55,14 @@ class RolePermissionServiceTest {
     void shouldAllowQualityEngineerToDispositionLots() {
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/hold"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/release"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/batch-hold"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/batch-release"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/lots/LOT001/scrap"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/inspections"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/mrb-approvals/MRBT001/approve"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/mrb-approvals/refresh-sla"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/quality/mrb-records/MRB001/minutes"))).isTrue();
+        assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/quality/inspections"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/orders"))).isFalse();
     }
 
@@ -91,6 +96,7 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("PE", request("POST", "/api/v1/adapters/eap/messages"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/adapters/qms/inspections"))).isFalse();
         assertThat(service.canAccess("EE", request("POST", "/api/v1/recipes/1/publish"))).isFalse();
+        assertThat(service.canAccess("PE", request("POST", "/api/v1/quality/inspections"))).isFalse();
         assertThat(service.canAccess("PE", request("POST", "/api/v1/quality/exceptions/EX001/mrb-review"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/boms/change-requests"))).isFalse();
         assertThat(service.canAccess("OPERATOR", request("POST", "/api/v1/boms/eco-approvals/BEA001/decision"))).isFalse();
@@ -100,6 +106,9 @@ class RolePermissionServiceTest {
     void shouldRequireMaterialWmsButtonForMaterialWriteApis() {
         assertThat(service.canAccess("PLANNER", request("POST", "/api/v1/material/receive"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/freeze"))).isFalse();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks"))).isFalse();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/review"))).isFalse();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/disposition"))).isFalse();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/incoming-inspection"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/SUP-A/qualification/evaluate"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/corrective-actions"))).isTrue();
@@ -118,6 +127,10 @@ class RolePermissionServiceTest {
         assertThat(service.canAccess("QE", request("POST", "/api/v1/adapters/wms/inventory-transactions"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/adapters/wms/material-readiness"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/batches/MB001/inventory-count"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/complete"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/review"))).isTrue();
+        assertThat(service.canAccess("QE", request("POST", "/api/v1/material/location-tasks/MLT-001/disposition"))).isTrue();
         assertThat(service.canAccess("QE", request("POST", "/api/v1/material/suppliers/corrective-actions"))).isFalse();
     }
 
@@ -139,7 +152,7 @@ class RolePermissionServiceTest {
         assertThat(qePermissions.get("role")).isEqualTo("QE");
         assertThat((Iterable<String>) qePermissions.get("menus")).contains("quality", "material", "trace", "ai");
         assertThat((Iterable<String>) qePermissions.get("buttons"))
-                .contains("quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "lot:release", "material:iqc", "material:supplier-manage", "ai:kb-import", "ai:kb-index");
+                .contains("quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "lot:release", "material:iqc", "material:supplier-manage", "ai:yield-report", "ai:equipment-analyze", "ai:kb-import", "ai:kb-index");
         assertThat(qePermissions.get("dataScope")).isEqualTo("LINE");
 
         var operatorPermissions = service.permissions("operator");
@@ -148,10 +161,14 @@ class RolePermissionServiceTest {
         assertThat(operatorPermissions.get("dataScope")).isEqualTo("SELF_SHIFT");
 
         var pePermissions = service.permissions("pe");
+        assertThat((Iterable<String>) pePermissions.get("menus"))
+                .contains("master", "recipe", "quality", "ai");
         assertThat((Iterable<String>) pePermissions.get("buttons"))
                 .contains("quality:mrb-approve", "quality:mrb-escalate", "recipe:publish", "bom:change", "bom:eco-approve");
 
         var eePermissions = service.permissions("ee");
+        assertThat((Iterable<String>) eePermissions.get("menus"))
+                .contains("equipment", "quality", "trace", "ai");
         assertThat((Iterable<String>) eePermissions.get("buttons"))
                 .contains("equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway");
     }

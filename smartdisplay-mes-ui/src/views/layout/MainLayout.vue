@@ -108,7 +108,7 @@ const sideGroups = [
     items: [
       { title: '产品与BOM', path: '/master', menu: 'master' },
       { title: 'Route 工艺路线', path: '/master', menu: 'master' },
-      { title: 'Recipe 与规格', path: '/master', menu: 'master' },
+      { title: 'Recipe 与规格', path: '/recipe', menu: 'recipe' },
       { title: '设备能力矩阵', path: '/master', menu: 'master' }
     ]
   },
@@ -116,9 +116,9 @@ const sideGroups = [
     title: '生产执行',
     items: [
       { title: '电子流程卡', path: '/execution', menu: 'execution' },
-      { title: 'Track In / Out', path: '/execution', menu: 'execution' },
-      { title: 'Hold / Release', path: '/execution', menu: 'execution' },
-      { title: 'Rework / Scrap', path: '/execution', menu: 'execution' }
+      { title: 'Track In / Out', path: '/lot', menu: 'execution' },
+      { title: 'Hold / Release', path: '/lot', menu: 'execution' },
+      { title: 'Rework / Scrap', path: '/lot', menu: 'execution' }
     ]
   },
   {
@@ -423,8 +423,10 @@ onMounted(() => {
 }
 
 .side-badge.red {
-  background: var(--mes-red-soft);
-  color: var(--mes-red);
+  background: var(--mes-red);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(245, 63, 63, 0.15);
 }
 
 .side-badge.amber {

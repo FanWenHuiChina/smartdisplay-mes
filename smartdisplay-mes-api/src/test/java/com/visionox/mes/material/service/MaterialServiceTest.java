@@ -38,6 +38,8 @@ import com.visionox.mes.material.mapper.MaterialLocationTaskMapper;
 import com.visionox.mes.material.mapper.SupplierCorrectiveActionMapper;
 import com.visionox.mes.material.mapper.SupplierMapper;
 import com.visionox.mes.material.mapper.SupplierQualificationReviewTaskMapper;
+import com.visionox.mes.quality.entity.ExceptionEvent;
+import com.visionox.mes.quality.mapper.ExceptionEventMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +56,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -116,6 +119,9 @@ class MaterialServiceTest {
     private SupplierQualificationReviewTaskMapper supplierQualificationReviewTaskMapper;
 
     @Mock
+    private ExceptionEventMapper exceptionEventMapper;
+
+    @Mock
     private AuditLogService auditLogService;
 
     @Mock
@@ -127,7 +133,7 @@ class MaterialServiceTest {
     @Test
     void validateReadinessShouldRejectWhenActiveBomIsMissing() {
         Lot lot = lot();
-        when(bomMapper.selectOne(any())).thenReturn(null);
+        when(bomMapper.selectList(any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> materialService.validateReadiness(lot, "COATING"))
                 .isInstanceOf(BusinessException.class)
@@ -138,9 +144,27 @@ class MaterialServiceTest {
     }
 
     @Test
+    void validateReadinessShouldRejectWhenMultipleActiveBomsExist() {
+        Lot lot = lot();
+        Bom v1 = activeBom();
+        Bom v2 = activeBom(11L, "BOM-OLED-02", "V02", "ACTIVE");
+        when(bomMapper.selectList(any())).thenReturn(List.of(v2, v1));
+
+        assertThatThrownBy(() -> materialService.validateReadiness(lot, "COATING"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("多条生效BOM")
+                .hasMessageContaining("OLED_PANEL")
+                .hasMessageContaining("BOM-OLED-01")
+                .hasMessageContaining("BOM-OLED-02");
+
+        verify(bomItemMapper, never()).selectList(any());
+        verify(batchMapper, never()).selectList(any());
+    }
+
+    @Test
     void validateReadinessShouldRejectWhenRequiredKeyMaterialHasNoAvailableBatch() {
         Lot lot = lot();
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(bomItem("PI_INK", "PI液", "COATING", "0.5")));
         when(batchMapper.selectList(any())).thenReturn(List.of());
 
@@ -156,7 +180,7 @@ class MaterialServiceTest {
         Lot lot = lot();
         MaterialBatch batch = batch("PI_INK_B001", "100", "0", "0", "AVAILABLE");
         when(loadingMapper.selectCount(any())).thenReturn(0L);
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(bomItem("PI_INK", "PI液", "COATING", "0.5")));
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK"), any(), any())).thenReturn(batch);
 
@@ -202,7 +226,7 @@ class MaterialServiceTest {
         substituteBatch.setMaterialName("PI替代液");
 
         when(loadingMapper.selectCount(any())).thenReturn(0L);
-        when(bomMapper.selectOne(any())).thenReturn(activeBom());
+        when(bomMapper.selectList(any())).thenReturn(List.of(activeBom()));
         when(bomItemMapper.selectList(any())).thenReturn(List.of(primary, substitute));
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK"), any(), any())).thenReturn(null);
         when(batchMapper.selectAvailableBatchForUpdate(eq("PI_INK_ALT"), any(), any())).thenReturn(substituteBatch);
@@ -310,10 +334,7 @@ class MaterialServiceTest {
     @Test
     void reviewAndPublishBomChangeShouldActivateTargetAndDisableOldActiveBom() {
         BomChangeRequest change = bomChange("BCR001", "APPROVED");
-        Bom target = activeBom();
-        target.setId(20L);
-        target.setBomCode("BOM-OLED-02");
-        target.setBomVersion("V02");
+        Bom target = activeBom(20L, "BOM-OLED-02", "V02", "DRAFT");
         target.setStatus("DRAFT");
         Bom oldActive = activeBom();
         oldActive.setId(10L);
@@ -331,7 +352,23 @@ class MaterialServiceTest {
         verify(bomMapper).updateById(oldActive);
         verify(bomMapper).updateById(target);
         verify(bomChangeRequestMapper).updateById(change);
-        verify(auditLogService).record(eq("BOM_PUBLISH"), eq("BOM-OLED-02"), eq("BOM"), any(), eq("pe1001"), eq("material-service"), any());
+
+        ArgumentCaptor<String> actionCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bizNoCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService, times(2)).record(actionCaptor.capture(), bizNoCaptor.capture(), eq("BOM"),
+                any(), eq("pe1001"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(actionCaptor.getAllValues()).containsExactly("BOM_AUTO_DEACTIVATE", "BOM_PUBLISH");
+        assertThat(bizNoCaptor.getAllValues()).containsExactly("BOM-OLED-01", "BOM-OLED-02");
+        assertThat(snapshotCaptor.getAllValues().get(0))
+                .contains("\"triggerBomCode\":\"BOM-OLED-02\"")
+                .contains("\"status\":\"ACTIVE\"")
+                .contains("\"status\":\"INACTIVE\"");
+        assertThat(snapshotCaptor.getAllValues().get(1))
+                .contains("\"replacedActiveCount\":1")
+                .contains("\"replacedActiveBoms\"")
+                .contains("\"bomCode\":\"BOM-OLED-01\"")
+                .contains("\"singleActiveContext\"");
     }
 
     @Test
@@ -518,6 +555,8 @@ class MaterialServiceTest {
                 "taskType", "MOVE",
                 "batchNo", "PI_INK_B007",
                 "targetLocation", "WMS-A01",
+                "priority", 9,
+                "dueHours", 2,
                 "operator", "wms1001",
                 "reason", "产线补料前移库"
         ));
@@ -539,7 +578,23 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("100");
         assertThat(task.getActualQty()).isEqualByComparingTo("0");
         assertThat(task.getStatus()).isEqualTo("CREATED");
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        assertThat(task.getPriority()).isEqualTo(9);
+        assertThat(task.getDueTime()).isEqualTo(task.getCreatedTime().plusHours(2));
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"MOVE\"")
+                .contains("\"batchNo\":\"PI_INK_B007\"")
+                .contains("\"targetLocation\":\"WMS-A01\"")
+                .contains("\"priority\":9")
+                .contains("\"slaStatus\":\"ON_TRACK\"")
+                .contains("\"request\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
     }
 
     @Test
@@ -570,7 +625,156 @@ class MaterialServiceTest {
         verify(materialLocationMapper).updateById(target);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
         verify(materialLocationTaskMapper, times(2)).updateById(task);
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> completeSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), completeSnapshotCaptor.capture());
+        assertThat(completeSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"status\":\"DONE\"")
+                .contains("\"actualQty\":0")
+                .contains("\"actualQty\":100")
+                .contains("\"request\":{\"operator\":\"wms1001\"}")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void createSplitLocationTaskShouldCreatePendingTaskAndWriteAudit() {
+        MaterialBatch batch = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        batch.setFrozenQty(new BigDecimal("10"));
+        batch.setLocation("WMS-IN");
+        MaterialLocation target = materialLocation("WMS-A01", "CHEMICAL", "ACTIVE", "300", "20", "kg");
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(batch);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007-S01")).thenReturn(null);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-A01")).thenReturn(target);
+
+        Map<String, Object> result = materialService.createLocationTask(Map.of(
+                "taskType", "SPLIT",
+                "batchNo", "PI_INK_B007",
+                "targetLocation", "WMS-A01",
+                "qty", "25",
+                "childBatchNo", "PI_INK_B007-S01",
+                "operator", "wms1001",
+                "reason", "多库位拆批备料"
+        ));
+
+        assertThat(batch.getAvailableQty()).isEqualByComparingTo("70");
+        assertThat(batch.getTotalQty()).isEqualByComparingTo("100");
+        assertThat(target.getUsedQty()).isEqualByComparingTo("20");
+        assertThat(result.get("task")).isInstanceOf(Map.class);
+        verify(batchMapper, never()).updateById(batch);
+        verify(batchMapper, never()).insert(any(MaterialBatch.class));
+        verify(materialLocationMapper, never()).updateById(target);
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+
+        ArgumentCaptor<MaterialLocationTask> taskCaptor = ArgumentCaptor.forClass(MaterialLocationTask.class);
+        verify(materialLocationTaskMapper).insert(taskCaptor.capture());
+        MaterialLocationTask task = taskCaptor.getValue();
+        assertThat(task.getTaskType()).isEqualTo("SPLIT");
+        assertThat(task.getBatchNo()).isEqualTo("PI_INK_B007");
+        assertThat(task.getSourceLocation()).isEqualTo("WMS-IN");
+        assertThat(task.getTargetLocation()).isEqualTo("WMS-A01");
+        assertThat(task.getPlannedQty()).isEqualByComparingTo("25");
+        assertThat(task.getActualQty()).isEqualByComparingTo("0");
+        assertThat(task.getStatus()).isEqualTo("CREATED");
+        assertThat(task.getPriority()).isEqualTo(8);
+        assertThat(task.getDueTime()).isEqualTo(task.getCreatedTime().plusHours(2));
+        assertThat(task.getRequestSnapshot()).contains("childBatchNo=PI_INK_B007-S01");
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"SPLIT\"")
+                .contains("\"batchNo\":\"PI_INK_B007\"")
+                .contains("\"targetLocation\":\"WMS-A01\"")
+                .contains("\"request\"")
+                .contains("\"childBatchNo\":\"PI_INK_B007-S01\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void completeSplitLocationTaskShouldCreateChildBatchAndWriteTransactions() {
+        MaterialLocationTask task = locationTask("MLT-SPLIT-001", "SPLIT", "PI_INK_B007");
+        task.setStatus("ASSIGNED");
+        task.setPlannedQty(new BigDecimal("25"));
+        task.setActualQty(BigDecimal.ZERO);
+        task.setRequestSnapshot("{taskType=SPLIT, batchNo=PI_INK_B007, childBatchNo=PI_INK_B007-S01, plannedQty=25}");
+        MaterialBatch parent = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        parent.setFrozenQty(new BigDecimal("10"));
+        parent.setLocation("WMS-IN");
+        MaterialLocation source = materialLocation("WMS-IN", "ANY", "ACTIVE", "500", "100", "kg");
+        MaterialLocation target = materialLocation("WMS-A01", "CHEMICAL", "ACTIVE", "300", "20", "kg");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-SPLIT-001")).thenReturn(task);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(parent);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007-S01")).thenReturn(null);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-A01")).thenReturn(target);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-IN")).thenReturn(source);
+
+        Map<String, Object> result = materialService.completeLocationTask("MLT-SPLIT-001", Map.of("operator", "wms1001"));
+
+        assertThat(parent.getAvailableQty()).isEqualByComparingTo("45");
+        assertThat(parent.getTotalQty()).isEqualByComparingTo("75");
+        assertThat(parent.getLocation()).isEqualTo("WMS-IN");
+        assertThat(parent.getStatus()).isEqualTo("AVAILABLE");
+        assertThat(source.getUsedQty()).isEqualByComparingTo("75");
+        assertThat(target.getUsedQty()).isEqualByComparingTo("45");
+        assertThat(task.getActualQty()).isEqualByComparingTo("25");
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(result.get("childBatch")).isInstanceOf(Map.class);
+        assertThat(result.get("parentBatch")).isInstanceOf(Map.class);
+
+        ArgumentCaptor<MaterialBatch> childCaptor = ArgumentCaptor.forClass(MaterialBatch.class);
+        verify(batchMapper).insert(childCaptor.capture());
+        MaterialBatch child = childCaptor.getValue();
+        assertThat(child.getBatchNo()).isEqualTo("PI_INK_B007-S01");
+        assertThat(child.getAvailableQty()).isEqualByComparingTo("25");
+        assertThat(child.getTotalQty()).isEqualByComparingTo("25");
+        assertThat(child.getReservedQty()).isEqualByComparingTo("0");
+        assertThat(child.getFrozenQty()).isEqualByComparingTo("0");
+        assertThat(child.getLocation()).isEqualTo("WMS-A01");
+        assertThat(child.getStatus()).isEqualTo("AVAILABLE");
+
+        verify(batchMapper).updateById(parent);
+        verify(materialLocationMapper).updateById(source);
+        verify(materialLocationMapper).updateById(target);
+        ArgumentCaptor<MaterialInventoryTxn> txnCaptor = ArgumentCaptor.forClass(MaterialInventoryTxn.class);
+        verify(inventoryTxnMapper, times(2)).insert(txnCaptor.capture());
+        assertThat(txnCaptor.getAllValues())
+                .extracting(MaterialInventoryTxn::getTxnType)
+                .containsExactly("SPLIT_OUT", "SPLIT_IN");
+        assertThat(txnCaptor.getAllValues().get(0).getQtyDelta()).isEqualByComparingTo("-25");
+        assertThat(txnCaptor.getAllValues().get(1).getQtyDelta()).isEqualByComparingTo("25");
+        verify(materialLocationTaskMapper, times(2)).updateById(task);
+        verify(auditLogService).record(eq("MATERIAL_SPLIT"), eq("PI_INK_B007"), eq("MATERIAL_BATCH"),
+                any(), eq("wms1001"), eq("material-service"), any());
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_COMPLETE"), eq("MLT-SPLIT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), any());
+    }
+
+    @Test
+    void createSplitLocationTaskShouldRejectReservedOrFrozenOverSplit() {
+        MaterialBatch batch = batch("PI_INK_B007", "70", "20", "0", "AVAILABLE");
+        batch.setFrozenQty(new BigDecimal("10"));
+        batch.setLocation("WMS-IN");
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B007")).thenReturn(batch);
+
+        assertThatThrownBy(() -> materialService.createLocationTask(Map.of(
+                "taskType", "SPLIT",
+                "batchNo", "PI_INK_B007",
+                "targetLocation", "WMS-A01",
+                "qty", "80",
+                "operator", "wms1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("母批可用库存不足");
+
+        verify(materialLocationMapper, never()).selectByLocationCodeForUpdate(any());
+        verify(materialLocationTaskMapper, never()).insert(any());
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
     }
 
     @Test
@@ -620,7 +824,19 @@ class MaterialServiceTest {
         assertThat(task.getPlannedQty()).isEqualByComparingTo("70");
         assertThat(task.getActualQty()).isEqualByComparingTo("68");
         assertThat(task.getStatus()).isEqualTo("CREATED");
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> createSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CREATE"), any(), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), createSnapshotCaptor.capture());
+        assertThat(createSnapshotCaptor.getValue())
+                .contains("\"before\":{}")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"taskType\":\"COUNT\"")
+                .contains("\"batchNo\":\"PI_INK_B009\"")
+                .contains("\"actualQty\":68")
+                .contains("\"request\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
     }
 
     @Test
@@ -674,8 +890,440 @@ class MaterialServiceTest {
         assertThat(task.getCancelReason()).isEqualTo("目标库位临时锁定");
         assertThat(cancelled.get("task")).isInstanceOf(Map.class);
         verify(materialLocationTaskMapper, times(2)).updateById(task);
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_ASSIGN"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1002"), eq("material-service"), any());
-        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CANCEL"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> assignSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_ASSIGN"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1002"), eq("material-service"), assignSnapshotCaptor.capture());
+        assertThat(assignSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"assignedTo\":\"wms1002\"")
+                .contains("\"request\":{\"assignedTo\":\"wms1002\"}")
+                .contains("\"changedFields\"");
+
+        ArgumentCaptor<String> cancelSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CANCEL"), eq("MLT-CANCEL-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1001"), eq("material-service"), cancelSnapshotCaptor.capture());
+        assertThat(cancelSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"status\":\"CANCELLED\"")
+                .contains("\"cancelledBy\":\"wms1001\"")
+                .contains("\"operator\":\"wms1001\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void claimLocationTaskShouldAssignToCurrentOperatorAndWriteAudit() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-001", "MOVE", "PI_INK_B011");
+        task.setStatus("CREATED");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-001")).thenReturn(task);
+
+        Map<String, Object> claimed = materialService.claimLocationTask("MLT-CLAIM-001", Map.of("operator", "wms1005"));
+
+        assertThat(task.getStatus()).isEqualTo("ASSIGNED");
+        assertThat(task.getAssignedTo()).isEqualTo("wms1005");
+        assertThat(task.getOperator()).isEqualTo("wms1005");
+        assertThat(task.getAssignedTime()).isNotNull();
+        assertThat(claimed.get("task")).isInstanceOf(Map.class);
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> claimSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_CLAIM"), eq("MLT-CLAIM-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms1005"), eq("material-service"), claimSnapshotCaptor.capture());
+        assertThat(claimSnapshotCaptor.getValue())
+                .contains("\"status\":\"CREATED\"")
+                .contains("\"status\":\"ASSIGNED\"")
+                .contains("\"assignedTo\":\"wms1005\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void claimLocationTaskShouldRejectClaimingTaskOwnedByAnotherOperator() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-002", "MOVE", "PI_INK_B011");
+        task.setStatus("ASSIGNED");
+        task.setAssignedTo("wms1002");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-002")).thenReturn(task);
+
+        assertThatThrownBy(() -> materialService.claimLocationTask("MLT-CLAIM-002", Map.of("operator", "wms1005")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已被领取，不能重复认领");
+
+        verify(materialLocationTaskMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_CLAIM"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void claimLocationTaskShouldRejectNonCreatedTask() {
+        MaterialLocationTask task = locationTask("MLT-CLAIM-003", "MOVE", "PI_INK_B011");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-CLAIM-003")).thenReturn(task);
+
+        assertThatThrownBy(() -> materialService.claimLocationTask("MLT-CLAIM-003", Map.of("operator", "wms1005")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("状态不允许认领");
+
+        verify(materialLocationTaskMapper, never()).updateById(any());
+    }
+
+    @Test
+    void reviewLocationTaskShouldUpdateReviewerAndWriteAudit() {
+        MaterialLocationTask task = locationTask("MLT-REVIEW-001", "MOVE", "PI_INK_B010");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.reviewLocationTask("MLT-REVIEW-001", Map.of(
+                "reviewer", "wms-lead",
+                "reviewConclusion", "执行数量、库位和批次一致"
+        ));
+
+        assertThat(task.getReviewer()).isEqualTo("wms-lead");
+        assertThat(task.getReviewedTime()).isNotNull();
+        assertThat(task.getReviewResult()).isEqualTo("APPROVED");
+        assertThat(task.getReviewConclusion()).isEqualTo("执行数量、库位和批次一致");
+        assertThat(task.getDispositionStatus()).isEqualTo("CLOSED");
+        assertThat(task.getDispositionResult()).isEqualTo("APPROVED");
+        assertThat(task.getDispositionConclusion()).isEqualTo("执行数量、库位和批次一致");
+        assertThat(result.get("task")).isInstanceOf(Map.class);
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> reviewSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), eq("MLT-REVIEW-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), reviewSnapshotCaptor.capture());
+        assertThat(reviewSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"reviewer\":\"wms-lead\"")
+                .contains("\"reviewResult\":\"APPROVED\"")
+                .contains("\"reviewConclusion\":\"执行数量、库位和批次一致\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void reviewLocationTaskShouldRejectWithConclusionWithoutChangingDoneStatus() {
+        MaterialLocationTask task = locationTask("MLT-REVIEW-REJECT-001", "SPLIT", "PI_INK_B010");
+        task.setStatus("DONE");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-REJECT-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.reviewLocationTask("MLT-REVIEW-REJECT-001", Map.of(
+                "reviewer", "wms-lead",
+                "reviewResult", "REJECTED",
+                "reviewConclusion", "子批标签与实物批次不一致"
+        ));
+
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(task.getReviewer()).isEqualTo("wms-lead");
+        assertThat(task.getReviewedTime()).isNotNull();
+        assertThat(task.getReviewResult()).isEqualTo("REJECTED");
+        assertThat(task.getReviewConclusion()).isEqualTo("子批标签与实物批次不一致");
+        assertThat(task.getExceptionReason()).isEqualTo("子批标签与实物批次不一致");
+        assertThat(task.getDispositionStatus()).isEqualTo("PENDING");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("reviewResult", "REJECTED")
+                .containsEntry("reviewConclusion", "子批标签与实物批次不一致")
+                .containsEntry("dispositionStatus", "PENDING")
+                .containsEntry("exceptionReason", "子批标签与实物批次不一致");
+
+        ArgumentCaptor<String> reviewSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), eq("MLT-REVIEW-REJECT-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), reviewSnapshotCaptor.capture());
+        assertThat(reviewSnapshotCaptor.getValue())
+                .contains("\"reviewResult\":\"REJECTED\"")
+                .contains("\"reviewConclusion\":\"子批标签与实物批次不一致\"")
+                .contains("\"exceptionReason\":\"子批标签与实物批次不一致\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void dispositionLocationTaskShouldCloseRejectedReviewWithoutInventoryChange() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-DISP-001", "MOVE", "PI_INK_B010");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.dispositionLocationTask("MLT-DISP-001", Map.of(
+                "operator", "wms-lead",
+                "dispositionResult", "ACCEPT_DEVIATION",
+                "dispositionConclusion", "标签差异已复核，实物和系统库存一致"
+        ));
+
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(task.getDispositionStatus()).isEqualTo("CLOSED");
+        assertThat(task.getDispositionResult()).isEqualTo("ACCEPT_DEVIATION");
+        assertThat(task.getDispositionConclusion()).isEqualTo("标签差异已复核，实物和系统库存一致");
+        assertThat(task.getDispositionBy()).isEqualTo("wms-lead");
+        assertThat(task.getDispositionTime()).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("dispositionStatus", "CLOSED")
+                .containsEntry("dispositionResult", "ACCEPT_DEVIATION")
+                .containsEntry("dispositionConclusion", "标签差异已复核，实物和系统库存一致");
+
+        verify(batchMapper, never()).selectByBatchNoForUpdate(any());
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+        ArgumentCaptor<String> dispositionSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_DISPOSITION"), eq("MLT-DISP-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), dispositionSnapshotCaptor.capture());
+        assertThat(dispositionSnapshotCaptor.getValue())
+                .contains("\"dispositionResult\":\"ACCEPT_DEVIATION\"")
+                .contains("\"dispositionStatus\":\"CLOSED\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void dispositionLocationTaskShouldEscalateRejectedReviewWithoutInventoryChange() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-DISP-ESC-001", "COUNT", "PI_INK_B010");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-ESC-001")).thenReturn(task);
+
+        Map<String, Object> result = materialService.dispositionLocationTask("MLT-DISP-ESC-001", Map.of(
+                "operator", "wms-lead",
+                "dispositionResult", "ESCALATE",
+                "dispositionConclusion", "复核差异升级异常/MRB 后续处理"
+        ));
+
+        assertThat(task.getStatus()).isEqualTo("DONE");
+        assertThat(task.getDispositionStatus()).isEqualTo("ESCALATED");
+        assertThat(task.getDispositionResult()).isEqualTo("ESCALATE");
+        assertThat(task.getDispositionConclusion()).isEqualTo("复核差异升级异常/MRB 后续处理");
+        assertThat(task.getDispositionBy()).isEqualTo("wms-lead");
+        assertThat(task.getDispositionTime()).isNotNull();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("dispositionStatus", "ESCALATED")
+                .containsEntry("dispositionResult", "ESCALATE")
+                .containsEntry("dispositionText", "已升级")
+                .containsEntry("dispositionType", "red");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> exceptionRow = (Map<String, Object>) result.get("exception");
+        assertThat(exceptionRow)
+                .containsEntry("eventType", "MATERIAL")
+                .containsEntry("eventLevel", "P2")
+                .containsEntry("sourceModule", "WMS_LOCATION_TASK")
+                .containsEntry("sourceRefType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("sourceRefNo", "MLT-DISP-ESC-001")
+                .containsEntry("status", "OPEN")
+                .containsEntry("ownerRole", "QE");
+        assertThat(String.valueOf(exceptionRow.get("sourcePayload")))
+                .contains("\"taskNo\":\"MLT-DISP-ESC-001\"")
+                .contains("\"batchNo\":\"PI_INK_B010\"")
+                .contains("\"reviewResult\":\"REJECTED\"");
+
+        verify(batchMapper, never()).selectByBatchNoForUpdate(any());
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+        ArgumentCaptor<ExceptionEvent> eventCaptor = ArgumentCaptor.forClass(ExceptionEvent.class);
+        verify(exceptionEventMapper).insert(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventNo()).startsWith("EX-");
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("MATERIAL");
+        assertThat(eventCaptor.getValue().getSourceModule()).isEqualTo("WMS_LOCATION_TASK");
+        assertThat(eventCaptor.getValue().getSourceRefType()).isEqualTo("MATERIAL_LOCATION_TASK");
+        assertThat(eventCaptor.getValue().getSourceRefNo()).isEqualTo("MLT-DISP-ESC-001");
+        assertThat(eventCaptor.getValue().getSourcePayload())
+                .contains("\"taskNo\":\"MLT-DISP-ESC-001\"")
+                .contains("\"batchNo\":\"PI_INK_B010\"")
+                .contains("\"dispositionResult\":\"ESCALATE\"");
+        assertThat(eventCaptor.getValue().getTitle()).isEqualTo("WMS库位任务复核差异升级");
+        assertThat(eventCaptor.getValue().getDescription())
+                .contains("taskNo=MLT-DISP-ESC-001")
+                .contains("batchNo=PI_INK_B010");
+        ArgumentCaptor<String> dispositionSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_DISPOSITION"), eq("MLT-DISP-ESC-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), dispositionSnapshotCaptor.capture());
+        verify(auditLogService).record(eq("EXCEPTION_CREATE"), eq(eventCaptor.getValue().getEventNo()), eq("EXCEPTION"),
+                any(), eq("wms-lead"), eq("material-service"), contains("WMS_LOCATION_TASK"));
+        assertThat(dispositionSnapshotCaptor.getValue())
+                .contains("\"dispositionResult\":\"ESCALATE\"")
+                .contains("\"dispositionStatus\":\"ESCALATED\"")
+                .contains("\"escalatedEventNo\":\"" + eventCaptor.getValue().getEventNo() + "\"")
+                .contains("\"sourceRefNo\":\"MLT-DISP-ESC-001\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispositionLocationTaskShouldAdjustInventoryWhenExplicitlyRequested() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-DISP-ADJ-001", "COUNT", "PI_INK_B010");
+        MaterialBatch batch = batch("PI_INK_B010", "70", "20", "10", "AVAILABLE");
+        batch.setLocation("WMS-A01");
+        MaterialLocation location = materialLocation("WMS-A01", "CHEMICAL", "ACTIVE", "500", "70", "kg");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-ADJ-001")).thenReturn(task);
+        when(batchMapper.selectByBatchNoForUpdate("PI_INK_B010")).thenReturn(batch);
+        when(materialLocationMapper.selectByLocationCodeForUpdate("WMS-A01")).thenReturn(location);
+
+        Map<String, Object> result = materialService.dispositionLocationTask("MLT-DISP-ADJ-001", Map.of(
+                "operator", "wms-lead",
+                "dispositionResult", "ADJUST_INVENTORY",
+                "countedAvailableQty", "66",
+                "dispositionConclusion", "按复核实盘数量调整库存"
+        ));
+
+        assertThat(batch.getAvailableQty()).isEqualByComparingTo("66");
+        assertThat(batch.getTotalQty()).isEqualByComparingTo("96");
+        assertThat(location.getUsedQty()).isEqualByComparingTo("66");
+        assertThat(task.getDispositionStatus()).isEqualTo("CLOSED");
+        assertThat(task.getDispositionResult()).isEqualTo("ADJUST_INVENTORY");
+        assertThat(result).containsKey("batch");
+        Map<String, Object> taskRow = (Map<String, Object>) result.get("task");
+        assertThat(taskRow)
+                .containsEntry("dispositionStatus", "CLOSED")
+                .containsEntry("dispositionResult", "ADJUST_INVENTORY");
+
+        ArgumentCaptor<MaterialInventoryTxn> txnCaptor = ArgumentCaptor.forClass(MaterialInventoryTxn.class);
+        verify(inventoryTxnMapper).insert(txnCaptor.capture());
+        assertThat(txnCaptor.getValue().getTxnType()).isEqualTo("COUNT");
+        assertThat(txnCaptor.getValue().getQtyDelta()).isEqualByComparingTo("-4");
+        assertThat(txnCaptor.getValue().getSourceSystem()).isEqualTo("wms-review-disposition");
+        verify(auditLogService).record(eq("MATERIAL_COUNT"), eq("PI_INK_B010"), eq("MATERIAL_BATCH"), any(), eq("wms-lead"), eq("material-service"), isNull());
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_DISPOSITION"), eq("MLT-DISP-ADJ-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("wms-lead"), eq("material-service"), any());
+    }
+
+    @Test
+    void dispositionLocationTaskShouldRejectNonRejectedOrAlreadyHandledTask() {
+        MaterialLocationTask approved = locationTask("MLT-DISP-APPROVED-001", "MOVE", "PI_INK_B010");
+        approved.setReviewResult("APPROVED");
+        approved.setDispositionStatus("CLOSED");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-APPROVED-001")).thenReturn(approved);
+
+        assertThatThrownBy(() -> materialService.dispositionLocationTask("MLT-DISP-APPROVED-001", Map.of("operator", "wms-lead")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("仅复核驳回");
+
+        MaterialLocationTask closed = rejectedReviewTask("MLT-DISP-CLOSED-001", "MOVE", "PI_INK_B010");
+        closed.setDispositionStatus("CLOSED");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-CLOSED-001")).thenReturn(closed);
+
+        assertThatThrownBy(() -> materialService.dispositionLocationTask("MLT-DISP-CLOSED-001", Map.of("operator", "wms-lead")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已处置");
+
+        MaterialLocationTask adjust = rejectedReviewTask("MLT-DISP-ADJ-EMPTY-001", "COUNT", "PI_INK_B010");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-DISP-ADJ-EMPTY-001")).thenReturn(adjust);
+
+        assertThatThrownBy(() -> materialService.dispositionLocationTask("MLT-DISP-ADJ-EMPTY-001", Map.of(
+                "operator", "wms-lead",
+                "dispositionResult", "ADJUST_INVENTORY"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("实盘可用数量");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(inventoryTxnMapper, never()).insert(any(MaterialInventoryTxn.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recordLocationTaskExceptionClosureShouldWriteBackMrbResultAndAudit() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-WRITEBACK-001", "COUNT", "PI_INK_B010");
+        task.setDispositionStatus("ESCALATED");
+        task.setDispositionResult("ESCALATE");
+        task.setDispositionConclusion("升级到MRB后续处理");
+        task.setDispositionBy("wms-lead");
+        task.setDispositionTime(LocalDateTime.now().minusMinutes(10));
+        task.setLinkedExceptionEventNo("EX-WMS-MRB-001");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-WRITEBACK-001")).thenReturn(task);
+
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-WMS-MRB-001");
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-WRITEBACK-001");
+        event.setStatus("CLOSED");
+        event.setDispositionAction("REWORK");
+        event.setCloseConclusion("MRB判定降级使用并补做返工");
+        event.setOwnerUser("qe-zhang");
+        event.setClosedTime(LocalDateTime.now());
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        assertThat(task.getDispositionStatus()).isEqualTo("CLOSED");
+        assertThat(task.getLinkedExceptionEventNo()).isEqualTo("EX-WMS-MRB-001");
+        assertThat(task.getExceptionCloseAction()).isEqualTo("REWORK");
+        assertThat(task.getExceptionCloseConclusion()).isEqualTo("MRB判定降级使用并补做返工");
+        assertThat(task.getExceptionClosedBy()).isEqualTo("qe-zhang");
+        assertThat(task.getExceptionClosedTime()).isNotNull();
+        verify(materialLocationTaskMapper).updateById(task);
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                eq("MLT-WRITEBACK-001"), eq("MATERIAL_LOCATION_TASK"),
+                any(), eq("qe-zhang"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"eventNo\":\"EX-WMS-MRB-001\"")
+                .contains("\"dispositionAction\":\"REWORK\"")
+                .contains("\"sourceRefNo\":\"MLT-WRITEBACK-001\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldIgnoreUnmatchedTask() {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-NONE-001");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-NOT-FOUND");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-NOT-FOUND")).thenReturn(null);
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldSkipNonMaterialLocationSource() {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-OTHER-001");
+        event.setSourceRefType("LOT");
+        event.setSourceRefNo("LOT001");
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).selectByTaskNoForUpdate(any());
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+    }
+
+    @Test
+    void recordLocationTaskExceptionClosureShouldSkipWhenLinkedEventDiffers() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-LINK-DIFF-001", "COUNT", "PI_INK_B010");
+        task.setDispositionStatus("ESCALATED");
+        task.setLinkedExceptionEventNo("EX-WMS-MRB-OLD");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-LINK-DIFF-001")).thenReturn(task);
+
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo("EX-WMS-MRB-NEW");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo("MLT-LINK-DIFF-001");
+
+        materialService.recordLocationTaskExceptionClosure(event, "qe-zhang");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE"),
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reviewLocationTaskShouldRejectNonDoneOrReviewedTask() {
+        MaterialLocationTask executing = locationTask("MLT-REVIEW-002", "MOVE", "PI_INK_B010");
+        executing.setStatus("EXECUTING");
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-002")).thenReturn(executing);
+
+        assertThatThrownBy(() -> materialService.reviewLocationTask("MLT-REVIEW-002", Map.of("reviewer", "wms-lead")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("状态不允许复核");
+
+        MaterialLocationTask reviewed = locationTask("MLT-REVIEW-003", "MOVE", "PI_INK_B010");
+        reviewed.setStatus("DONE");
+        reviewed.setReviewer("wms-lead");
+        reviewed.setReviewedTime(LocalDateTime.now());
+        when(materialLocationTaskMapper.selectByTaskNoForUpdate("MLT-REVIEW-003")).thenReturn(reviewed);
+
+        assertThatThrownBy(() -> materialService.reviewLocationTask("MLT-REVIEW-003", Map.of("reviewer", "wms-lead-2")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已复核");
+
+        verify(materialLocationTaskMapper, never()).updateById(any(MaterialLocationTask.class));
+        verify(auditLogService, never()).record(eq("MATERIAL_LOCATION_TASK_REVIEW"), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -683,7 +1331,8 @@ class MaterialServiceTest {
         MaterialLocationTask task = locationTask("MLT-001", "MOVE", "PI_INK_B007");
         when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
 
-        List<Map<String, Object>> rows = materialService.materialLocationTasks("DONE", "PI_INK_B007");
+        List<Map<String, Object>> rows = materialService.materialLocationTasks("DONE", "PI_INK_B007",
+                null, null, null);
 
         assertThat(rows).hasSize(1);
         Map<String, Object> row = rows.get(0);
@@ -692,6 +1341,44 @@ class MaterialServiceTest {
         assertThat(row.get("batchNo")).isEqualTo("PI_INK_B007");
         assertThat(row.get("actualQty")).isEqualTo(new BigDecimal("100"));
         assertThat(row.get("status")).isEqualTo("DONE");
+        assertThat(row.get("priority")).isEqualTo(5);
+        assertThat(row.get("slaStatus")).isEqualTo("CLOSED");
+        assertThat(row.get("overdue")).isEqualTo(false);
+    }
+
+    @Test
+    void materialLocationTasksShouldExposeOverdueSlaRows() {
+        MaterialLocationTask task = locationTask("MLT-SLA-001", "PUTAWAY", "PI_INK_B007");
+        task.setStatus("ASSIGNED");
+        task.setPriority(10);
+        task.setDueTime(LocalDateTime.now().minusMinutes(5));
+        when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
+
+        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null, null, null, null);
+
+        assertThat(rows).hasSize(1);
+        Map<String, Object> row = rows.get(0);
+        assertThat(row.get("priority")).isEqualTo(10);
+        assertThat(row.get("dueTime")).isEqualTo(task.getDueTime());
+        assertThat(row.get("overdue")).isEqualTo(true);
+        assertThat(row.get("slaStatus")).isEqualTo("OVERDUE");
+        assertThat(row.get("slaType")).isEqualTo("red");
+    }
+
+    @Test
+    void materialLocationTasksShouldExposePendingDispositionRows() {
+        MaterialLocationTask task = rejectedReviewTask("MLT-PENDING-DISP-001", "COUNT", "PI_INK_B007");
+        when(materialLocationTaskMapper.selectList(any())).thenReturn(List.of(task));
+
+        List<Map<String, Object>> rows = materialService.materialLocationTasks(null, null,
+                "REJECTED", "PENDING", true);
+
+        assertThat(rows).hasSize(1);
+        Map<String, Object> row = rows.get(0);
+        assertThat(row.get("taskNo")).isEqualTo("MLT-PENDING-DISP-001");
+        assertThat(row.get("reviewResult")).isEqualTo("REJECTED");
+        assertThat(row.get("dispositionStatus")).isEqualTo("PENDING");
+        assertThat(row.get("dispositionText")).isEqualTo("待处置");
     }
 
     @Test
@@ -707,7 +1394,17 @@ class MaterialServiceTest {
         assertThat(updated.getStockVersion()).isEqualTo(1L);
         verify(batchMapper).updateById(batch);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
-        verify(auditLogService).record(eq("MATERIAL_FREEZE"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(), eq("wms1001"), eq("material-service"), any());
+        ArgumentCaptor<String> freezeSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_FREEZE"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(),
+                eq("wms1001"), eq("material-service"), freezeSnapshotCaptor.capture());
+        assertThat(freezeSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"changedFields\"")
+                .contains("\"availableQty\":100")
+                .contains("\"frozenQty\":0")
+                .contains("\"availableQty\":70")
+                .contains("\"frozenQty\":30");
     }
 
     @Test
@@ -722,7 +1419,14 @@ class MaterialServiceTest {
         assertThat(updated.getReturnedQty()).isEqualByComparingTo("5");
         assertThat(updated.getStockVersion()).isEqualTo(1L);
         verify(inventoryTxnMapper).insert(any(MaterialInventoryTxn.class));
-        verify(auditLogService).record(eq("MATERIAL_RETURN"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(), eq("op1001"), eq("material-service"), any());
+        ArgumentCaptor<String> returnSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("MATERIAL_RETURN"), eq("PI_INK_B001"), eq("MATERIAL_BATCH"), any(),
+                eq("op1001"), eq("material-service"), returnSnapshotCaptor.capture());
+        assertThat(returnSnapshotCaptor.getValue())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"availableQty\":70")
+                .contains("\"availableQty\":75");
     }
 
     @Test
@@ -955,6 +1659,53 @@ class MaterialServiceTest {
         assertThat(row.get("suggestedQualification")).isEqualTo("QUALIFIED");
         verify(auditLogService).record(eq("SUPPLIER_QUALIFICATION_REVIEW_CREATE"), eq(task.getTaskNo()), eq("SUPPLIER_REVIEW"),
                 any(), eq("qe1003"), eq("material-service"), any());
+    }
+
+    @Test
+    void generateDueSupplierQualificationReviewsShouldSkipOpenTaskAndAuditBatch() {
+        Supplier existing = supplier("SUP-OLD", "CONDITIONAL", "MEDIUM");
+        existing.setNextAuditDue(LocalDateTime.now().minusDays(1));
+        Supplier due = supplier("SUP-DUE", "PENDING", "MEDIUM");
+        due.setNextAuditDue(LocalDateTime.now().plusDays(3));
+        MaterialBatch batch = batch("PI_INK_D001", "90", "0", "0", "AVAILABLE");
+        batch.setSupplierCode("SUP-DUE");
+
+        when(supplierMapper.selectList(any())).thenReturn(List.of(existing, due));
+        when(supplierQualificationReviewTaskMapper.selectCount(any())).thenReturn(1L, 0L, 0L);
+        when(batchMapper.selectList(any())).thenReturn(List.of(batch));
+        when(incomingInspectionMapper.selectList(any())).thenReturn(List.of(
+                incomingInspection("MIQC-D001", "PI_INK_D001", "SUP-DUE", "PASS")
+        ));
+        when(supplierCorrectiveActionMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> result = materialService.generateDueSupplierQualificationReviewTasks(Map.of(
+                "windowDays", 7,
+                "operator", "qe1003"
+        ));
+
+        assertThat(result.get("createdCount")).isEqualTo(1);
+        assertThat(result.get("skippedCount")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> skipped = (List<Map<String, Object>>) result.get("skippedSuppliers");
+        assertThat(skipped.get(0).get("supplierCode")).isEqualTo("SUP-OLD");
+
+        ArgumentCaptor<SupplierQualificationReviewTask> taskCaptor = ArgumentCaptor.forClass(SupplierQualificationReviewTask.class);
+        verify(supplierQualificationReviewTaskMapper).insert(taskCaptor.capture());
+        SupplierQualificationReviewTask task = taskCaptor.getValue();
+        assertThat(task.getSupplierCode()).isEqualTo("SUP-DUE");
+        assertThat(task.getReviewType()).isEqualTo("PERIODIC");
+        assertThat(task.getSourceNo()).isEqualTo("AUTO-DUE:SUP-DUE");
+        assertThat(task.getCreatedBy()).isEqualTo("qe1003");
+        ArgumentCaptor<String> snapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("SUPPLIER_QUALIFICATION_REVIEW_GENERATE"), eq("BATCH"), eq("SUPPLIER_REVIEW"),
+                any(), eq("qe1003"), eq("material-service"), snapshotCaptor.capture());
+        assertThat(snapshotCaptor.getValue())
+                .contains("\"request\":")
+                .contains("\"summary\":")
+                .contains("\"createdCount\":1")
+                .contains("\"skippedCount\":1")
+                .contains("\"windowDays\":7")
+                .contains("SUP-OLD");
     }
 
     @Test
@@ -1249,11 +2000,16 @@ class MaterialServiceTest {
     }
 
     private Bom activeBom() {
+        return activeBom(10L, "BOM-OLED-01", "V01", "ACTIVE");
+    }
+
+    private Bom activeBom(Long id, String bomCode, String bomVersion, String status) {
         Bom bom = new Bom();
-        bom.setId(10L);
-        bom.setBomCode("BOM-OLED-01");
+        bom.setId(id);
+        bom.setBomCode(bomCode);
+        bom.setBomVersion(bomVersion);
         bom.setProductCode("OLED_PANEL");
-        bom.setStatus("ACTIVE");
+        bom.setStatus(status);
         return bom;
     }
 
@@ -1431,6 +2187,18 @@ class MaterialServiceTest {
         task.setOperator("wms1001");
         task.setExecutedTime(LocalDateTime.now());
         task.setCreatedTime(LocalDateTime.now());
+        return task;
+    }
+
+    private MaterialLocationTask rejectedReviewTask(String taskNo, String taskType, String batchNo) {
+        MaterialLocationTask task = locationTask(taskNo, taskType, batchNo);
+        task.setStatus("DONE");
+        task.setReviewer("wms-lead");
+        task.setReviewedTime(LocalDateTime.now().minusMinutes(10));
+        task.setReviewResult("REJECTED");
+        task.setReviewConclusion("复核发现实物与系统记录不一致");
+        task.setExceptionReason("复核发现实物与系统记录不一致");
+        task.setDispositionStatus("PENDING");
         return task;
     }
 

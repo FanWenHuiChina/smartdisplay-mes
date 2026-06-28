@@ -45,11 +45,11 @@ flowchart LR
     U["浏览器"] --> FE["smartdisplay-mes-ui<br/>Nginx + Vue dist"]
     FE -- "/api/*" --> API["smartdisplay-mes-api<br/>Spring Boot 3"]
     API --> PG["PostgreSQL 16"]
-    API --> FW["Flyway db/migration<br/>V1.1-V1.41"]
+    API --> FW["Flyway db/migration<br/>V1.1-V1.47"]
     API --> ADP["模拟适配器<br/>ERP/EAP/QMS/WMS"]
     ADP --> EAP["EAP统一入口<br/>/api/v1/adapters/eap/messages"]
-    EAP --> GW["设备网关占位<br/>连接/心跳/健康检查/消息履历"]
-    GW --> DRV["协议驱动边界<br/>SIM HTTP/厂商HTTP/SECS-GEM/OPC UA"]
+    EAP --> GW["设备影子网关<br/>连接/心跳/健康检查/消息履历"]
+    GW --> DRV["协议驱动边界<br/>SIM HTTP/厂商HTTP/SECS-GEM/OPC UA<br/>帧校验/归一化/审计留痕"]
 ```
 
 ## 核心ER图

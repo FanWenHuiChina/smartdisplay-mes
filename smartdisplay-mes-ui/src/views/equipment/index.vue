@@ -110,7 +110,7 @@
               <select v-model="gatewayForm.driverMode" class="mes-select">
                 <option value="SIMULATED">SIMULATED</option>
                 <option value="SHADOW">SHADOW</option>
-                <option value="LIVE">LIVE</option>
+                <option value="EXTERNAL">EXTERNAL</option>
               </select>
             </div>
             <div class="mes-field">
@@ -234,7 +234,7 @@
           <button v-if="canIngestEap" class="mes-btn primary" :disabled="submitting" @click="submitGatewayMessage">模拟入站</button>
         </div>
         <table class="mes-table section-gap">
-          <thead><tr><th>消息</th><th>网关</th><th>设备</th><th>协议</th><th>驱动</th><th>类型</th><th>方向</th><th>处理</th><th>时间</th></tr></thead>
+          <thead><tr><th>消息</th><th>网关</th><th>设备</th><th>协议</th><th>驱动</th><th>类型</th><th>方向</th><th>处理</th><th>时间</th><th>诊断</th></tr></thead>
           <tbody>
             <tr v-for="message in gatewayMessageRows" :key="message.messageNo" :class="{ danger: message.type === 'red' }">
               <td>{{ message.messageNo }}</td>
@@ -246,11 +246,64 @@
               <td>{{ message.direction }}</td>
               <td><span class="status-tag" :class="message.type">{{ message.processStatus }}</span></td>
               <td>{{ message.time }}</td>
+              <td>
+                <button class="mes-btn tiny" :disabled="detailLoading" @click="openGatewayMessageDetail(message)">查看</button>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <el-drawer
+      v-model="gatewayMessageDetailVisible"
+      class="gateway-detail-drawer"
+      size="52%"
+      :title="gatewayMessageDetailTitle"
+      destroy-on-close
+    >
+      <div v-if="detailLoading" class="detail-loading">正在读取消息详情...</div>
+      <div v-else-if="selectedGatewayMessageDetail" class="gateway-detail">
+        <div class="detail-summary">
+          <div>
+            <span>网关</span>
+            <strong>{{ selectedGatewayMessageDetail.gatewayCode }}</strong>
+          </div>
+          <div>
+            <span>设备</span>
+            <strong>{{ selectedGatewayMessageDetail.equipmentCode }}</strong>
+          </div>
+          <div>
+            <span>协议</span>
+            <strong>{{ selectedGatewayMessageDetail.protocolType }}</strong>
+          </div>
+          <div>
+            <span>处理</span>
+            <strong><span class="status-tag" :class="selectedGatewayMessageDetail.type">{{ selectedGatewayMessageDetail.processStatus }}</span></strong>
+          </div>
+        </div>
+
+        <div v-if="selectedGatewayMessageDetail.errorMessage" class="detail-alert">
+          <strong>{{ selectedGatewayMessageDetail.diagnostic?.failureCategory || 'ADAPTER' }}</strong>
+          <span>{{ selectedGatewayMessageDetail.errorMessage }}</span>
+          <em>{{ selectedGatewayMessageDetail.diagnostic?.operatorAction }}</em>
+        </div>
+
+        <div class="detail-section">
+          <h3>原始入站快照</h3>
+          <pre>{{ formatSnapshot(selectedGatewayMessageDetail.payloadSnapshot) }}</pre>
+        </div>
+        <div class="detail-section">
+          <h3>归一化消息</h3>
+          <pre>{{ formatSnapshot(selectedGatewayMessageDetail.normalizedPayloadSnapshot) }}</pre>
+        </div>
+        <div class="detail-section">
+          <h3>适配器响应</h3>
+          <pre>{{ formatSnapshot(selectedGatewayMessageDetail.responseSnapshot) }}</pre>
+        </div>
+      </div>
+      <div v-else class="detail-loading">请选择一条 EAP 消息</div>
+    </el-drawer>
 
     <div class="mes-grid cols-2 section-gap">
       <div class="mes-card">
@@ -727,6 +780,7 @@ import {
   getEquipmentEvents,
   getEquipmentGatewayDrivers,
   getEquipmentGatewayHealthChecks,
+  getEquipmentGatewayMessageDetail,
   getEquipmentGatewayMessages,
   getEquipmentGateways,
   getEquipmentOee,
@@ -747,74 +801,107 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackEquipments = [
+const fallbackEquipments = __DEV_MOCK_FALLBACK__ ? [
   { equipmentCode: 'COATER_01', equipmentName: '涂胶机-1', status: 'IDLE', capabilitySteps: '["COATING"]', lineCode: 'LINE_01' },
   { equipmentCode: 'COATER_02', equipmentName: '涂胶机-2', status: 'RUNNING', capabilitySteps: '["COATING"]', lineCode: 'LINE_01' },
   { equipmentCode: 'EVAP_01', equipmentName: '蒸镀机-1', status: 'ALARM', capabilitySteps: '["EVAPORATION"]', lineCode: 'LINE_01' },
   { equipmentCode: 'INSPECT_01', equipmentName: 'AOI检测机-1', status: 'IDLE', capabilitySteps: '["INSPECTION"]', lineCode: 'LINE_01' },
   { equipmentCode: 'ETCH_01', equipmentName: '蚀刻机-1', status: 'ALARM', capabilitySteps: '["ETCH"]', lineCode: 'LINE_01' }
-]
+] : []
 
-const fallbackEvents = [
+const fallbackEvents = __DEV_MOCK_FALLBACK__ ? [
   { eventNo: 'EVT-FALLBACK-001', title: '真空波动', equipmentCode: 'EVAP_01', eventType: 'ALARM', eventLevel: 'P2', status: 'OPEN', sourceSystem: 'eap-adapter', occurredTime: new Date().toISOString() },
   { eventNo: 'EVT-FALLBACK-002', title: '涂胶膜厚超限', equipmentCode: 'COATER_02', eventType: 'PARAMETER', eventLevel: 'P1', status: 'OPEN', sourceSystem: 'eap-adapter', occurredTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackSamples = [
+const fallbackSamples = __DEV_MOCK_FALLBACK__ ? [
   { sampleNo: 'EPS-FALLBACK-001', equipmentCode: 'COATER_02', lotNo: 'LOT202406003', stepCode: 'COATING', recipeCode: 'RCP_COAT_002', paramCode: 'THICKNESS', paramValue: 2.26, lowerLimit: 1.8, upperLimit: 2.2, unit: 'um', result: 'NG', sampleTime: new Date().toISOString() },
   { sampleNo: 'EPS-FALLBACK-002', equipmentCode: 'COATER_01', lotNo: 'LOT202406001', stepCode: 'COATING', recipeCode: 'RCP_COAT_001', paramCode: 'TEMP_COATING', paramValue: 150.2, lowerLimit: 145, upperLimit: 155, unit: 'C', result: 'OK', sampleTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackPmTasks = [
+const fallbackPmTasks = __DEV_MOCK_FALLBACK__ ? [
   { taskNo: 'PM-FALLBACK-001', equipmentCode: 'COATER_01', pmType: 'NOZZLE_CLEAN', pmLevel: 'SHIFT', status: 'OPEN', planEndTime: new Date().toISOString() },
   { taskNo: 'PM-FALLBACK-002', equipmentCode: 'EVAP_01', pmType: 'VACUUM_CHECK', pmLevel: 'DAILY', status: 'OVERDUE', planEndTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackRecipeCommands = [
+const fallbackRecipeCommands = __DEV_MOCK_FALLBACK__ ? [
   { commandNo: 'RDL-FALLBACK-001', equipmentCode: 'COATER_01', recipeCode: 'RCP_COAT_001', commandStatus: 'SUCCESS', readbackStatus: 'MATCH', downloadTime: new Date().toISOString() },
   { commandNo: 'RDL-FALLBACK-002', equipmentCode: 'COATER_02', recipeCode: 'RCP_COAT_002', commandStatus: 'FAILED', readbackStatus: 'MISMATCH', downloadTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackStatusHistories = [
+const fallbackStatusHistories = __DEV_MOCK_FALLBACK__ ? [
   { historyNo: 'ESH-FALLBACK-001', equipmentCode: 'COATER_01', fromStatus: 'PM', toStatus: 'IDLE', changeReason: 'PM completed and ready for dispatch', sourceSystem: 'eap-adapter', changedTime: new Date().toISOString() },
   { historyNo: 'ESH-FALLBACK-002', equipmentCode: 'EVAP_01', fromStatus: 'RUNNING', toStatus: 'DOWN', changeReason: 'Vacuum pump down', sourceSystem: 'eap-adapter', changedTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackCycleSamples = [
+const fallbackCycleSamples = __DEV_MOCK_FALLBACK__ ? [
   { sampleNo: 'ECS-FALLBACK-001', equipmentCode: 'COATER_01', lotNo: 'LOT202406001', stepCode: 'COATING', standardCycleSeconds: 58, actualCycleSeconds: 61, outputQty: 1, goodQty: 1, result: 'OK', sampleTime: new Date().toISOString() },
   { sampleNo: 'ECS-FALLBACK-002', equipmentCode: 'COATER_02', lotNo: 'LOT202406003', stepCode: 'COATING', standardCycleSeconds: 58, actualCycleSeconds: 72, outputQty: 1, goodQty: 0, result: 'NG', sampleTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackStandardCycles = [
+const fallbackStandardCycles = __DEV_MOCK_FALLBACK__ ? [
   { cycleNo: 'ESC-FALLBACK-001', productCode: 'AMOLED_65', stepCode: 'COATING', equipmentCode: 'COATER_01', recipeCode: 'RCP_COAT_001', cycleVersion: 'V1.0', standardCycleSeconds: 58, lowerCycleSeconds: 52, upperCycleSeconds: 70, status: 'ACTIVE' },
   { cycleNo: 'ESC-FALLBACK-002', productCode: 'AMOLED_67', stepCode: 'COATING', equipmentCode: 'COATER_02', recipeCode: 'RCP_COAT_002', cycleVersion: 'V1.0', standardCycleSeconds: 58, lowerCycleSeconds: 52, upperCycleSeconds: 70, status: 'ACTIVE' },
   { cycleNo: 'ESC-FALLBACK-003', productCode: 'AMOLED_65', stepCode: 'EVAPORATION', equipmentCode: 'EVAP_01', recipeCode: 'RCP_EVAP_001', cycleVersion: 'V1.0', standardCycleSeconds: 420, lowerCycleSeconds: 390, upperCycleSeconds: 480, status: 'ACTIVE' }
-]
+] : []
 
-const fallbackGateways = [
+const fallbackGateways = __DEV_MOCK_FALLBACK__ ? [
   { gatewayCode: 'GW-SIM-HTTP-01', gatewayName: '试点模拟EAP网关', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02","EVAP_01","INSPECT_01"]', status: 'CONNECTED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastHeartbeatTime: new Date().toISOString(), type: 'green' },
-  { gatewayCode: 'GW-SECSGEM-PLACEHOLDER', gatewayName: 'SECS/GEM预留网关', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SIMULATED', endpointUri: 'secs://192.168.10.20:5000', lineCode: 'LINE_01', equipmentCodes: '["EVAP_01"]', status: 'DISCONNECTED', heartbeatIntervalMs: 500, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, type: 'red' },
-  { gatewayCode: 'GW-OPCUA-PLACEHOLDER', gatewayName: 'OPC UA预留网关', protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SIMULATED', endpointUri: 'opc.tcp://192.168.10.30:4840', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02"]', status: 'DISCONNECTED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, type: 'red' }
-]
+  { gatewayCode: 'GW-SECSGEM-SHADOW', gatewayName: 'SECS/GEM影子协议网关', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', endpointUri: 'secs://192.168.10.20:5000', lineCode: 'LINE_01', equipmentCodes: '["EVAP_01"]', status: 'DEGRADED', heartbeatIntervalMs: 500, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' },
+  { gatewayCode: 'GW-OPCUA-SHADOW', gatewayName: 'OPC UA影子协议网关', protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', endpointUri: 'opc.tcp://192.168.10.30:4840', lineCode: 'LINE_01', equipmentCodes: '["COATER_01","COATER_02"]', status: 'DEGRADED', heartbeatIntervalMs: 1000, tlsEnabled: 0, connectionTimeoutMs: 3000, readTimeoutMs: 5000, lastError: '影子协议帧校验可用，未配置真机握手', type: 'amber' }
+] : []
 
-const fallbackGatewayMessages = [
-  { messageNo: 'EGM-FALLBACK-001', gatewayCode: 'GW-SIM-HTTP-01', equipmentCode: 'COATER_01', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', direction: 'INBOUND', messageType: 'STATUS', correlationId: 'SEED-STATUS-001', processStatus: 'PROCESSED', occurredTime: new Date().toISOString(), type: 'green' },
-  { messageNo: 'EGM-FALLBACK-002', gatewayCode: 'GW-SIM-HTTP-01', equipmentCode: 'COATER_02', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', direction: 'INBOUND', messageType: 'CYCLE', correlationId: 'SEED-CYCLE-001', processStatus: 'PROCESSED', occurredTime: new Date().toISOString(), type: 'green' }
-]
+const fallbackGatewayMessages = __DEV_MOCK_FALLBACK__ ? [
+  {
+    messageNo: 'EGM-FALLBACK-001',
+    gatewayCode: 'GW-SIM-HTTP-01',
+    equipmentCode: 'COATER_01',
+    protocolType: 'SIMULATED_HTTP',
+    driverCode: 'simulated-http-driver',
+    direction: 'INBOUND',
+    messageType: 'STATUS',
+    correlationId: 'SEED-STATUS-001',
+    processStatus: 'PROCESSED',
+    occurredTime: new Date().toISOString(),
+    payloadSnapshot: { gatewayCode: 'GW-SIM-HTTP-01', messageType: 'STATUS', payload: { equipmentCode: 'COATER_01', status: 'RUNNING' } },
+    normalizedPayloadSnapshot: { protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', messageType: 'STATUS', payload: { equipmentCode: 'COATER_01', status: 'RUNNING' } },
+    responseSnapshot: { accepted: true, adapterCode: 'simulated-eap-adapter', messageType: 'STATUS' },
+    diagnostic: { failureCategory: 'NONE', operatorAction: '该消息已正常处理，无需处置。' },
+    type: 'green'
+  },
+  {
+    messageNo: 'EGM-FALLBACK-002',
+    gatewayCode: 'GW-SECSGEM-SHADOW',
+    equipmentCode: 'EVAP_01',
+    protocolType: 'SECS_GEM',
+    driverCode: 'secs-gem-driver',
+    direction: 'INBOUND',
+    messageType: 'UNKNOWN',
+    correlationId: 'SEED-FRAME-ERR-001',
+    processStatus: 'FAILED',
+    errorMessage: 'SECS/GEM frame is invalid: require one of secsMessage, stream, function',
+    occurredTime: new Date().toISOString(),
+    payloadSnapshot: { gatewayCode: 'GW-SECSGEM-SHADOW', payload: { equipmentCode: 'EVAP_01', status: 'RUNNING' } },
+    normalizedPayloadSnapshot: null,
+    responseSnapshot: { accepted: false, errorClass: 'BusinessException', errorMessage: 'SECS/GEM frame is invalid: require one of secsMessage, stream, function' },
+    diagnostic: { failureCategory: 'PROTOCOL_FRAME', operatorAction: '检查协议帧字段、设备编码和网关协议类型是否匹配。' },
+    type: 'red'
+  }
+] : []
 
-const fallbackGatewayHealthChecks = [
+const fallbackGatewayHealthChecks = __DEV_MOCK_FALLBACK__ ? [
   { checkNo: 'EGH-FALLBACK-001', gatewayCode: 'GW-SIM-HTTP-01', protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', endpointUri: 'http://localhost:8080/api/v1/adapters/eap/messages', checkType: 'SEED', resultStatus: 'PASS', latencyMs: 12, errorMessage: '', checkedTime: new Date().toISOString(), type: 'green' },
-  { checkNo: 'EGH-FALLBACK-002', gatewayCode: 'GW-SECSGEM-PLACEHOLDER', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', endpointUri: 'secs://192.168.10.20:5000', checkType: 'SEED', resultStatus: 'WARN', latencyMs: 0, errorMessage: '真实 SECS/GEM 握手待联调', checkedTime: new Date().toISOString(), type: 'amber' }
-]
+  { checkNo: 'EGH-FALLBACK-002', gatewayCode: 'GW-SECSGEM-SHADOW', protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', endpointUri: 'secs://192.168.10.20:5000', checkType: 'SEED', resultStatus: 'WARN', latencyMs: 0, errorMessage: '影子协议帧校验可用，未配置真机握手', checkedTime: new Date().toISOString(), type: 'amber' }
+] : []
 
-const fallbackGatewayDrivers = [
+const fallbackGatewayDrivers = __DEV_MOCK_FALLBACK__ ? [
   { protocolType: 'SIMULATED_HTTP', driverCode: 'simulated-http-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SIMULATED' },
-  { protocolType: 'VENDOR_HTTP', driverCode: 'vendor-http-driver', driverMode: 'SIMULATED' }
-]
+  { protocolType: 'SECS_GEM', driverCode: 'secs-gem-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
+  { protocolType: 'OPC_UA', driverCode: 'opc-ua-driver', driverMode: 'SHADOW', protocolFrameValidation: true },
+  { protocolType: 'VENDOR_HTTP', driverCode: 'vendor-http-driver', driverMode: 'SHADOW', protocolFrameValidation: true }
+] : []
 
-const fallbackEquipmentOee = {
+const fallbackEquipmentOee = __DEV_MOCK_FALLBACK__ ? {
   windowHours: 24,
   oeeRate: 94.99,
   oeeText: '94.99%',
@@ -829,7 +916,7 @@ const fallbackEquipmentOee = {
     { reasonCode: 'PM_NOZZLE_CLEAN', reasonName: '喷嘴清洁', downtimeType: 'PLANNED', durationMinutes: 35, eventCount: 1, type: 'amber' }
   ],
   calculationNote: '试点口径：可用率来自近24小时设备停机事件，性能率按当前可执行设备状态估算。'
-}
+} : {}
 
 const emptyEquipmentOee = {
   windowHours: 0,
@@ -859,8 +946,11 @@ const gatewayHealthRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackGatewayHealthCheck
 const equipmentOee = ref(__DEV_MOCK_FALLBACK__ ? fallbackEquipmentOee : emptyEquipmentOee)
 const selectedEquipmentCode = ref(__DEV_MOCK_FALLBACK__ ? 'COATER_02' : '')
 const selectedGatewayCode = ref(__DEV_MOCK_FALLBACK__ ? 'GW-SIM-HTTP-01' : '')
+const selectedGatewayMessageDetail = ref(null)
+const gatewayMessageDetailVisible = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
+const detailLoading = ref(false)
 
 const parameterForm = reactive({
   equipmentCode: selectedEquipmentCode.value,
@@ -950,6 +1040,10 @@ const duePmCount = computed(() => pmRows.value.filter(item => item.status !== 'C
 const connectedGatewayCount = computed(() => gatewayRows.value.filter(item => item.status === 'CONNECTED').length)
 const failedGatewayMessageCount = computed(() => gatewayMessageRows.value.filter(item => item.processStatus === 'FAILED').length)
 const warningGatewayHealthCount = computed(() => gatewayHealthRows.value.filter(item => item.resultStatus !== 'PASS').length)
+const gatewayMessageDetailTitle = computed(() => {
+  const messageNo = selectedGatewayMessageDetail.value?.messageNo
+  return messageNo ? `EAP 消息诊断 · ${messageNo}` : 'EAP 消息诊断'
+})
 const oeeFactors = computed(() => [
   { label: '可用率', value: equipmentOee.value.availabilityText || '-', meta: `计划停机 ${equipmentOee.value.plannedDowntimeMinutes ?? 0} 分` },
   { label: '性能率', value: equipmentOee.value.performanceText || '-', meta: '按可执行设备状态估算' },
@@ -1138,6 +1232,12 @@ function mapGatewayMessage(item, index = 0) {
     correlationId: item.correlationId || '-',
     processStatus,
     errorMessage: item.errorMessage || '',
+    payloadSnapshot: item.payloadSnapshot ?? null,
+    normalizedPayloadSnapshot: item.normalizedPayloadSnapshot ?? null,
+    responseSnapshot: item.responseSnapshot ?? null,
+    diagnostic: item.diagnostic || null,
+    occurredTime: item.occurredTime || '',
+    processedTime: item.processedTime || '',
     time: item.time || formatTime(item.occurredTime),
     type: item.type || gatewayStatusType(processStatus)
   }
@@ -1241,6 +1341,51 @@ function selectGateway(row) {
   gatewayForm.connectionTimeoutMs = String(gateway.connectionTimeoutMs || 3000)
   gatewayForm.readTimeoutMs = String(gateway.readTimeoutMs || 5000)
   gatewayForm.status = gateway.status
+}
+
+async function openGatewayMessageDetail(message) {
+  gatewayMessageDetailVisible.value = true
+  selectedGatewayMessageDetail.value = message
+  if (!message?.messageNo) return
+  try {
+    detailLoading.value = true
+    const detail = await getEquipmentGatewayMessageDetail(message.messageNo)
+    selectedGatewayMessageDetail.value = mapGatewayMessageDetail(detail || message)
+  } catch (error) {
+    if (__DEV_MOCK_FALLBACK__) {
+      selectedGatewayMessageDetail.value = mapGatewayMessageDetail(message)
+      return
+    }
+    ElMessage.warning(error?.message || 'EAP 消息详情读取失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function mapGatewayMessageDetail(item) {
+  return {
+    ...mapGatewayMessage(item),
+    payloadSnapshot: item.payloadSnapshot ?? null,
+    normalizedPayloadSnapshot: item.normalizedPayloadSnapshot ?? null,
+    responseSnapshot: item.responseSnapshot ?? null,
+    diagnostic: item.diagnostic || null,
+    occurredTime: item.occurredTime || '',
+    processedTime: item.processedTime || ''
+  }
+}
+
+function formatSnapshot(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2)
+    } catch {
+      return value
+    }
+  }
+  return JSON.stringify(value, null, 2)
 }
 
 function fillOkSample() {
@@ -1576,7 +1721,7 @@ async function submitGatewayMessage() {
       payload.outputQty = 1
     }
     submitting.value = true
-    await ingestEapMessage({
+    const result = await ingestEapMessage({
       gatewayCode: selectedGatewayCode.value,
       messageType,
       correlationId: `UI-${Date.now()}`,
@@ -1584,7 +1729,11 @@ async function submitGatewayMessage() {
       operator: localStorage.getItem('username') || 'ee1001',
       sourceSystem: 'equipment-gateway-ui'
     })
-    ElMessage.success('EAP 入站消息已处理')
+    if (result?.accepted === false) {
+      ElMessage.warning(result.errorMessage || 'EAP 入站消息处理失败，已记录诊断')
+    } else {
+      ElMessage.success('EAP 入站消息已处理')
+    }
     await loadEquipmentData()
   } catch (error) {
     ElMessage.warning(error?.message || 'EAP 入站消息处理失败')
@@ -1809,6 +1958,89 @@ onMounted(loadEquipmentData)
   font-style: normal;
 }
 
+.gateway-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.detail-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-summary div,
+.detail-alert,
+.detail-section {
+  border: 1px solid var(--mes-line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.detail-summary div {
+  min-height: 72px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.detail-summary span,
+.detail-alert em {
+  color: var(--mes-sub);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.detail-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-alert {
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px;
+  background: #fbf1f1;
+  border-color: #ead0d0;
+}
+
+.detail-alert span {
+  color: var(--mes-text);
+  overflow-wrap: anywhere;
+}
+
+.detail-section {
+  overflow: hidden;
+}
+
+.detail-section h3 {
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--mes-line-soft);
+  color: var(--mes-sub);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.detail-section pre {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--mes-paper-muted);
+  color: var(--mes-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-loading {
+  color: var(--mes-sub);
+  font-size: 13px;
+}
+
 .equipment-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1883,6 +2115,10 @@ onMounted(loadEquipmentData)
   }
 
   .gateway-list {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-summary {
     grid-template-columns: 1fr;
   }
 }

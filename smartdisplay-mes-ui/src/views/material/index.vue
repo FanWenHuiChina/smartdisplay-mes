@@ -278,8 +278,8 @@
               <tbody>
                 <tr v-for="record in iqcInspections" :key="record.key">
                   <td><span class="status-tag" :class="record.type">{{ record.result }}</span></td>
-                  <td>{{ record.batchNo }}</td>
-                  <td>{{ record.coaNo }}</td>
+                  <td class="mono">{{ record.batchNo }}</td>
+                  <td class="mono">{{ record.coaNo }}</td>
                   <td>{{ record.conclusion }}</td>
                   <td>{{ record.attachmentCount }}</td>
                   <td>{{ record.time }}</td>
@@ -355,10 +355,65 @@
 
     <div class="mes-card section-gap">
       <div class="mes-card__head">
-        <div class="mes-card__title">库位任务 / 上架移库盘点</div>
-        <span class="status-tag blue">{{ locationTaskRows.length }} 条</span>
+        <div class="mes-card__title">库位任务 / 上架移库拆批盘点</div>
+        <span class="status-tag" :class="pendingDispositionTasks.length ? 'amber' : 'blue'">
+          待处置 {{ pendingDispositionTasks.length }} / 全量 {{ locationTaskRows.length }}
+        </span>
       </div>
       <div class="mes-card__body">
+        <div class="pending-disposition-queue">
+          <div class="queue-head">
+            <div>
+              <strong>复核差异待处置</strong>
+              <span>{{ pendingDispositionSummary }}</span>
+            </div>
+            <button class="mes-btn tiny" :disabled="loading" type="button" @click="loadMaterialData">刷新队列</button>
+          </div>
+          <div v-if="pendingDispositionTasks.length" class="queue-list">
+            <div v-for="task in pendingDispositionTasks" :key="`pending-${task.key}`" class="queue-row">
+              <div class="task-main">
+                <strong>{{ task.taskNo }} / {{ task.taskLabel }}</strong>
+                <span>{{ task.batchNo }} / {{ task.sourceLocation }} → {{ task.targetLocation }} / {{ task.qty }}</span>
+                <span>{{ task.reviewConclusion || task.reason }}</span>
+              </div>
+              <div class="queue-meta">
+                <span class="task-review" :class="task.dispositionType">{{ task.dispositionText }}</span>
+                <span>{{ task.reviewText }}</span>
+              </div>
+              <div class="task-actions">
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ACCEPT_DEVIATION')"
+                >
+                  接收差异
+                </button>
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny primary"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ADJUST_INVENTORY')"
+                >
+                  调库
+                </button>
+                <button
+                  v-if="canWmsAction"
+                  class="mes-btn tiny warn"
+                  :disabled="locationTaskSubmitting"
+                  type="button"
+                  @click="dispositionLocationTask(task, 'ESCALATE')"
+                >
+                  升级
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-cell queue-empty">暂无复核差异待处置任务</div>
+        </div>
+
         <div class="location-task-shell">
           <div class="location-task-panel">
             <div class="wms-actions">
@@ -376,7 +431,7 @@
 
             <div class="wms-form location-task-form">
               <div class="mes-field">
-                <label>目标批次</label>
+                <label>{{ locationTaskForm.taskType === 'SPLIT' ? '母批次' : '目标批次' }}</label>
                 <select v-model="locationTaskForm.batchNo" class="mes-select">
                   <option value="">请选择</option>
                   <option v-for="batch in materialLots" :key="batch.code" :value="batch.code">{{ batch.code }}</option>
@@ -397,8 +452,20 @@
                 </select>
               </div>
               <div class="mes-field">
-                <label>{{ locationTaskForm.taskType === 'COUNT' ? '实盘可用' : '任务数量' }}</label>
-                <input v-model="locationTaskForm.qty" class="mes-input" inputmode="decimal" :placeholder="locationTaskForm.taskType === 'COUNT' ? '必填' : '留空整批'" />
+                <label>{{ locationTaskQtyLabel }}</label>
+                <input v-model="locationTaskForm.qty" class="mes-input" inputmode="decimal" :placeholder="locationTaskQtyPlaceholder" />
+              </div>
+              <div class="mes-field">
+                <label>优先级</label>
+                <input v-model="locationTaskForm.priority" class="mes-input" inputmode="numeric" placeholder="0-10" />
+              </div>
+              <div class="mes-field">
+                <label>SLA小时</label>
+                <input v-model="locationTaskForm.dueHours" class="mes-input" inputmode="numeric" placeholder="1-168" />
+              </div>
+              <div v-if="locationTaskForm.taskType === 'SPLIT'" class="mes-field">
+                <label>子批次号</label>
+                <input v-model.trim="locationTaskForm.childBatchNo" class="mes-input" placeholder="留空自动生成" />
               </div>
               <div class="mes-field wide">
                 <label>原因</label>
@@ -435,7 +502,8 @@
                   <th>源/目标库位</th>
                   <th>数量</th>
                   <th>状态</th>
-                  <th>执行人</th>
+                  <th>SLA</th>
+                  <th>执行/复核</th>
                   <th>时间</th>
                   <th>操作</th>
                 </tr>
@@ -446,13 +514,30 @@
                     <div class="task-main">
                       <strong>{{ task.taskLabel }}</strong>
                       <span>{{ task.taskNo }}</span>
+                      <span v-if="task.childBatchNo">子批 {{ task.childBatchNo }}</span>
                     </div>
                   </td>
-                  <td>{{ task.batchNo }}</td>
+                  <td class="mono">{{ task.batchNo }}</td>
                   <td>{{ task.sourceLocation }} → {{ task.targetLocation }}</td>
                   <td>{{ task.qty }}</td>
                   <td><span class="status-tag" :class="task.type">{{ task.status }}</span></td>
-                  <td>{{ task.assignedTo || task.operator }}</td>
+                  <td>
+                    <div class="task-main">
+                      <span class="task-review" :class="task.slaType">{{ task.slaText }}</span>
+                      <span>{{ task.priorityText }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="task-main">
+                      <span>{{ task.assigneeLabel }}</span>
+                      <span class="task-review" :class="task.reviewType">{{ task.reviewText }}</span>
+                      <span v-if="task.reviewConclusion">{{ task.reviewConclusion }}</span>
+                      <span v-if="task.dispositionText" class="task-review" :class="task.dispositionType">{{ task.dispositionText }}</span>
+                      <span v-if="task.dispositionConclusion">{{ task.dispositionConclusion }}</span>
+                      <span v-if="task.exceptionCloseText" class="task-review" :class="task.exceptionCloseType">{{ task.exceptionCloseText }}</span>
+                      <span v-if="task.exceptionCloseConclusion">{{ task.exceptionCloseConclusion }}</span>
+                    </div>
+                  </td>
                   <td>{{ task.time }}</td>
                   <td>
                     <div class="task-actions">
@@ -473,6 +558,22 @@
                         完成
                       </button>
                       <button
+                        v-if="canWmsAction && task.canReview"
+                        class="mes-btn tiny primary"
+                        :disabled="locationTaskSubmitting"
+                        @click="reviewLocationTask(task, 'APPROVED')"
+                      >
+                        通过
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canReview"
+                        class="mes-btn tiny warn"
+                        :disabled="locationTaskSubmitting"
+                        @click="reviewLocationTask(task, 'REJECTED')"
+                      >
+                        驳回
+                      </button>
+                      <button
                         v-if="canWmsAction && task.canCancel"
                         class="mes-btn tiny warn"
                         :disabled="locationTaskSubmitting"
@@ -480,11 +581,35 @@
                       >
                         取消
                       </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ACCEPT_DEVIATION')"
+                      >
+                        接收差异
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny primary"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ADJUST_INVENTORY')"
+                      >
+                        调库
+                      </button>
+                      <button
+                        v-if="canWmsAction && task.canDisposition"
+                        class="mes-btn tiny warn"
+                        :disabled="locationTaskSubmitting"
+                        @click="dispositionLocationTask(task, 'ESCALATE')"
+                      >
+                        升级
+                      </button>
                     </div>
                   </td>
                 </tr>
                 <tr v-if="!locationTaskRows.length">
-                  <td colspan="8" class="empty-cell">暂无库位任务</td>
+                  <td colspan="9" class="empty-cell">暂无库位任务</td>
                 </tr>
               </tbody>
             </table>
@@ -637,9 +762,19 @@
       <div class="mes-card">
         <div class="mes-card__head">
           <div class="mes-card__title">供应商准入复审</div>
-          <span class="status-tag" :class="openSupplierReviewCount > 0 ? 'amber' : 'green'">
-            待办 {{ openSupplierReviewCount }}
-          </span>
+          <div class="task-actions">
+            <span class="status-tag" :class="openSupplierReviewCount > 0 ? 'amber' : 'green'">
+              待办 {{ openSupplierReviewCount }}
+            </span>
+            <button
+              v-if="canSupplierAction"
+              class="mes-btn tiny"
+              :disabled="supplierSubmitting"
+              @click="generateDueSupplierReviews"
+            >
+              生成到期复审
+            </button>
+          </div>
         </div>
         <div class="mes-card__body supplier-panel">
           <table class="mes-table">
@@ -753,9 +888,10 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   assignMaterialLocationTask,
+  claimMaterialLocationTask,
   bindCarrier,
   cancelMaterialLocationTask,
   checkWmsMaterialReadiness,
@@ -767,6 +903,7 @@ import {
   createSupplierQualificationReview,
   closeSupplierCorrectiveAction,
   decideSupplierQualificationReview,
+  dispositionMaterialLocationTask,
   evaluateMaterialSupplierQualification,
   freezeMaterial,
   getCarriers,
@@ -781,8 +918,10 @@ import {
   getMaterialSuppliers,
   getSupplierCorrectiveActions,
   getSupplierQualificationReviews,
+  generateDueSupplierQualificationReviews,
   ingestWmsInventoryTransaction,
   receiveMaterial,
+  reviewMaterialLocationTask,
   returnMaterial,
   unbindCarrier,
   unfreezeMaterial
@@ -790,50 +929,50 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackMaterialLots = [
+const fallbackMaterialLots = __DEV_MOCK_FALLBACK__ ? [
   { batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', availableQty: 820, reservedQty: 120, frozenQty: 0, returnedQty: 0, stockVersion: 1, unit: 'g', remainPercent: 18, status: 'WARNING', location: 'WMS-A01' },
   { batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', availableQty: 310, reservedQty: 42, frozenQty: 12, returnedQty: 0, stockVersion: 2, unit: 'g', remainPercent: 62, status: 'OK', location: 'COLD-02' },
   { batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', availableQty: 540, reservedQty: 80, frozenQty: 0, returnedQty: 6, stockVersion: 3, unit: 'g', remainPercent: 76, status: 'OK', location: 'WMS-B03' }
-]
+] : []
 
-const fallbackCarriers = [
+const fallbackCarriers = __DEV_MOCK_FALLBACK__ ? [
   { code: 'CST-260606-001', lot: 'LOT202406001', step: 'COATING', status: 'BOUND', type: 'green' },
   { code: 'CST-260606-002', lot: '-', step: '-', status: 'IDLE', type: 'blue' },
   { code: 'TRAY-260606-009', lot: '-', step: '-', status: 'CLEANING', type: 'amber' }
-]
+] : []
 
-const fallbackChecks = [
+const fallbackChecks = __DEV_MOCK_FALLBACK__ ? [
   { title: 'BOM关键物料', text: '已配置 3 批', type: 'green' },
   { title: '批次质量', text: '来料质量 PASS', type: 'green' },
   { title: 'FIFO库存', text: 'PI 胶低库存', type: 'amber' },
   { title: '齐套结果', text: 'PASS_WITH_WARNING', type: 'amber' }
-]
+] : []
 
-const fallbackConsumeRecords = [
+const fallbackConsumeRecords = __DEV_MOCK_FALLBACK__ ? [
   { lot: 'LOT202406001', step: 'COATING', batch: 'PI260606-A', qty: '42.8g', operator: 'op1007', time: '13:42', status: 'TRACEABLE', type: 'green' },
   { lot: 'LOT202406004', step: 'EVAPORATION', batch: 'OLED-R-260605-B', qty: '8.2g', operator: 'op1011', time: '14:08', status: 'TRACEABLE', type: 'green' }
-]
+] : []
 
-const fallbackTxns = [
+const fallbackTxns = __DEV_MOCK_FALLBACK__ ? [
   { txnNo: 'TXN-FALLBACK-001', txnType: 'FREEZE', batchNo: 'OLED-R-260605-B', qtyDelta: -12, availableBefore: 322, availableAfter: 310, unit: 'g', operator: 'admin', txnTime: new Date().toISOString() },
   { txnNo: 'TXN-FALLBACK-002', txnType: 'RETURN', batchNo: 'ENCAP260604-C', qtyDelta: 6, availableBefore: 534, availableAfter: 540, unit: 'g', operator: 'admin', txnTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackIqcInspections = [
+const fallbackIqcInspections = __DEV_MOCK_FALLBACK__ ? [
   { inspectionNo: 'MIQC-FALLBACK-001', batchNo: 'PI260606-A', result: 'PASS', coaNo: 'COA-PI260606-A', conclusion: '来料黏度、固含量与外观复核通过。', attachmentCount: 1, inspector: 'qe1003', inspectionTime: new Date().toISOString() },
   { inspectionNo: 'MIQC-FALLBACK-002', batchNo: 'OLED-R-260605-B', result: 'PASS', coaNo: 'COA-OLED-R-260605-B', conclusion: 'COA 参数与抽检结果一致。', attachmentCount: 1, inspector: 'qe1003', inspectionTime: new Date().toISOString() }
-]
+] : []
 
-const fallbackSupplierPerformance = [
+const fallbackSupplierPerformance = __DEV_MOCK_FALLBACK__ ? [
   { supplierCode: 'SUP-OLED-02', supplierName: 'OLED有机材料供应商B', qualificationStatus: 'CONDITIONAL', materialClass: 'ORGANIC', score: 84, scoreText: '84.0', passRate: 92, passRateText: '92.0%', batchCount: 4, inspectionCount: 4, passCount: 2, holdCount: 1, ngCount: 1, riskBatchCount: 2, riskLevel: 'HIGH', openActionCount: 1, overdueActionCount: 0, latestActionNo: 'SCA-SEED-OLED-001', type: 'amber' },
   { supplierCode: 'SUP-PI-01', supplierName: 'PI材料供应商A', qualificationStatus: 'QUALIFIED', materialClass: 'CHEMICAL', score: 100, scoreText: '100.0', passRate: 100, passRateText: '100.0%', batchCount: 7, inspectionCount: 6, passCount: 6, holdCount: 0, ngCount: 0, riskBatchCount: 0, riskLevel: 'LOW', openActionCount: 0, overdueActionCount: 0, latestActionNo: '', type: 'green' }
-]
+] : []
 
-const fallbackSupplierActions = [
+const fallbackSupplierActions = __DEV_MOCK_FALLBACK__ ? [
   { actionNo: 'SCA-SEED-OLED-001', supplierCode: 'SUP-OLED-02', sourceType: 'IQC', sourceNo: 'MIQC-SEED-OLED-R-260605-B', issueSummary: '有机材料批次稳定性需持续确认', owner: 'qe1003', severity: 'MEDIUM', status: 'OPEN', dueTime: new Date(Date.now() + 5 * 86400000).toISOString(), createdTime: new Date().toISOString(), type: 'amber' }
-]
+] : []
 
-const fallbackSupplierReviews = [
+const fallbackSupplierReviews = __DEV_MOCK_FALLBACK__ ? [
   {
     taskNo: 'SQR-SEED-OLED-001',
     supplierCode: 'SUP-OLED-02',
@@ -849,9 +988,9 @@ const fallbackSupplierReviews = [
     canDecide: true,
     type: 'red'
   }
-]
+] : []
 
-const fallbackSupplierTrends = [
+const fallbackSupplierTrends = __DEV_MOCK_FALLBACK__ ? [
   {
     supplierCode: 'SUP-OLED-02',
     supplierName: 'OLED有机材料供应商B',
@@ -896,19 +1035,22 @@ const fallbackSupplierTrends = [
       fallbackTrendPoint(0, 100, 100, 'LOW', 'green')
     ]
   }
-]
+] : []
 
-const fallbackMaterialLocations = [
+const fallbackMaterialLocations = __DEV_MOCK_FALLBACK__ ? [
   { locationCode: 'WH-A01', zoneCode: 'CHEM-A', storageType: 'CHEMICAL', materialClass: 'CHEMICAL', status: 'ACTIVE', capacityQty: 5000, usedQty: 940, availableQty: 4060, unit: 'g', temperatureWindow: '18 ~ 25℃', humidityWindow: '30 ~ 55%RH', strategyPriority: 20, type: 'green' },
   { locationCode: 'WH-C02', zoneCode: 'ORG-COLD', storageType: 'COLD', materialClass: 'ORGANIC', status: 'ACTIVE', capacityQty: 2000, usedQty: 322, availableQty: 1678, unit: 'g', temperatureWindow: '2 ~ 8℃', humidityWindow: '20 ~ 45%RH', strategyPriority: 30, type: 'green' },
   { locationCode: 'WH-HOLD', zoneCode: 'HOLD', storageType: 'QUARANTINE', materialClass: 'ANY', status: 'LOCKED', capacityQty: 1000, usedQty: 0, availableQty: 1000, unit: 'EA', temperatureWindow: '18 ~ 28℃', humidityWindow: '30 ~ 70%RH', strategyPriority: 900, type: 'red' }
-]
+] : []
 
-const fallbackLocationTasks = [
-  { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
-  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' }
-]
+const fallbackLocationTasks = __DEV_MOCK_FALLBACK__ ? [
+  { taskNo: 'MLT-FB-001', taskType: 'PUTAWAY', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WMS-IN', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 0, unit: 'g', status: 'CREATED', priority: 6, dueTime: new Date(Date.now() + 3 * 3600000).toISOString(), slaStatus: 'ON_TRACK', reason: '来料上架', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-002', taskType: 'MOVE', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WMS-B03', targetLocation: 'WH-A01', plannedQty: 626, actualQty: 0, unit: 'g', status: 'ASSIGNED', priority: 9, dueTime: new Date(Date.now() - 3600000).toISOString(), overdue: true, slaStatus: 'OVERDUE', assignedTo: 'wms1002', reason: '产线补料前移库', operator: 'wms1002', assignedTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-003', taskType: 'COUNT', batchNo: 'OLED-R-260605-B', materialCode: 'OLED_R', materialName: '红光有机材料', sourceLocation: 'COLD-02', targetLocation: 'COLD-02', plannedQty: 310, actualQty: 310, unit: 'g', status: 'DONE', priority: 3, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '低温库日盘', operator: 'wms1001', executedTime: new Date().toISOString(), type: 'green' },
+  { taskNo: 'MLT-FB-004', taskType: 'SPLIT', batchNo: 'PI260606-A', childBatchNo: 'PI260606-A-S01', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-C02', plannedQty: 120, actualQty: 0, unit: 'g', status: 'CREATED', priority: 8, dueTime: new Date(Date.now() + 30 * 60000).toISOString(), slaStatus: 'DUE_SOON', reason: '多库位拆批备料', operator: 'wms1001', createdTime: new Date().toISOString(), type: 'amber' },
+  { taskNo: 'MLT-FB-005', taskType: 'COUNT', batchNo: 'PI260606-A', materialCode: 'PI_INK', materialName: 'PI 胶', sourceLocation: 'WH-A01', targetLocation: 'WH-A01', plannedQty: 820, actualQty: 816, unit: 'g', status: 'DONE', priority: 7, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核发现数量差异', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 816g，系统 820g，待处置', dispositionStatus: 'PENDING', executedTime: new Date().toISOString(), type: 'red' },
+  { taskNo: 'MLT-FB-006', taskType: 'COUNT', batchNo: 'ENCAP260604-C', materialCode: 'ENCAP_GLUE', materialName: '封装胶', sourceLocation: 'WH-B03', targetLocation: 'WH-B03', plannedQty: 540, actualQty: 534, unit: 'g', status: 'DONE', priority: 4, dueTime: new Date().toISOString(), slaStatus: 'CLOSED', reason: '盘点复核差异升级MRB', operator: 'wms1001', reviewer: 'wms-lead', reviewedTime: new Date().toISOString(), reviewResult: 'REJECTED', reviewConclusion: '复核驳回：实盘 534g，系统 540g，已升级MRB', dispositionStatus: 'CLOSED', dispositionResult: 'ESCALATE', dispositionConclusion: '升级MRB后续处理', linkedExceptionEventNo: 'EX-FB-MRB-001', exceptionCloseAction: 'RELEASE', exceptionCloseConclusion: 'MRB判定降级使用', exceptionClosedBy: 'qe-zhang', exceptionClosedTime: new Date().toISOString(), executedTime: new Date().toISOString(), type: 'green' }
+] : []
 
 const wmsActions = [
   { value: 'RECEIVE', label: '入库' },
@@ -921,6 +1063,7 @@ const wmsActions = [
 const locationTaskTypes = [
   { value: 'MOVE', label: '移库' },
   { value: 'PUTAWAY', label: '上架' },
+  { value: 'SPLIT', label: '拆批' },
   { value: 'COUNT', label: '盘点' }
 ]
 
@@ -943,6 +1086,7 @@ const supplierReviewRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackSupplierReviews.m
 const supplierTrendRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackSupplierTrends.map(mapSupplierTrend) : [])
 const materialLocationRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations.map(mapMaterialLocation) : [])
 const locationTaskRows = ref(__DEV_MOCK_FALLBACK__ ? fallbackLocationTasks.map(mapLocationTask) : [])
+const pendingDispositionTasks = ref(__DEV_MOCK_FALLBACK__ ? fallbackLocationTasks.map(mapLocationTask).filter(item => item.canDisposition) : [])
 const readiness = ref(__DEV_MOCK_FALLBACK__ ? 'PASS_WITH_WARNING' : 'NO_DATA')
 const loading = ref(false)
 const wmsSubmitting = ref(false)
@@ -979,6 +1123,9 @@ const locationTaskForm = reactive({
   batchNo: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLots[0].batchNo : '',
   targetLocation: __DEV_MOCK_FALLBACK__ ? fallbackMaterialLocations[0].locationCode : '',
   qty: '',
+  childBatchNo: '',
+  priority: '5',
+  dueHours: '6',
   reason: '试点库位任务',
   operator: localStorage.getItem('username') || 'admin'
 })
@@ -1016,6 +1163,12 @@ const openSupplierActionCount = computed(() => supplierActionRows.value.filter(i
 const openSupplierReviewCount = computed(() => supplierReviewRows.value.filter(item => item.reviewStatus === 'OPEN').length)
 const supplierTrendRiskCount = computed(() => supplierTrendRows.value.filter(item => item.latestRiskLevel !== 'LOW' || item.overdueWindowCount > 0).length)
 const lockedLocationCount = computed(() => materialLocationRows.value.filter(item => item.status !== 'ACTIVE').length)
+const pendingDispositionSummary = computed(() => {
+  if (!pendingDispositionTasks.value.length) return '复核驳回任务已清零'
+  const batches = new Set(pendingDispositionTasks.value.map(item => item.batchNo).filter(Boolean))
+  const highPriority = pendingDispositionTasks.value.filter(item => Number(item.priority || 0) >= 7).length
+  return `${batches.size} 个批次待处置 / 高优先级 ${highPriority}`
+})
 const readinessText = computed(() => readiness.value || '待检查')
 const readinessType = computed(() => {
   if (readiness.value === 'PASS') return 'green'
@@ -1025,6 +1178,15 @@ const readinessType = computed(() => {
 })
 const currentActionLabel = computed(() => wmsActions.find(item => item.value === wmsForm.action)?.label || '操作')
 const currentLocationTaskLabel = computed(() => locationTaskTypes.find(item => item.value === locationTaskForm.taskType)?.label || '任务')
+const locationTaskQtyLabel = computed(() => {
+  if (locationTaskForm.taskType === 'COUNT') return '实盘可用'
+  if (locationTaskForm.taskType === 'SPLIT') return '拆出数量'
+  return '任务数量'
+})
+const locationTaskQtyPlaceholder = computed(() => {
+  if (locationTaskForm.taskType === 'COUNT' || locationTaskForm.taskType === 'SPLIT') return '必填'
+  return '留空整批'
+})
 const wmsAdapterResultType = computed(() => {
   const result = wmsAdapterResult.value
   if (!result) return 'blue'
@@ -1053,6 +1215,9 @@ const locationTaskSummary = computed(() => {
   if (!batch) return '未选择批次'
   if (locationTaskForm.taskType === 'COUNT') {
     return `${batch.materialName || batch.materialCode} / 当前可用 ${formatQty(batch.availableQty, batch.unit)} / 当前库位 ${batch.location || '-'}`
+  }
+  if (locationTaskForm.taskType === 'SPLIT') {
+    return `${batch.materialName || batch.materialCode} / 可拆可用 ${formatQty(batch.availableQty, batch.unit)} / 当前库位 ${batch.location || '-'}`
   }
   return `${batch.materialName || batch.materialCode} / 整批在库 ${formatQty(batchPhysicalQty(batch), batch.unit)} / 当前库位 ${batch.location || '-'}`
 })
@@ -1303,12 +1468,31 @@ function mapMaterialLocation(item) {
 function mapLocationTask(item, index = 0) {
   const status = item.status || 'CREATED'
   const timeSource = item.completedTime || item.executedTime || item.assignedTime || item.createdTime
+  const reviewer = item.reviewer || ''
+  const reviewedTime = item.reviewedTime || ''
+  const reviewed = Boolean(reviewer || reviewedTime)
+  const reviewResult = item.reviewResult || (reviewed ? 'APPROVED' : '')
+  const reviewConclusion = item.reviewConclusion || (reviewResult === 'REJECTED' ? item.exceptionReason || '' : '')
+  const dispositionStatus = item.dispositionStatus || (reviewResult === 'REJECTED' ? 'PENDING' : (reviewResult === 'APPROVED' ? 'CLOSED' : ''))
+  const dispositionResult = item.dispositionResult || ''
+  const dispositionConclusion = item.dispositionConclusion || ''
+  const linkedExceptionEventNo = item.linkedExceptionEventNo || ''
+  const exceptionCloseAction = item.exceptionCloseAction || ''
+  const exceptionCloseConclusion = item.exceptionCloseConclusion || ''
+  const exceptionClosedBy = item.exceptionClosedBy || ''
+  const exceptionClosedTime = item.exceptionClosedTime || ''
+  const exceptionClosed = Boolean(linkedExceptionEventNo && exceptionClosedBy)
+  const priority = Number(item.priority ?? defaultLocationTaskPriority(item.taskType))
+  const dueTime = item.dueTime || ''
+  const slaStatus = item.slaStatus || inferLocationTaskSlaStatus(status, dueTime)
+  const slaType = item.slaType || slaStatusType(slaStatus)
   return {
     key: item.taskNo || `${item.batchNo}-${item.taskType}-${index}`,
     taskNo: item.taskNo || '-',
     taskType: item.taskType || 'MOVE',
     taskLabel: locationTaskLabel(item.taskType),
     batchNo: item.batchNo || '-',
+    childBatchNo: item.childBatchNo || '',
     materialName: item.materialName || item.materialCode || '-',
     sourceLocation: item.sourceLocation || '-',
     targetLocation: item.targetLocation || '-',
@@ -1320,16 +1504,117 @@ function mapLocationTask(item, index = 0) {
     reason: item.reason || '-',
     operator: item.operator || 'system',
     assignedTo: item.assignedTo || '',
+    assigneeLabel: item.assignedTo || item.operator || 'system',
+    reviewer,
+    reviewedTime,
+    reviewResult,
+    reviewConclusion,
+    reviewText: locationTaskReviewText(status, reviewed, reviewer, reviewedTime, reviewResult),
+    reviewType: locationTaskReviewType(status, reviewed, reviewResult),
+    dispositionStatus,
+    dispositionResult,
+    dispositionConclusion,
+    dispositionText: locationTaskDispositionText(dispositionStatus, dispositionResult),
+    dispositionType: locationTaskDispositionType(dispositionStatus, dispositionResult),
+    linkedExceptionEventNo,
+    exceptionCloseAction,
+    exceptionCloseConclusion,
+    exceptionClosedBy,
+    exceptionClosedTime,
+    exceptionCloseText: locationTaskExceptionCloseText(linkedExceptionEventNo, exceptionClosed, exceptionClosedBy, exceptionClosedTime),
+    exceptionCloseType: locationTaskExceptionCloseType(dispositionStatus, exceptionClosed),
+    priority,
+    priorityText: `P${priority}`,
+    dueTime,
+    overdue: item.overdue ?? slaStatus === 'OVERDUE',
+    slaStatus,
+    slaText: locationTaskSlaText(slaStatus, dueTime),
+    slaType,
     time: formatTime(timeSource),
     type: item.type || statusType(status),
     canAssign: status === 'CREATED',
+    canClaim: status === 'CREATED',
     canComplete: ['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status),
-    canCancel: ['CREATED', 'ASSIGNED'].includes(status)
+    canCancel: ['CREATED', 'ASSIGNED'].includes(status),
+    canReview: status === 'DONE' && !reviewed,
+    canDisposition: status === 'DONE' && reviewResult === 'REJECTED' && dispositionStatus === 'PENDING'
   }
 }
 
 function locationTaskLabel(taskType) {
   return locationTaskTypes.find(item => item.value === taskType)?.label || taskType || '任务'
+}
+
+function locationTaskReviewText(status, reviewed, reviewer, reviewedTime, reviewResult) {
+  if (!reviewed) return status === 'DONE' ? '待复核' : '未完成'
+  const resultText = reviewResult === 'REJECTED' ? '复核驳回' : '复核通过'
+  return `${resultText} ${reviewer || '-'}${reviewedTime ? ` / ${formatTime(reviewedTime)}` : ''}`
+}
+
+function locationTaskReviewType(status, reviewed, reviewResult) {
+  if (!reviewed) return status === 'DONE' ? 'amber' : 'gray'
+  return reviewResult === 'REJECTED' ? 'red' : 'green'
+}
+
+function locationTaskDispositionText(status, result) {
+  if (!status) return ''
+  if (status === 'PENDING') return '待处置'
+  if (status === 'ESCALATED') return '已升级'
+  if (result === 'ADJUST_INVENTORY') return '已调库'
+  if (result === 'ACCEPT_DEVIATION') return '已接收'
+  return status === 'CLOSED' ? '已关闭' : status
+}
+
+function locationTaskDispositionType(status, result) {
+  if (status === 'PENDING') return 'amber'
+  if (status === 'ESCALATED') return 'red'
+  if (result === 'ADJUST_INVENTORY') return 'blue'
+  if (status === 'CLOSED') return 'green'
+  return 'gray'
+}
+
+function locationTaskExceptionCloseText(linkedExceptionEventNo, exceptionClosed, closedBy, closedTime) {
+  if (!linkedExceptionEventNo) return ''
+  if (!exceptionClosed) return `MRB待关闭 ${linkedExceptionEventNo}`
+  return `MRB已关闭 ${linkedExceptionEventNo} ${closedBy || '-'}${closedTime ? ` / ${formatTime(closedTime)}` : ''}`
+}
+
+function locationTaskExceptionCloseType(dispositionStatus, exceptionClosed) {
+  if (!exceptionClosed) return 'amber'
+  if (dispositionStatus === 'CLOSED') return 'green'
+  return 'gray'
+}
+
+function defaultLocationTaskPriority(taskType) {
+  if (taskType === 'SPLIT') return 8
+  if (taskType === 'PUTAWAY') return 6
+  if (taskType === 'MOVE') return 5
+  return 3
+}
+
+function inferLocationTaskSlaStatus(status, dueTime) {
+  if (!['CREATED', 'ASSIGNED', 'EXECUTING'].includes(status)) return 'CLOSED'
+  const date = dueTime ? new Date(dueTime) : null
+  if (!date || Number.isNaN(date.getTime())) return 'ON_TRACK'
+  const delta = date.getTime() - Date.now()
+  if (delta < 0) return 'OVERDUE'
+  if (delta <= 3600000) return 'DUE_SOON'
+  return 'ON_TRACK'
+}
+
+function locationTaskSlaText(slaStatus, dueTime) {
+  const dueText = dueTime ? formatDate(dueTime) : '-'
+  if (slaStatus === 'OVERDUE') return `逾期 ${dueText}`
+  if (slaStatus === 'DUE_SOON') return `临期 ${dueText}`
+  if (slaStatus === 'CLOSED') return '已关闭'
+  return `正常 ${dueText}`
+}
+
+function slaStatusType(slaStatus) {
+  if (slaStatus === 'OVERDUE') return 'red'
+  if (slaStatus === 'DUE_SOON') return 'amber'
+  if (slaStatus === 'ON_TRACK') return 'blue'
+  return 'green'
 }
 
 function setWmsAction(action) {
@@ -1346,6 +1631,9 @@ function setLocationTaskType(taskType) {
   }
   if (taskType !== 'COUNT' && !locationTaskForm.targetLocation) {
     locationTaskForm.targetLocation = materialLocationRows.value.find(item => item.status === 'ACTIVE')?.locationCode || ''
+  }
+  if (taskType !== 'SPLIT') {
+    locationTaskForm.childBatchNo = ''
   }
 }
 
@@ -1634,11 +1922,20 @@ async function submitLocationTask() {
     const payload = {
       taskType: locationTaskForm.taskType,
       batchNo: locationTaskForm.batchNo,
+      priority: numberValue(locationTaskForm.priority, '优先级', true),
+      dueHours: numberValue(locationTaskForm.dueHours, 'SLA小时'),
       reason: locationTaskForm.reason || `${currentLocationTaskLabel.value}库位任务`,
       operator: locationTaskForm.operator || localStorage.getItem('username') || 'admin'
     }
     if (locationTaskForm.taskType === 'COUNT') {
       payload.actualQty = numberValue(locationTaskForm.qty, '实盘可用数量', true)
+    } else if (locationTaskForm.taskType === 'SPLIT') {
+      if (!locationTaskForm.targetLocation) throw new Error('目标库位不能为空')
+      payload.targetLocation = locationTaskForm.targetLocation
+      payload.plannedQty = numberValue(locationTaskForm.qty, '拆出数量')
+      if (locationTaskForm.childBatchNo) {
+        payload.childBatchNo = locationTaskForm.childBatchNo
+      }
     } else {
       if (!locationTaskForm.targetLocation) throw new Error('目标库位不能为空')
       payload.targetLocation = locationTaskForm.targetLocation
@@ -1649,6 +1946,7 @@ async function submitLocationTask() {
     await createMaterialLocationTask(payload)
     ElMessage.success(`${currentLocationTaskLabel.value}任务已创建`)
     locationTaskForm.qty = ''
+    locationTaskForm.childBatchNo = ''
     await loadMaterialData()
   } catch (error) {
     ElMessage.warning(error?.message || '库位任务提交失败')
@@ -1673,6 +1971,21 @@ async function assignLocationTask(task) {
   }
 }
 
+async function claimLocationTask(task) {
+  try {
+    locationTaskSubmitting.value = true
+    await claimMaterialLocationTask(task.taskNo, {
+      operator: locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    })
+    ElMessage.success('库位任务已认领')
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '库位任务认领失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
 async function completeLocationTask(task) {
   try {
     locationTaskSubmitting.value = true
@@ -1682,6 +1995,9 @@ async function completeLocationTask(task) {
     if (task.taskType === 'COUNT' && task.actualQty !== undefined) {
       payload.actualQty = task.actualQty
     }
+    if (task.taskType === 'SPLIT' && task.childBatchNo) {
+      payload.childBatchNo = task.childBatchNo
+    }
     await completeMaterialLocationTask(task.taskNo, payload)
     ElMessage.success('库位任务已完成')
     await loadMaterialData()
@@ -1690,6 +2006,97 @@ async function completeLocationTask(task) {
   } finally {
     locationTaskSubmitting.value = false
   }
+}
+
+async function reviewLocationTask(task, reviewResult = 'APPROVED') {
+  try {
+    locationTaskSubmitting.value = true
+    const reviewer = locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    const approved = reviewResult === 'APPROVED'
+    const conclusion = approved
+      ? '库位任务执行记录、数量和库位已复核'
+      : (locationTaskForm.reason || '库位任务复核驳回，需线下确认差异后再做库存冲正')
+    await reviewMaterialLocationTask(task.taskNo, {
+      reviewer,
+      operator: reviewer,
+      reviewResult,
+      decision: reviewResult,
+      reviewConclusion: conclusion,
+      exceptionReason: approved ? undefined : conclusion
+    })
+    ElMessage.success(approved ? '库位任务复核通过' : '库位任务已驳回复核')
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '库位任务复核失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
+async function dispositionLocationTask(task, dispositionResult = 'ACCEPT_DEVIATION') {
+  try {
+    locationTaskSubmitting.value = true
+    const operator = locationTaskForm.operator || localStorage.getItem('username') || 'admin'
+    const payload = {
+      operator,
+      dispositionResult,
+      dispositionConclusion: locationTaskDispositionConclusion(dispositionResult)
+    }
+    if (dispositionResult === 'ADJUST_INVENTORY') {
+      const { value } = await ElMessageBox.prompt(
+        `批次 ${task.batchNo} 复核驳回，请输入实盘可用数量`,
+        'WMS复核差异调库',
+        {
+          confirmButtonText: '调库',
+          cancelButtonText: '取消',
+          inputValue: String(task.actualQty ?? ''),
+          inputPattern: /^\d+(\.\d+)?$/,
+          inputErrorMessage: '请输入非负数字'
+        }
+      )
+      payload.countedAvailableQty = value
+    } else if (dispositionResult === 'ESCALATE') {
+      await ElMessageBox.confirm(
+        `确认将库位任务 ${task.taskNo} 的复核差异升级给异常/MRB 后续处理？`,
+        'WMS复核差异升级',
+        {
+          confirmButtonText: '升级',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    } else {
+      await ElMessageBox.confirm(
+        `确认接收库位任务 ${task.taskNo} 的复核差异？`,
+        'WMS复核差异处置',
+        {
+          confirmButtonText: '接收差异',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    }
+    await dispositionMaterialLocationTask(task.taskNo, payload)
+    ElMessage.success(locationTaskDispositionSuccessText(dispositionResult))
+    await loadMaterialData()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.warning(error?.message || '库位任务复核差异处置失败')
+  } finally {
+    locationTaskSubmitting.value = false
+  }
+}
+
+function locationTaskDispositionConclusion(dispositionResult) {
+  if (dispositionResult === 'ADJUST_INVENTORY') return '复核驳回后按实盘数量完成库存调整'
+  if (dispositionResult === 'ESCALATE') return '复核驳回差异已升级异常/MRB 后续处理'
+  return '复核驳回差异已确认，接受执行记录并关闭差异'
+}
+
+function locationTaskDispositionSuccessText(dispositionResult) {
+  if (dispositionResult === 'ADJUST_INVENTORY') return '复核差异已调库关闭'
+  if (dispositionResult === 'ESCALATE') return '复核差异已升级'
+  return '复核差异已接收关闭'
 }
 
 async function cancelLocationTask(task) {
@@ -1787,6 +2194,26 @@ async function createSupplierReview(supplier) {
   }
 }
 
+async function generateDueSupplierReviews() {
+  if (!canSupplierAction.value) {
+    ElMessage.warning('当前角色无权生成供应商到期复审')
+    return
+  }
+  try {
+    supplierSubmitting.value = true
+    const result = await generateDueSupplierQualificationReviews({
+      windowDays: 7,
+      operator: localStorage.getItem('username') || 'qe1003'
+    })
+    ElMessage.success(`到期复审生成完成：新增 ${result?.createdCount ?? 0}，跳过 ${result?.skippedCount ?? 0}`)
+    await loadMaterialData()
+  } catch (error) {
+    ElMessage.warning(error?.message || '供应商到期复审生成失败')
+  } finally {
+    supplierSubmitting.value = false
+  }
+}
+
 async function decideSupplierReview(review, decision) {
   if (!canSupplierAction.value) {
     ElMessage.warning('当前角色无权处理供应商准入复审')
@@ -1865,7 +2292,7 @@ async function closeSupplierAction(action) {
 async function loadMaterialData() {
   try {
     loading.value = true
-    const [materialData, carrierData, consumptionData, txnData, iqcData, supplierData, supplierActionsData, supplierReviewData, supplierTrendData, locationData, locationTaskData] = await Promise.all([
+    const [materialData, carrierData, consumptionData, txnData, iqcData, supplierData, supplierActionsData, supplierReviewData, supplierTrendData, locationData, locationTaskData, pendingDispositionData] = await Promise.all([
       getMaterialBatches(),
       getCarriers(),
       getMaterialConsumptions(),
@@ -1876,7 +2303,8 @@ async function loadMaterialData() {
       getSupplierQualificationReviews(),
       getMaterialSupplierTrends({ months: 6 }),
       getMaterialLocations(),
-      getMaterialLocationTasks()
+      getMaterialLocationTasks(),
+      getMaterialLocationTasks({ pendingDispositionOnly: true })
     ])
     if (Array.isArray(materialData?.batches) && materialData.batches.length) {
       rawBatches.value = materialData.batches
@@ -1928,8 +2356,11 @@ async function loadMaterialData() {
         locationTaskForm.targetLocation = materialLocationRows.value.find(item => item.status === 'ACTIVE')?.locationCode || ''
       }
     }
-    if (Array.isArray(locationTaskData) && locationTaskData.length) {
+    if (Array.isArray(locationTaskData)) {
       locationTaskRows.value = locationTaskData.map(mapLocationTask)
+    }
+    if (Array.isArray(pendingDispositionData)) {
+      pendingDispositionTasks.value = pendingDispositionData.map(mapLocationTask).filter(item => item.canDisposition)
     }
   } catch (error) {
     warnDevFallback('物料接口不可用', error)
@@ -1947,6 +2378,7 @@ async function loadMaterialData() {
       supplierTrendRows.value = fallbackSupplierTrends.map(mapSupplierTrend)
       materialLocationRows.value = fallbackMaterialLocations.map(mapMaterialLocation)
       locationTaskRows.value = fallbackLocationTasks.map(mapLocationTask)
+      pendingDispositionTasks.value = fallbackLocationTasks.map(mapLocationTask).filter(item => item.canDisposition)
       readiness.value = 'PASS_WITH_WARNING'
     }
   } finally {
@@ -2075,6 +2507,70 @@ onMounted(loadMaterialData)
   overflow: auto;
 }
 
+.pending-disposition-queue {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper-muted);
+}
+
+.queue-head,
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 0.46fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.queue-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.queue-head div,
+.queue-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.queue-head strong {
+  color: var(--mes-text);
+  font-size: 13px;
+}
+
+.queue-head span,
+.queue-meta span:not(.task-review) {
+  color: var(--mes-sub);
+  font-size: 12px;
+}
+
+.queue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.queue-row {
+  padding: 10px;
+  border: 1px solid var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper);
+}
+
+.queue-row .task-actions {
+  justify-content: flex-end;
+}
+
+.queue-empty {
+  padding: 10px;
+  border: 1px dashed var(--mes-line-soft);
+  border-radius: 7px;
+  background: var(--mes-paper);
+}
+
 .location-task-shell {
   display: grid;
   grid-template-columns: minmax(330px, 0.82fr) minmax(500px, 1.18fr);
@@ -2119,6 +2615,44 @@ onMounted(loadMaterialData)
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-review {
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid var(--mes-line-soft);
+  padding: 1px 7px;
+  background: var(--mes-soft-2);
+  line-height: 17px;
+  font-weight: 600;
+}
+
+.task-review.green {
+  color: var(--mes-green);
+  background: var(--mes-green-soft);
+  border-color: #dbe6dc;
+}
+
+.task-review.amber {
+  color: var(--mes-amber);
+  background: var(--mes-amber-soft);
+  border-color: #eadfc8;
+}
+
+.task-review.red {
+  color: var(--mes-red);
+  background: var(--mes-red-soft);
+  border-color: #ead6d4;
+}
+
+.task-review.blue {
+  color: var(--mes-blue);
+  background: var(--mes-blue-soft);
+  border-color: #d3dde6;
+}
+
+.task-review.gray {
+  color: var(--mes-sub);
 }
 
 .task-actions {
@@ -2307,6 +2841,8 @@ onMounted(loadMaterialData)
 .empty-cell {
   color: var(--mes-weak);
   text-align: center;
+  padding: 24px 0;
+  font-size: 13px;
 }
 
 .mes-btn:disabled {
@@ -2332,6 +2868,15 @@ onMounted(loadMaterialData)
 
   .location-task-shell {
     grid-template-columns: 1fr;
+  }
+
+  .queue-head,
+  .queue-row {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-row .task-actions {
+    justify-content: flex-start;
   }
 
   .wms-form .wide {

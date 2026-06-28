@@ -1,5 +1,6 @@
 package com.visionox.mes.recipe.service;
 
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -12,13 +13,20 @@ import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.entity.RecipeParam;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
+import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import com.visionox.mes.config.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -36,11 +44,13 @@ public class RecipeService {
 
     private final RecipeMapper recipeMapper;
     private final RecipeParamMapper recipeParamMapper;
+    private final AuditLogService auditLogService;
 
     /**
      * 创建Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public Long createRecipe(RecipeCreateRequest request) {
         log.info("创建Recipe: {}", request.getRecipeCode());
 
@@ -83,6 +93,8 @@ public class RecipeService {
                 .collect(Collectors.toList());
 
         params.forEach(recipeParamMapper::insert);
+        audit("RECIPE_CREATE", recipe.getRecipeCode(), "创建Recipe草稿",
+                auditSnapshot(null, recipeSnapshot(recipe), createRequestSnapshot(request, params.size())));
 
         log.info("Recipe创建成功, ID: {}", recipe.getId());
         return recipe.getId();
@@ -145,6 +157,8 @@ public class RecipeService {
     /**
      * 查找有效Recipe（用于Track In校验）
      */
+    @Cacheable(cacheNames = CacheConfig.ACTIVE_RECIPE,
+            key = "#productCode + '|' + #stepCode + '|' + #equipmentCode")
     public Recipe findActiveRecipe(String productCode, String stepCode, String equipmentCode) {
         log.debug("查找有效Recipe: product={}, step={}, equipment={}", productCode, stepCode, equipmentCode);
 
@@ -172,7 +186,21 @@ public class RecipeService {
      * 激活Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public void activateRecipe(Long id) {
+        activateRecipe(id, "RECIPE_ACTIVATE", "激活Recipe");
+    }
+
+    /**
+     * 发布Recipe版本。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
+    public void publishRecipe(Long id) {
+        activateRecipe(id, "RECIPE_PUBLISH", "发布Recipe版本");
+    }
+
+    private void activateRecipe(Long id, String auditAction, String actionLabel) {
         Recipe recipe = recipeMapper.selectById(id);
         if (recipe == null) {
             throw new BusinessException("Recipe不存在: " + id);
@@ -182,27 +210,151 @@ public class RecipeService {
             throw new BusinessException("Recipe已经是激活状态");
         }
 
+        Map<String, Object> before = recipeSnapshot(recipe);
+        List<RecipeStatusChange> replacedChanges = deactivateReplacedActiveRecipes(recipe);
+
         recipe.setStatus("ACTIVE");
         recipe.setUpdatedBy(AuthContext.username());
         recipeMapper.updateById(recipe);
 
+        replacedChanges.forEach(change -> audit("RECIPE_AUTO_DEACTIVATE",
+                (String) change.after().get("recipeCode"),
+                "自动停用同上下文旧版Recipe",
+                auditSnapshot(change.before(), change.after(), autoDeactivateRequest(recipe))));
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("id", id);
+        request.put("singleActiveContext", singleActiveContext(recipe));
+        request.put("replacedActiveCount", replacedChanges.size());
+        request.put("replacedActiveRecipes", replacedChanges.stream()
+                .map(RecipeStatusChange::before)
+                .toList());
+
+        audit(auditAction, recipe.getRecipeCode(), actionLabel,
+                auditSnapshot(before, recipeSnapshot(recipe), request));
+
         log.info("Recipe已激活: {}", recipe.getRecipeCode());
+    }
+
+    private List<RecipeStatusChange> deactivateReplacedActiveRecipes(Recipe targetRecipe) {
+        List<Recipe> activeRecipes = recipeMapper.selectList(
+                new LambdaQueryWrapper<Recipe>()
+                        .eq(Recipe::getProductCode, targetRecipe.getProductCode())
+                        .eq(Recipe::getStepCode, targetRecipe.getStepCode())
+                        .eq(Recipe::getEquipmentCode, targetRecipe.getEquipmentCode())
+                        .eq(Recipe::getStatus, "ACTIVE")
+                        .ne(Recipe::getId, targetRecipe.getId())
+                        .orderByDesc(Recipe::getRecipeVersion)
+        );
+        if (activeRecipes == null || activeRecipes.isEmpty()) {
+            return List.of();
+        }
+
+        return activeRecipes.stream()
+                .map(activeRecipe -> {
+                    Map<String, Object> before = recipeSnapshot(activeRecipe);
+                    activeRecipe.setStatus("INACTIVE");
+                    activeRecipe.setUpdatedBy(AuthContext.username());
+                    recipeMapper.updateById(activeRecipe);
+                    return new RecipeStatusChange(before, recipeSnapshot(activeRecipe));
+                })
+                .toList();
     }
 
     /**
      * 停用Recipe
      */
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = CacheConfig.ACTIVE_RECIPE, allEntries = true)
     public void deactivateRecipe(Long id) {
         Recipe recipe = recipeMapper.selectById(id);
         if (recipe == null) {
             throw new BusinessException("Recipe不存在: " + id);
         }
 
+        Map<String, Object> before = recipeSnapshot(recipe);
         recipe.setStatus("INACTIVE");
         recipe.setUpdatedBy(AuthContext.username());
         recipeMapper.updateById(recipe);
+        audit("RECIPE_DEACTIVATE", recipe.getRecipeCode(), "停用Recipe",
+                auditSnapshot(before, recipeSnapshot(recipe), Map.of("id", id)));
 
         log.info("Recipe已停用: {}", recipe.getRecipeCode());
+    }
+
+    private void audit(String action, String bizNo, String description, String requestSnapshot) {
+        try {
+            auditLogService.record(action, bizNo, "RECIPE", description, AuthContext.username(),
+                    "recipe-service", requestSnapshot);
+        } catch (Exception e) {
+            log.warn("Recipe审计写入失败，已降级不阻断主流程: action={}, bizNo={}, reason={}",
+                    action, bizNo, e.getMessage());
+        }
+    }
+
+    private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("before", before == null ? Map.of() : before);
+        snapshot.put("after", after == null ? Map.of() : after);
+        snapshot.put("changedFields", changedFields(before, after));
+        snapshot.put("request", request == null ? Map.of() : request);
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private List<String> changedFields(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> safeBefore = before == null ? Map.of() : before;
+        Map<String, Object> safeAfter = after == null ? Map.of() : after;
+        return safeAfter.keySet().stream()
+                .filter(key -> !Objects.equals(safeBefore.get(key), safeAfter.get(key)))
+                .sorted()
+                .toList();
+    }
+
+    private Map<String, Object> recipeSnapshot(Recipe recipe) {
+        if (recipe == null) {
+            return null;
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("id", recipe.getId());
+        snapshot.put("recipeCode", recipe.getRecipeCode());
+        snapshot.put("recipeName", recipe.getRecipeName());
+        snapshot.put("productCode", recipe.getProductCode());
+        snapshot.put("stepCode", recipe.getStepCode());
+        snapshot.put("equipmentCode", recipe.getEquipmentCode());
+        snapshot.put("recipeVersion", recipe.getRecipeVersion());
+        snapshot.put("status", recipe.getStatus());
+        snapshot.put("updatedBy", recipe.getUpdatedBy());
+        return snapshot;
+    }
+
+    private Map<String, Object> createRequestSnapshot(RecipeCreateRequest request, int paramCount) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("recipeCode", request.getRecipeCode());
+        snapshot.put("productCode", request.getProductCode());
+        snapshot.put("stepCode", request.getStepCode());
+        snapshot.put("equipmentCode", request.getEquipmentCode());
+        snapshot.put("recipeVersion", request.getRecipeVersion());
+        snapshot.put("paramCount", paramCount);
+        return snapshot;
+    }
+
+    private Map<String, Object> singleActiveContext(Recipe recipe) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("productCode", recipe.getProductCode());
+        context.put("stepCode", recipe.getStepCode());
+        context.put("equipmentCode", recipe.getEquipmentCode());
+        return context;
+    }
+
+    private Map<String, Object> autoDeactivateRequest(Recipe triggerRecipe) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("triggerRecipeId", triggerRecipe.getId());
+        request.put("triggerRecipeCode", triggerRecipe.getRecipeCode());
+        request.put("triggerRecipeVersion", triggerRecipe.getRecipeVersion());
+        request.put("singleActiveContext", singleActiveContext(triggerRecipe));
+        return request;
+    }
+
+    private record RecipeStatusChange(Map<String, Object> before, Map<String, Object> after) {
     }
 }

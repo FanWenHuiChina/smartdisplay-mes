@@ -1,5 +1,6 @@
 package com.visionox.mes.material.service;
 
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.visionox.mes.auth.security.AuthContext;
 import com.visionox.mes.auth.security.RolePermissionService;
@@ -40,6 +41,8 @@ import com.visionox.mes.material.mapper.MaterialLocationTaskMapper;
 import com.visionox.mes.material.mapper.SupplierCorrectiveActionMapper;
 import com.visionox.mes.material.mapper.SupplierMapper;
 import com.visionox.mes.material.mapper.SupplierQualificationReviewTaskMapper;
+import com.visionox.mes.quality.entity.ExceptionEvent;
+import com.visionox.mes.quality.mapper.ExceptionEventMapper;
 import com.visionox.mes.system.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +61,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -89,6 +93,7 @@ public class MaterialService {
     private final SupplierMapper supplierMapper;
     private final SupplierCorrectiveActionMapper supplierCorrectiveActionMapper;
     private final SupplierQualificationReviewTaskMapper supplierQualificationReviewTaskMapper;
+    private final ExceptionEventMapper exceptionEventMapper;
     private final AuditLogService auditLogService;
     private final RolePermissionService rolePermissionService;
 
@@ -232,6 +237,11 @@ public class MaterialService {
                 .stream()
                 .map(this::bomRow)
                 .collect(Collectors.toList());
+    }
+
+    public Map<String, Object> activeBomSummary(String productCode) {
+        Bom bom = activeBom(productCode);
+        return bom == null ? Map.of() : bomRow(bom);
     }
 
     public List<Map<String, Object>> bomChangeRequests(String status) {
@@ -403,16 +413,21 @@ public class MaterialService {
             throw new BusinessException("目标BOM不存在: " + change.getTargetBomCode());
         }
 
+        String publisher = text(request, "publisher", AuthContext.username());
+        Map<String, Object> targetBefore = bomSnapshot(targetBom);
         List<Bom> activeBoms = bomMapper.selectList(new LambdaQueryWrapper<Bom>()
                 .eq(Bom::getProductCode, targetBom.getProductCode())
                 .eq(Bom::getStatus, "ACTIVE"));
+        List<BomStatusChange> replacedChanges = new ArrayList<>();
         for (Bom active : activeBoms) {
             if (active.getId() != null && active.getId().equals(targetBom.getId())) {
                 continue;
             }
+            Map<String, Object> before = bomSnapshot(active);
             active.setStatus("INACTIVE");
             active.setUpdatedTime(LocalDateTime.now());
             bomMapper.updateById(active);
+            replacedChanges.add(new BomStatusChange(before, bomSnapshot(active)));
         }
 
         targetBom.setStatus("ACTIVE");
@@ -420,14 +435,24 @@ public class MaterialService {
         targetBom.setUpdatedTime(targetBom.getEffectiveTime());
         bomMapper.updateById(targetBom);
 
+        replacedChanges.forEach(changeSnapshot -> audit("BOM_AUTO_DEACTIVATE",
+                String.valueOf(changeSnapshot.after().get("bomCode")),
+                "BOM",
+                "自动停用同产品旧版BOM trigger=" + targetBom.getBomCode(),
+                publisher,
+                auditSnapshot(changeSnapshot.before(), changeSnapshot.after(),
+                        autoDeactivateBomRequest(targetBom, changeNo))));
+
         change.setStatus("PUBLISHED");
-        change.setPublishedBy(text(request, "publisher", AuthContext.username()));
+        change.setPublishedBy(publisher);
         change.setPublishedTime(LocalDateTime.now());
         change.setUpdatedTime(change.getPublishedTime());
         bomChangeRequestMapper.updateById(change);
 
         audit("BOM_PUBLISH", targetBom.getBomCode(), "BOM",
-                "BOM发布 changeNo=" + changeNo + ", product=" + targetBom.getProductCode(), change.getPublishedBy());
+                "BOM发布 changeNo=" + changeNo + ", product=" + targetBom.getProductCode(), change.getPublishedBy(),
+                auditSnapshot(targetBefore, bomSnapshot(targetBom),
+                        publishBomRequest(changeNo, publisher, targetBom, replacedChanges)));
         return change;
     }
 
@@ -653,6 +678,58 @@ public class MaterialService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> generateDueSupplierQualificationReviewTasks(Map<String, Object> request) {
+        LocalDateTime now = LocalDateTime.now();
+        int windowDays = Math.max(0, Math.min(365, intValue(value(request, "windowDays"), 7)));
+        int limit = Math.max(1, Math.min(200, intValue(value(request, "limit"), 100)));
+        String operator = text(request, "operator", AuthContext.username());
+        LocalDateTime cutoff = now.plusDays(windowDays);
+
+        List<Supplier> candidates = supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .isNotNull(Supplier::getNextAuditDue)
+                .le(Supplier::getNextAuditDue, cutoff)
+                .and(wrapper -> wrapper.isNull(Supplier::getStatus)
+                        .or()
+                        .ne(Supplier::getStatus, "INACTIVE"))
+                .orderByAsc(Supplier::getNextAuditDue)
+                .last("LIMIT " + limit));
+
+        List<Map<String, Object>> created = new ArrayList<>();
+        List<Map<String, Object>> skipped = new ArrayList<>();
+        for (Supplier supplier : candidates) {
+            String key = supplierKey(supplier.getSupplierCode());
+            if (hasOpenSupplierQualificationReview(key, "PERIODIC")) {
+                skipped.add(Map.of(
+                        "supplierCode", key,
+                        "reason", "已存在未关闭周期复审任务"
+                ));
+                continue;
+            }
+            Map<String, Object> reviewRequest = new LinkedHashMap<>();
+            reviewRequest.put("operator", operator);
+            reviewRequest.put("reviewType", "PERIODIC");
+            reviewRequest.put("sourceNo", "AUTO-DUE:" + key);
+            reviewRequest.put("triggerReason", "供应商准入复审到期或即将在 " + windowDays + " 天内到期");
+            reviewRequest.put("dueDays", nextAuditDays(supplier.getQualificationStatus(), supplier.getRiskLevel()));
+            SupplierQualificationReviewTask task = createSupplierQualificationReviewTaskInternal(supplier, reviewRequest, false);
+            created.add(supplierQualificationReviewTaskRow(task));
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("windowDays", windowDays);
+        summary.put("cutoffTime", cutoff);
+        summary.put("createdCount", created.size());
+        summary.put("skippedCount", skipped.size());
+        summary.put("createdTasks", created);
+        summary.put("skippedSuppliers", skipped);
+
+        audit("SUPPLIER_QUALIFICATION_REVIEW_GENERATE", "BATCH", "SUPPLIER_REVIEW",
+                "生成到期供应商准入复审 created=" + created.size() + ", skipped=" + skipped.size(),
+                operator, JSONUtil.toJsonStr(Map.of("request", safeRequest(request), "summary", summary)));
+        return new LinkedHashMap<>(summary);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> decideSupplierQualificationReviewTask(String taskNo, Map<String, Object> request) {
         SupplierQualificationReviewTask task = supplierQualificationReviewTaskMapper.selectOne(
                 new LambdaQueryWrapper<SupplierQualificationReviewTask>()
@@ -790,17 +867,42 @@ public class MaterialService {
                 .collect(Collectors.toList());
     }
 
-    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo) {
+    public List<Map<String, Object>> materialLocationTasks(String status, String batchNo,
+                                                           String reviewResult, String dispositionStatus,
+                                                           Boolean pendingDispositionOnly) {
         LambdaQueryWrapper<MaterialLocationTask> wrapper = new LambdaQueryWrapper<>();
-        if (status != null && !status.isBlank()) {
-            wrapper.eq(MaterialLocationTask::getStatus, status);
+        if (Boolean.TRUE.equals(pendingDispositionOnly)) {
+            wrapper.eq(MaterialLocationTask::getStatus, "DONE")
+                    .eq(MaterialLocationTask::getReviewResult, "REJECTED")
+                    .and(scope -> scope.eq(MaterialLocationTask::getDispositionStatus, "PENDING")
+                            .or()
+                            .isNull(MaterialLocationTask::getDispositionStatus));
+        } else {
+            if (status != null && !status.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getStatus, status.trim().toUpperCase(Locale.ROOT));
+            }
+            if (reviewResult != null && !reviewResult.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getReviewResult, reviewResult.trim().toUpperCase(Locale.ROOT));
+            }
+            if (dispositionStatus != null && !dispositionStatus.isBlank()) {
+                wrapper.eq(MaterialLocationTask::getDispositionStatus, dispositionStatus.trim().toUpperCase(Locale.ROOT));
+            }
         }
         if (batchNo != null && !batchNo.isBlank()) {
-            wrapper.eq(MaterialLocationTask::getBatchNo, batchNo);
+            wrapper.eq(MaterialLocationTask::getBatchNo, batchNo.trim());
         }
-        wrapper.orderByDesc(MaterialLocationTask::getExecutedTime)
-                .orderByDesc(MaterialLocationTask::getId)
-                .last("LIMIT 100");
+        wrapper.last("""
+                ORDER BY
+                    CASE WHEN status = 'DONE' AND review_result = 'REJECTED'
+                        AND (disposition_status = 'PENDING' OR disposition_status IS NULL) THEN 0 ELSE 1 END,
+                    CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING') THEN 0 ELSE 1 END,
+                    CASE WHEN status IN ('CREATED', 'ASSIGNED', 'EXECUTING')
+                        AND due_time IS NOT NULL AND due_time < CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+                    priority DESC,
+                    due_time ASC NULLS LAST,
+                    created_time DESC
+                LIMIT 100
+                """);
         return materialLocationTaskMapper.selectList(wrapper).stream()
                 .map(this::locationTaskRow)
                 .collect(Collectors.toList());
@@ -954,11 +1056,14 @@ public class MaterialService {
         touchStock(batch);
         batchMapper.updateById(batch);
 
+        Map<String, Object> freezeBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "FREEZE");
+        Map<String, Object> freezeAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("FREEZE", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty.negate(), null, text(request, "reason", "WMS freeze"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_FREEZE", batchNo, "MATERIAL_BATCH",
-                "WMS冻结 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS冻结 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(freezeBefore, freezeAfter, safeRequest(request)));
         return batch;
     }
 
@@ -981,11 +1086,14 @@ public class MaterialService {
         touchStock(batch);
         batchMapper.updateById(batch);
 
+        Map<String, Object> unfreezeBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "AVAILABLE");
+        Map<String, Object> unfreezeAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("UNFREEZE", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty, null, text(request, "reason", "WMS unfreeze"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_UNFREEZE", batchNo, "MATERIAL_BATCH",
-                "WMS解冻 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS解冻 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(unfreezeBefore, unfreezeAfter, safeRequest(request)));
         return batch;
     }
 
@@ -1007,11 +1115,14 @@ public class MaterialService {
         batchMapper.updateById(batch);
         adjustLocationUsage(batch.getLocation(), qty);
 
+        Map<String, Object> returnBefore = stockSnapshot(batchNo, beforeAvailable, beforeFrozen, beforeReserved, "AVAILABLE");
+        Map<String, Object> returnAfter = stockSnapshot(batchNo, batch.getAvailableQty(), batch.getFrozenQty(), batch.getReservedQty(), batch.getStatus());
         insertTxn("RETURN", batch, beforeAvailable, batch.getAvailableQty(),
                 beforeFrozen, batch.getFrozenQty(), beforeReserved, batch.getReservedQty(),
                 qty, null, text(request, "reason", "WMS return"), text(request, "operator", AuthContext.username()), request);
         audit("MATERIAL_RETURN", batchNo, "MATERIAL_BATCH",
-                "WMS退料 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()));
+                "WMS退料 qty=" + qty.stripTrailingZeros().toPlainString(), text(request, "operator", AuthContext.username()),
+                auditSnapshot(returnBefore, returnAfter, safeRequest(request)));
         return batch;
     }
 
@@ -1027,6 +1138,7 @@ public class MaterialService {
         return switch (taskType) {
             case "MOVE", "PUTAWAY" -> createMoveLikeLocationTask(taskType, request);
             case "COUNT" -> createCountLocationTask(request);
+            case "SPLIT" -> createSplitLocationTask(request);
             default -> throw new BusinessException("库位任务类型不支持: " + taskType);
         };
     }
@@ -1037,6 +1149,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许领取: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String assignee = text(request, "assignedTo", text(request, "operator", AuthContext.username()));
         if (assignee.isBlank()) {
             throw new BusinessException("库位任务领取人不能为空");
@@ -1049,7 +1162,38 @@ public class MaterialService {
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
         audit("MATERIAL_LOCATION_TASK_ASSIGN", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
-                "领取库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), assignee);
+                "领取库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), assignee,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
+        return Map.of("task", locationTaskRow(task));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> claimLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        // 异步领取（自助认领）：只允许从待办池领取尚未分配（CREATED）的任务，强制领给当前操作人本人，
+        // 不可抢占他人已领取（ASSIGNED）或正在执行的任务，保证待办池认领互斥。
+        if (!"CREATED".equals(valueOr(task.getStatus(), ""))) {
+            String owner = valueOr(task.getAssignedTo(), "");
+            if (List.of("ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), "")) && !owner.isBlank()) {
+                throw new BusinessException("库位任务已被领取，不能重复认领: " + owner);
+            }
+            throw new BusinessException("当前库位任务状态不允许认领: " + task.getStatus());
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String claimant = text(request, "operator", text(request, "assignedTo", AuthContext.username()));
+        if (claimant.isBlank()) {
+            throw new BusinessException("库位任务认领人不能为空");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus("ASSIGNED");
+        task.setAssignedTo(claimant);
+        task.setAssignedTime(now);
+        task.setOperator(claimant);
+        task.setUpdatedTime(now);
+        materialLocationTaskMapper.updateById(task);
+        audit("MATERIAL_LOCATION_TASK_CLAIM", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "认领库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo(), claimant,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }
 
@@ -1059,6 +1203,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许完成: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String operator = text(request, "operator", text(request, "executor", AuthContext.username()));
         if (operator.isBlank()) {
             operator = valueOr(task.getAssignedTo(), AuthContext.username());
@@ -1068,9 +1213,10 @@ public class MaterialService {
         task.setUpdatedTime(LocalDateTime.now());
         materialLocationTaskMapper.updateById(task);
 
-        MaterialBatch batch = switch (normalizeLocationTaskType(task.getTaskType())) {
-            case "MOVE", "PUTAWAY" -> completeMoveLikeLocationTask(task, request, operator);
-            case "COUNT" -> completeCountLocationTask(task, request, operator);
+        LocationTaskCompletion completion = switch (normalizeLocationTaskType(task.getTaskType())) {
+            case "MOVE", "PUTAWAY" -> new LocationTaskCompletion(completeMoveLikeLocationTask(task, request, operator), Map.of());
+            case "COUNT" -> new LocationTaskCompletion(completeCountLocationTask(task, request, operator), Map.of());
+            case "SPLIT" -> completeSplitLocationTask(task, request, operator);
             default -> throw new BusinessException("库位任务类型不支持: " + task.getTaskType());
         };
 
@@ -1089,8 +1235,269 @@ public class MaterialService {
         audit("MATERIAL_LOCATION_TASK_COMPLETE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "完成库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
                         + ", actualQty=" + nvl(task.getActualQty()).stripTrailingZeros().toPlainString(),
-                operator);
-        return locationTaskResult(task, batch);
+                operator, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
+        return locationTaskResult(task, completion.batch(), completion.extra());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> reviewLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        if (!"DONE".equals(valueOr(task.getStatus(), ""))) {
+            throw new BusinessException("当前库位任务状态不允许复核: " + task.getStatus());
+        }
+        if (task.getReviewedTime() != null || !valueOr(task.getReviewer(), "").isBlank()) {
+            throw new BusinessException("库位任务已复核: " + valueOr(task.getReviewer(), "-"));
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String reviewer = text(request, "reviewer",
+                text(request, "reviewedBy", text(request, "operator", AuthContext.username())));
+        if (reviewer.isBlank()) {
+            throw new BusinessException("库位任务复核人不能为空");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        String reviewResult = normalizeLocationTaskReviewResult(text(request, "reviewResult",
+                text(request, "decision", text(request, "result", "APPROVED"))));
+        String conclusion = text(request, "reviewConclusion", text(request, "conclusion",
+                "APPROVED".equals(reviewResult) ? "库位任务执行记录已复核" : "库位任务复核驳回"));
+        task.setReviewer(reviewer);
+        task.setReviewedTime(now);
+        task.setReviewResult(reviewResult);
+        task.setReviewConclusion(conclusion);
+        if ("REJECTED".equals(reviewResult)) {
+            task.setExceptionReason(text(request, "exceptionReason", conclusion));
+            task.setDispositionStatus("PENDING");
+        } else {
+            task.setDispositionStatus("CLOSED");
+            task.setDispositionResult("APPROVED");
+            task.setDispositionConclusion(conclusion);
+            task.setDispositionBy(reviewer);
+            task.setDispositionTime(now);
+        }
+        task.setUpdatedTime(now);
+        materialLocationTaskMapper.updateById(task);
+        audit("MATERIAL_LOCATION_TASK_REVIEW", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "复核库位任务: " + task.getTaskType() + ", batch=" + task.getBatchNo()
+                        + ", result=" + reviewResult + ", conclusion=" + conclusion,
+                reviewer, auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
+        return Map.of("task", locationTaskRow(task));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> dispositionLocationTask(String taskNo, Map<String, Object> request) {
+        MaterialLocationTask task = lockedLocationTask(taskNo);
+        if (!"DONE".equals(valueOr(task.getStatus(), ""))) {
+            throw new BusinessException("当前库位任务状态不允许复核处置: " + task.getStatus());
+        }
+        if (!"REJECTED".equals(valueOr(task.getReviewResult(), ""))) {
+            throw new BusinessException("仅复核驳回的库位任务允许处置");
+        }
+        String dispositionStatus = valueOr(task.getDispositionStatus(), "PENDING");
+        if (!"PENDING".equals(dispositionStatus)) {
+            throw new BusinessException("库位任务复核差异已处置: " + dispositionStatus);
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        String operator = text(request, "operator", text(request, "dispositionBy", AuthContext.username()));
+        if (operator.isBlank()) {
+            throw new BusinessException("库位任务复核处置人不能为空");
+        }
+        String dispositionResult = normalizeLocationTaskDispositionResult(text(request, "dispositionResult",
+                text(request, "decision", text(request, "result", "ACCEPT_DEVIATION"))));
+        String conclusion = text(request, "dispositionConclusion", text(request, "conclusion",
+                defaultLocationTaskDispositionConclusion(dispositionResult)));
+
+        MaterialBatch adjustedBatch = null;
+        Map<String, Object> dispositionRequest = new LinkedHashMap<>(safeRequest(request));
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            Object countedValue = value(request, "countedAvailableQty");
+            if (countedValue == null || String.valueOf(countedValue).isBlank()) {
+                countedValue = value(request, "actualQty");
+            }
+            if (countedValue == null || String.valueOf(countedValue).isBlank()) {
+                throw new BusinessException("库存调整必须填写实盘可用数量");
+            }
+            BigDecimal countedAvailable = decimalValue(countedValue);
+            if (countedAvailable.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("countedAvailableQty不能小于0");
+            }
+            MaterialBatch batch = lockedBatch(task.getBatchNo());
+            Map<String, Object> countRequest = new LinkedHashMap<>(safeRequest(request));
+            countRequest.put("countedAvailableQty", countedAvailable);
+            countRequest.put("operator", operator);
+            countRequest.put("reason", conclusion);
+            countRequest.put("sourceSystem", "wms-review-disposition");
+            countRequest.put("sourceTaskNo", task.getTaskNo());
+            adjustedBatch = applyInventoryCount(batch, countRequest);
+            dispositionRequest.put("countedAvailableQty", countedAvailable);
+            dispositionRequest.put("adjustedBatchNo", adjustedBatch.getBatchNo());
+        }
+
+        ExceptionEvent escalatedEvent = null;
+        LocalDateTime now = LocalDateTime.now();
+        task.setDispositionResult(dispositionResult);
+        task.setDispositionConclusion(conclusion);
+        task.setDispositionBy(operator);
+        task.setDispositionTime(now);
+        task.setDispositionStatus("ESCALATE".equals(dispositionResult) ? "ESCALATED" : "CLOSED");
+        task.setUpdatedTime(now);
+        if ("ESCALATE".equals(dispositionResult)) {
+            escalatedEvent = createLocationTaskEscalationEvent(task, operator, conclusion, now);
+            task.setLinkedExceptionEventNo(escalatedEvent.getEventNo());
+            dispositionRequest.put("escalatedEventNo", escalatedEvent.getEventNo());
+            dispositionRequest.put("sourceRefType", escalatedEvent.getSourceRefType());
+            dispositionRequest.put("sourceRefNo", escalatedEvent.getSourceRefNo());
+            dispositionRequest.put("sourcePayload", escalatedEvent.getSourcePayload());
+        }
+        materialLocationTaskMapper.updateById(task);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("task", locationTaskRow(task));
+        if (adjustedBatch != null) {
+            response.put("batch", batchRow(adjustedBatch));
+        }
+        if (escalatedEvent != null) {
+            response.put("exception", locationTaskExceptionRow(escalatedEvent));
+        }
+        audit("MATERIAL_LOCATION_TASK_DISPOSITION", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "处置库位任务复核差异: " + dispositionResult + ", conclusion=" + conclusion,
+                operator, auditSnapshot(before, locationTaskRow(task), dispositionRequest));
+        return response;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void recordLocationTaskExceptionClosure(ExceptionEvent event, String operator) {
+        if (event == null) {
+            return;
+        }
+        if (!"MATERIAL_LOCATION_TASK".equals(event.getSourceRefType())) {
+            return;
+        }
+        String taskNo = event.getSourceRefNo();
+        if (taskNo == null || taskNo.isBlank()) {
+            return;
+        }
+        MaterialLocationTask task = materialLocationTaskMapper.selectByTaskNoForUpdate(taskNo);
+        if (task == null) {
+            log.warn("MRB回写未找到WMS库位任务: eventNo={}, taskNo={}", event.getEventNo(), taskNo);
+            return;
+        }
+        String currentLinked = valueOr(task.getLinkedExceptionEventNo(), "");
+        if (!currentLinked.isBlank() && !currentLinked.equals(event.getEventNo())) {
+            log.warn("WMS库位任务关联异常事件不一致，跳过回写: taskNo={}, linked={}, incoming={}",
+                    taskNo, currentLinked, event.getEventNo());
+            return;
+        }
+        Map<String, Object> before = locationTaskRow(task);
+        LocalDateTime closedTime = event.getClosedTime() != null ? event.getClosedTime() : LocalDateTime.now();
+        String resolvedOperator = valueOr(operator, valueOr(event.getOwnerUser(), ""));
+        if (resolvedOperator.isBlank()) {
+            resolvedOperator = AuthContext.username();
+        }
+        String dispositionAction = valueOr(event.getDispositionAction(),
+                valueOr(event.getMrbResult(), "RELEASE"));
+        String closeConclusion = valueOr(event.getCloseConclusion(),
+                valueOr(event.getMrbOpinion(), "MRB关闭WMS升级异常"));
+        task.setLinkedExceptionEventNo(event.getEventNo());
+        task.setExceptionCloseAction(dispositionAction);
+        task.setExceptionCloseConclusion(limitText(closeConclusion, 500));
+        task.setExceptionClosedBy(resolvedOperator);
+        task.setExceptionClosedTime(closedTime);
+        task.setDispositionStatus("CLOSED");
+        task.setUpdatedTime(closedTime);
+        materialLocationTaskMapper.updateById(task);
+
+        Map<String, Object> requestSnapshot = new LinkedHashMap<>();
+        requestSnapshot.put("eventNo", event.getEventNo());
+        requestSnapshot.put("eventStatus", event.getStatus());
+        requestSnapshot.put("dispositionAction", dispositionAction);
+        requestSnapshot.put("closeConclusion", closeConclusion);
+        requestSnapshot.put("closedBy", resolvedOperator);
+        requestSnapshot.put("closedTime", closedTime);
+        requestSnapshot.put("sourceRefType", event.getSourceRefType());
+        requestSnapshot.put("sourceRefNo", event.getSourceRefNo());
+
+        audit("MATERIAL_LOCATION_TASK_EXCEPTION_CLOSE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "MRB关闭WMS升级异常: eventNo=" + event.getEventNo() + ", action=" + dispositionAction,
+                resolvedOperator, auditSnapshot(before, locationTaskRow(task), requestSnapshot));
+    }
+
+    private ExceptionEvent createLocationTaskEscalationEvent(MaterialLocationTask task, String operator,
+                                                            String conclusion, LocalDateTime occurredTime) {
+        ExceptionEvent event = new ExceptionEvent();
+        event.setEventNo(nextNo("EX"));
+        event.setEventType("MATERIAL");
+        event.setEventLevel("P2");
+        event.setSourceModule("WMS_LOCATION_TASK");
+        event.setSourceRefType("MATERIAL_LOCATION_TASK");
+        event.setSourceRefNo(task.getTaskNo());
+        event.setSourcePayload(locationTaskExceptionSourcePayload(task, conclusion));
+        event.setTitle("WMS库位任务复核差异升级");
+        event.setDescription(limitText("库位任务复核驳回升级: taskNo=" + task.getTaskNo()
+                + ", batchNo=" + valueOr(task.getBatchNo(), "")
+                + ", taskType=" + valueOr(task.getTaskType(), "")
+                + ", reviewConclusion=" + valueOr(task.getReviewConclusion(), "")
+                + ", dispositionConclusion=" + conclusion, 500));
+        event.setStatus("OPEN");
+        event.setOwnerRole("QE");
+        event.setOccurredTime(occurredTime);
+        event.setCreatedBy(operator);
+        exceptionEventMapper.insert(event);
+        audit("EXCEPTION_CREATE", event.getEventNo(), "EXCEPTION",
+                "WMS复核差异升级生成异常: taskNo=" + task.getTaskNo() + ", batchNo=" + task.getBatchNo(),
+                operator, locationTaskExceptionAuditSnapshot(task, event));
+        return event;
+    }
+
+    private String locationTaskExceptionAuditSnapshot(MaterialLocationTask task, ExceptionEvent event) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("sourceTaskNo", task.getTaskNo());
+        snapshot.put("batchNo", task.getBatchNo());
+        snapshot.put("taskType", task.getTaskType());
+        snapshot.put("reviewResult", task.getReviewResult());
+        snapshot.put("reviewConclusion", task.getReviewConclusion());
+        snapshot.put("dispositionStatus", task.getDispositionStatus());
+        snapshot.put("dispositionResult", task.getDispositionResult());
+        snapshot.put("eventNo", event.getEventNo());
+        snapshot.put("eventType", event.getEventType());
+        snapshot.put("eventLevel", event.getEventLevel());
+        snapshot.put("sourceModule", event.getSourceModule());
+        snapshot.put("sourceRefType", event.getSourceRefType());
+        snapshot.put("sourceRefNo", event.getSourceRefNo());
+        snapshot.put("sourcePayload", event.getSourcePayload());
+        snapshot.put("ownerRole", event.getOwnerRole());
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private String locationTaskExceptionSourcePayload(MaterialLocationTask task, String conclusion) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("taskNo", task.getTaskNo());
+        payload.put("taskType", task.getTaskType());
+        payload.put("batchNo", task.getBatchNo());
+        payload.put("sourceLocation", task.getSourceLocation());
+        payload.put("targetLocation", task.getTargetLocation());
+        payload.put("actualQty", task.getActualQty());
+        payload.put("reviewResult", task.getReviewResult());
+        payload.put("reviewConclusion", task.getReviewConclusion());
+        payload.put("dispositionStatus", task.getDispositionStatus());
+        payload.put("dispositionResult", task.getDispositionResult());
+        payload.put("dispositionConclusion", conclusion);
+        return JSONUtil.toJsonStr(payload);
+    }
+
+    private Map<String, Object> locationTaskExceptionRow(ExceptionEvent event) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("eventNo", event.getEventNo());
+        row.put("eventType", event.getEventType());
+        row.put("eventLevel", event.getEventLevel());
+        row.put("sourceModule", event.getSourceModule());
+        row.put("sourceRefType", event.getSourceRefType());
+        row.put("sourceRefNo", event.getSourceRefNo());
+        row.put("sourcePayload", event.getSourcePayload());
+        row.put("title", event.getTitle());
+        row.put("description", event.getDescription());
+        row.put("status", event.getStatus());
+        row.put("ownerRole", event.getOwnerRole());
+        row.put("occurredTime", event.getOccurredTime());
+        return row;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -1099,6 +1506,7 @@ public class MaterialService {
         if (!List.of("CREATED", "ASSIGNED").contains(valueOr(task.getStatus(), ""))) {
             throw new BusinessException("当前库位任务状态不允许取消: " + task.getStatus());
         }
+        Map<String, Object> before = locationTaskRow(task);
         String operator = text(request, "operator", AuthContext.username());
         String cancelReason = text(request, "cancelReason", text(request, "reason", "WMS task cancelled"));
         String targetStatus = normalizeLocationTaskCancelStatus(text(request, "status",
@@ -1112,7 +1520,8 @@ public class MaterialService {
         task.setUpdatedTime(now);
         materialLocationTaskMapper.updateById(task);
         audit("MATERIAL_LOCATION_TASK_CANCEL", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
-                targetStatus + " 库位任务: " + cancelReason, operator);
+                targetStatus + " 库位任务: " + cancelReason, operator,
+                auditSnapshot(before, locationTaskRow(task), safeRequest(request)));
         return Map.of("task", locationTaskRow(task));
     }
 
@@ -1175,7 +1584,7 @@ public class MaterialService {
         audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "创建库位任务: " + taskType + " batch=" + batchNo + ", from=" + sourceLocation + ", to="
                         + targetLocation.getLocationCode() + ", qty=" + moveQty.stripTrailingZeros().toPlainString(),
-                operator);
+                operator, auditSnapshot(null, locationTaskRow(task), safeRequest(request)));
         if (boolValue(request, "executeNow", false)) {
             return completeLocationTask(task.getTaskNo(), request);
         }
@@ -1194,9 +1603,47 @@ public class MaterialService {
                 batch.getLocation(), beforeAvailable, countedAvailable, "CREATED", reason, operator, request);
         audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
                 "创建盘点任务: batch=" + batchNo + ", plannedAvailable="
-                        + beforeAvailable.stripTrailingZeros().toPlainString(), operator);
+                        + beforeAvailable.stripTrailingZeros().toPlainString(), operator,
+                auditSnapshot(null, locationTaskRow(task), safeRequest(request)));
         if (boolValue(request, "executeNow", false)) {
             return completeLocationTask(task.getTaskNo(), request);
+        }
+        return locationTaskResult(task, batch);
+    }
+
+    private Map<String, Object> createSplitLocationTask(Map<String, Object> request) {
+        String batchNo = requiredText(request, "batchNo");
+        String targetLocationCode = requiredText(request, "targetLocation");
+        String operator = text(request, "operator", AuthContext.username());
+        String reason = text(request, "reason", defaultLocationTaskReason("SPLIT"));
+        MaterialBatch batch = lockedBatch(batchNo);
+        String sourceLocation = valueOr(batch.getLocation(), "");
+        if (!sourceLocation.isBlank() && sourceLocation.equals(targetLocationCode)) {
+            throw new BusinessException("拆批目标库位不能与母批当前库位相同: " + targetLocationCode);
+        }
+        BigDecimal splitQty = locationSplitQty(request, nvl(batch.getAvailableQty()));
+        ensureAvailableForSplit(batch, splitQty);
+        MaterialLocation targetLocation = materialLocationMapper.selectByLocationCodeForUpdate(targetLocationCode);
+        if (targetLocation == null) {
+            throw new BusinessException("目标库位不存在或未维护: " + targetLocationCode);
+        }
+        validateReceivingLocation(targetLocation, inferMaterialClass(batch.getMaterialCode()), batch.getUnit(), splitQty);
+        String childBatchNo = childBatchNo(request, batchNo);
+        assertChildBatchNoAvailable(childBatchNo, batchNo);
+        Map<String, Object> splitRequest = new LinkedHashMap<>(safeRequest(request));
+        splitRequest.put("childBatchNo", childBatchNo);
+        splitRequest.put("targetBatchNo", childBatchNo);
+        splitRequest.put("plannedQty", splitQty);
+
+        MaterialLocationTask task = createLocationTaskRecord("SPLIT", batch, sourceLocation,
+                targetLocation.getLocationCode(), splitQty, BigDecimal.ZERO, "CREATED", reason, operator, splitRequest);
+        audit("MATERIAL_LOCATION_TASK_CREATE", task.getTaskNo(), "MATERIAL_LOCATION_TASK",
+                "创建拆批任务: parent=" + batchNo + ", from=" + sourceLocation + ", to="
+                        + targetLocation.getLocationCode() + ", child=" + childBatchNo
+                        + ", qty=" + splitQty.stripTrailingZeros().toPlainString(),
+                operator, auditSnapshot(null, locationTaskRow(task), splitRequest));
+        if (boolValue(request, "executeNow", false)) {
+            return completeLocationTask(task.getTaskNo(), splitRequest);
         }
         return locationTaskResult(task, batch);
     }
@@ -1264,6 +1711,80 @@ public class MaterialService {
         task.setTargetLocation(updated.getLocation());
         task.setActualQty(countedAvailable);
         return updated;
+    }
+
+    private LocationTaskCompletion completeSplitLocationTask(MaterialLocationTask task, Map<String, Object> request, String operator) {
+        MaterialBatch parent = lockedBatch(task.getBatchNo());
+        String currentLocation = valueOr(parent.getLocation(), "");
+        String taskSourceLocation = valueOr(task.getSourceLocation(), "");
+        if (!taskSourceLocation.isBlank() && !taskSourceLocation.equals(currentLocation)) {
+            throw new BusinessException("母批当前库位与拆批任务源库位不一致: task="
+                    + taskSourceLocation + ", current=" + currentLocation);
+        }
+        String targetLocationCode = valueOr(task.getTargetLocation(), "");
+        if (targetLocationCode.isBlank()) {
+            targetLocationCode = requiredText(request, "targetLocation");
+        }
+        if (!currentLocation.isBlank() && currentLocation.equals(targetLocationCode)) {
+            throw new BusinessException("拆批目标库位不能与母批当前库位相同: " + targetLocationCode);
+        }
+
+        BigDecimal splitQty = locationSplitQty(request, nvl(task.getPlannedQty()).compareTo(BigDecimal.ZERO) > 0
+                ? nvl(task.getPlannedQty()) : nvl(parent.getAvailableQty()));
+        ensureAvailableForSplit(parent, splitQty);
+        String childBatchNo = childBatchNo(task, request, parent.getBatchNo());
+        assertChildBatchNoAvailable(childBatchNo, parent.getBatchNo());
+
+        MaterialLocation targetLocation = materialLocationMapper.selectByLocationCodeForUpdate(targetLocationCode);
+        if (targetLocation == null) {
+            throw new BusinessException("目标库位不存在或未维护: " + targetLocationCode);
+        }
+        validateReceivingLocation(targetLocation, inferMaterialClass(parent.getMaterialCode()), parent.getUnit(), splitQty);
+
+        BigDecimal parentAvailableBefore = nvl(parent.getAvailableQty());
+        BigDecimal parentFrozenBefore = nvl(parent.getFrozenQty());
+        BigDecimal parentReservedBefore = nvl(parent.getReservedQty());
+        parent.setAvailableQty(parentAvailableBefore.subtract(splitQty));
+        parent.setTotalQty(maxZero(nvl(parent.getTotalQty()).subtract(splitQty)));
+        refreshBatchStatusAfterAvailableChange(parent);
+        touchStock(parent);
+        batchMapper.updateById(parent);
+
+        MaterialBatch child = splitChildBatch(parent, childBatchNo, splitQty, targetLocation.getLocationCode(), operator);
+        batchMapper.insert(child);
+
+        adjustLocationUsage(currentLocation, splitQty.negate());
+        increaseLocationUsage(targetLocation, splitQty);
+
+        Map<String, Object> splitRequest = new LinkedHashMap<>(safeRequest(request));
+        splitRequest.put("parentBatchNo", parent.getBatchNo());
+        splitRequest.put("childBatchNo", child.getBatchNo());
+        insertTxn("SPLIT_OUT", parent, parentAvailableBefore, parent.getAvailableQty(),
+                parentFrozenBefore, parent.getFrozenQty(), parentReservedBefore, parent.getReservedQty(),
+                splitQty.negate(), null, valueOr(task.getReason(), defaultLocationTaskReason("SPLIT")),
+                operator, splitRequest);
+        insertTxn("SPLIT_IN", child, BigDecimal.ZERO, child.getAvailableQty(),
+                BigDecimal.ZERO, child.getFrozenQty(), BigDecimal.ZERO, child.getReservedQty(),
+                splitQty, null, valueOr(task.getReason(), defaultLocationTaskReason("SPLIT")),
+                operator, splitRequest);
+
+        task.setSourceLocation(currentLocation);
+        task.setTargetLocation(targetLocation.getLocationCode());
+        task.setActualQty(splitQty);
+        audit("MATERIAL_SPLIT", parent.getBatchNo(), "MATERIAL_BATCH",
+                "拆批生成子批次=" + child.getBatchNo() + ", qty=" + splitQty.stripTrailingZeros().toPlainString(),
+                operator, JSONUtil.toJsonStr(Map.of(
+                        "parentBatch", batchRow(parent),
+                        "childBatch", batchRow(child),
+                        "task", locationTaskRow(task),
+                        "request", splitRequest
+                )));
+
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("parentBatch", batchRow(parent));
+        extra.put("childBatch", batchRow(child));
+        extra.put("splitQty", splitQty);
+        return new LocationTaskCompletion(child, extra);
     }
 
     public List<Map<String, Object>> inventoryTransactions(String batchNo) {
@@ -1593,12 +2114,22 @@ public class MaterialService {
     }
 
     private Bom activeBom(String productCode) {
-        return bomMapper.selectOne(new LambdaQueryWrapper<Bom>()
+        List<Bom> activeBoms = bomMapper.selectList(new LambdaQueryWrapper<Bom>()
                 .eq(Bom::getProductCode, productCode)
                 .eq(Bom::getStatus, "ACTIVE")
                 .orderByDesc(Bom::getEffectiveTime)
-                .orderByDesc(Bom::getId)
-                .last("LIMIT 1"));
+                .orderByDesc(Bom::getId));
+        if (activeBoms == null || activeBoms.isEmpty()) {
+            return null;
+        }
+        if (activeBoms.size() > 1) {
+            String bomCodes = activeBoms.stream()
+                    .map(Bom::getBomCode)
+                    .collect(Collectors.joining(","));
+            throw new BusinessException("产品存在多条生效BOM，请先完成版本治理: product="
+                    + productCode + ", boms=" + bomCodes);
+        }
+        return activeBoms.get(0);
     }
 
     private MaterialBatch findAvailableBatch(String materialCode, BigDecimal requiredQty) {
@@ -1762,6 +2293,52 @@ public class MaterialService {
         row.put("status", bom.getStatus());
         row.put("items", items.stream().map(this::bomItemSnapshot).collect(Collectors.toList()));
         return row;
+    }
+
+    private Map<String, Object> bomSnapshot(Bom bom) {
+        if (bom == null) {
+            return null;
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("id", bom.getId());
+        snapshot.put("bomCode", bom.getBomCode());
+        snapshot.put("bomName", bom.getBomName());
+        snapshot.put("productCode", bom.getProductCode());
+        snapshot.put("bomVersion", bom.getBomVersion());
+        snapshot.put("status", bom.getStatus());
+        snapshot.put("effectiveTime", bom.getEffectiveTime());
+        return snapshot;
+    }
+
+    private Map<String, Object> publishBomRequest(String changeNo,
+                                                  String publisher,
+                                                  Bom targetBom,
+                                                  List<BomStatusChange> replacedChanges) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("changeNo", changeNo);
+        request.put("publisher", publisher);
+        request.put("singleActiveContext", singleActiveBomContext(targetBom));
+        request.put("replacedActiveCount", replacedChanges.size());
+        request.put("replacedActiveBoms", replacedChanges.stream()
+                .map(BomStatusChange::before)
+                .toList());
+        return request;
+    }
+
+    private Map<String, Object> autoDeactivateBomRequest(Bom triggerBom, String changeNo) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("changeNo", changeNo);
+        request.put("triggerBomId", triggerBom.getId());
+        request.put("triggerBomCode", triggerBom.getBomCode());
+        request.put("triggerBomVersion", triggerBom.getBomVersion());
+        request.put("singleActiveContext", singleActiveBomContext(triggerBom));
+        return request;
+    }
+
+    private Map<String, Object> singleActiveBomContext(Bom bom) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("productCode", bom.getProductCode());
+        return context;
     }
 
     private Map<String, Object> bomItemSnapshot(BomItem item) {
@@ -2103,12 +2680,7 @@ public class MaterialService {
                                                                                           boolean recordAudit) {
         String key = supplierKey(supplier.getSupplierCode());
         String reviewType = normalizeReviewType(text(request, "reviewType", "PERIODIC"));
-        Long openExists = supplierQualificationReviewTaskMapper.selectCount(
-                new LambdaQueryWrapper<SupplierQualificationReviewTask>()
-                        .eq(SupplierQualificationReviewTask::getSupplierCode, key)
-                        .eq(SupplierQualificationReviewTask::getReviewType, reviewType)
-                        .eq(SupplierQualificationReviewTask::getReviewStatus, "OPEN"));
-        if (openExists != null && openExists > 0) {
+        if (hasOpenSupplierQualificationReview(key, reviewType)) {
             throw new BusinessException("供应商已存在未关闭准入复审任务: " + key);
         }
 
@@ -2149,6 +2721,15 @@ public class MaterialService {
                     task.getCreatedBy());
         }
         return task;
+    }
+
+    private boolean hasOpenSupplierQualificationReview(String supplierCode, String reviewType) {
+        Long openExists = supplierQualificationReviewTaskMapper.selectCount(
+                new LambdaQueryWrapper<SupplierQualificationReviewTask>()
+                        .eq(SupplierQualificationReviewTask::getSupplierCode, supplierKey(supplierCode))
+                        .eq(SupplierQualificationReviewTask::getReviewType, normalizeReviewType(reviewType))
+                        .eq(SupplierQualificationReviewTask::getReviewStatus, "OPEN"));
+        return openExists != null && openExists > 0;
     }
 
     private SupplierCorrectiveAction createSupplierCorrectiveActionInternal(String supplierCode,
@@ -2520,6 +3101,7 @@ public class MaterialService {
         row.put("taskNo", task.getTaskNo());
         row.put("taskType", task.getTaskType());
         row.put("batchNo", task.getBatchNo());
+        row.put("childBatchNo", snapshotText(task.getRequestSnapshot(), "childBatchNo"));
         row.put("materialCode", task.getMaterialCode());
         row.put("materialName", task.getMaterialName());
         row.put("sourceLocation", task.getSourceLocation());
@@ -2534,11 +3116,32 @@ public class MaterialService {
         row.put("assignedTime", task.getAssignedTime());
         row.put("reviewer", task.getReviewer());
         row.put("reviewedTime", task.getReviewedTime());
+        row.put("reviewResult", valueOr(task.getReviewResult(), task.getReviewedTime() == null ? "" : "APPROVED"));
+        row.put("reviewConclusion", task.getReviewConclusion());
+        String dispositionStatus = valueOr(task.getDispositionStatus(), defaultLocationTaskDispositionStatus(task));
+        String dispositionResult = valueOr(task.getDispositionResult(), "");
+        row.put("dispositionStatus", dispositionStatus);
+        row.put("dispositionResult", dispositionResult);
+        row.put("dispositionConclusion", task.getDispositionConclusion());
+        row.put("dispositionText", locationTaskDispositionText(dispositionStatus, dispositionResult));
+        row.put("dispositionType", locationTaskDispositionType(dispositionStatus, dispositionResult));
+        row.put("dispositionBy", task.getDispositionBy());
+        row.put("dispositionTime", task.getDispositionTime());
+        row.put("linkedExceptionEventNo", task.getLinkedExceptionEventNo());
+        row.put("exceptionCloseAction", task.getExceptionCloseAction());
+        row.put("exceptionCloseConclusion", task.getExceptionCloseConclusion());
+        row.put("exceptionClosedBy", task.getExceptionClosedBy());
+        row.put("exceptionClosedTime", task.getExceptionClosedTime());
         row.put("cancelledBy", task.getCancelledBy());
         row.put("cancelledTime", task.getCancelledTime());
         row.put("cancelReason", task.getCancelReason());
         row.put("exceptionReason", task.getExceptionReason());
         row.put("taskSource", valueOr(task.getTaskSource(), "MANUAL"));
+        row.put("priority", locationTaskPriority(task));
+        row.put("dueTime", task.getDueTime());
+        row.put("overdue", locationTaskOverdue(task));
+        row.put("slaStatus", locationTaskSlaStatus(task));
+        row.put("slaType", locationTaskSlaType(task));
         row.put("executedTime", task.getExecutedTime());
         row.put("completedTime", task.getCompletedTime());
         row.put("createdTime", task.getCreatedTime());
@@ -2547,9 +3150,16 @@ public class MaterialService {
     }
 
     private Map<String, Object> locationTaskResult(MaterialLocationTask task, MaterialBatch batch) {
+        return locationTaskResult(task, batch, Map.of());
+    }
+
+    private Map<String, Object> locationTaskResult(MaterialLocationTask task, MaterialBatch batch, Map<String, Object> extra) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("task", locationTaskRow(task));
         result.put("batch", batchRow(batch));
+        if (extra != null && !extra.isEmpty()) {
+            result.putAll(extra);
+        }
         return result;
     }
 
@@ -2579,6 +3189,8 @@ public class MaterialService {
         task.setReason(reason);
         task.setOperator(operator);
         task.setTaskSource(text(request, "taskSource", "MANUAL"));
+        task.setPriority(locationTaskPriority(request, taskType));
+        task.setDueTime(locationTaskDueTime(request, taskType, now));
         task.setExecutedTime("DONE".equals(status) ? now : null);
         task.setCompletedTime("DONE".equals(status) ? now : null);
         task.setRequestSnapshot(request == null ? "{}" : request.toString());
@@ -2594,6 +3206,7 @@ public class MaterialService {
             case "MOVE", "移库" -> "MOVE";
             case "PUTAWAY", "上架" -> "PUTAWAY";
             case "COUNT", "盘点" -> "COUNT";
+            case "SPLIT", "拆批" -> "SPLIT";
             default -> taskType;
         };
     }
@@ -2602,7 +3215,73 @@ public class MaterialService {
         return switch (taskType) {
             case "PUTAWAY" -> "WMS putaway";
             case "COUNT" -> "WMS inventory count task";
+            case "SPLIT" -> "WMS split batch";
             default -> "WMS location move";
+        };
+    }
+
+    private int locationTaskPriority(Map<String, Object> request, String taskType) {
+        int defaultPriority = switch (normalizeLocationTaskType(taskType)) {
+            case "SPLIT" -> 8;
+            case "PUTAWAY" -> 6;
+            case "MOVE" -> 5;
+            default -> 3;
+        };
+        return Math.max(0, Math.min(10, intValue(value(request, "priority"), defaultPriority)));
+    }
+
+    private int locationTaskPriority(MaterialLocationTask task) {
+        return task.getPriority() == null ? locationTaskPriority(Map.of(), task.getTaskType()) : task.getPriority();
+    }
+
+    private LocalDateTime locationTaskDueTime(Map<String, Object> request, String taskType, LocalDateTime createdTime) {
+        Object rawDueTime = value(request, "dueTime");
+        if (rawDueTime instanceof LocalDateTime time) {
+            return time;
+        }
+        if (rawDueTime != null && !String.valueOf(rawDueTime).isBlank()) {
+            try {
+                return LocalDateTime.parse(String.valueOf(rawDueTime));
+            } catch (Exception ignored) {
+                // 截止时间格式不合法时使用标准SLA，避免任务创建被非关键字段阻断。
+            }
+        }
+        int defaultHours = switch (normalizeLocationTaskType(taskType)) {
+            case "SPLIT" -> 2;
+            case "PUTAWAY" -> 4;
+            case "MOVE" -> 6;
+            default -> 8;
+        };
+        int dueHours = Math.max(1, Math.min(168, intValue(value(request, "dueHours"), defaultHours)));
+        return createdTime.plusHours(dueHours);
+    }
+
+    private boolean locationTaskOverdue(MaterialLocationTask task) {
+        if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
+            return false;
+        }
+        return task.getDueTime() != null && task.getDueTime().isBefore(LocalDateTime.now());
+    }
+
+    private String locationTaskSlaStatus(MaterialLocationTask task) {
+        if (!List.of("CREATED", "ASSIGNED", "EXECUTING").contains(valueOr(task.getStatus(), ""))) {
+            return "CLOSED";
+        }
+        if (locationTaskOverdue(task)) {
+            return "OVERDUE";
+        }
+        if (task.getDueTime() != null && task.getDueTime().isBefore(LocalDateTime.now().plusHours(1))) {
+            return "DUE_SOON";
+        }
+        return "ON_TRACK";
+    }
+
+    private String locationTaskSlaType(MaterialLocationTask task) {
+        return switch (locationTaskSlaStatus(task)) {
+            case "OVERDUE" -> "red";
+            case "DUE_SOON" -> "amber";
+            case "ON_TRACK" -> "blue";
+            default -> "green";
         };
     }
 
@@ -2619,6 +3298,118 @@ public class MaterialService {
             throw new BusinessException("库位任务数量必须大于0");
         }
         return qty;
+    }
+
+    private BigDecimal locationSplitQty(Map<String, Object> request, BigDecimal fallbackQty) {
+        Object raw = firstPresent(request, "actualQty", "plannedQty", "qty", "splitQty");
+        BigDecimal qty = raw == null || String.valueOf(raw).isBlank() ? fallbackQty : decimalValue(raw);
+        if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("拆批数量必须大于0");
+        }
+        return qty;
+    }
+
+    private void ensureAvailableForSplit(MaterialBatch batch, BigDecimal splitQty) {
+        BigDecimal availableQty = nvl(batch.getAvailableQty());
+        if (availableQty.compareTo(splitQty) < 0) {
+            throw new BusinessException("拆批失败，母批可用库存不足: batch=" + batch.getBatchNo()
+                    + ", available=" + availableQty.stripTrailingZeros().toPlainString()
+                    + ", splitQty=" + splitQty.stripTrailingZeros().toPlainString());
+        }
+        if (availableQty.compareTo(splitQty) <= 0) {
+            throw new BusinessException("拆批数量必须小于母批可用库存，避免生成空母批: " + batch.getBatchNo());
+        }
+    }
+
+    private String childBatchNo(Map<String, Object> request, String parentBatchNo) {
+        String childBatchNo = text(request, "childBatchNo", text(request, "targetBatchNo", ""));
+        if (!childBatchNo.isBlank()) {
+            return childBatchNo;
+        }
+        return parentBatchNo + "-S" + NO_TIME.format(LocalDateTime.now());
+    }
+
+    private String childBatchNo(MaterialLocationTask task, Map<String, Object> request, String parentBatchNo) {
+        String requestChildBatchNo = text(request, "childBatchNo", text(request, "targetBatchNo", ""));
+        if (!requestChildBatchNo.isBlank()) {
+            return requestChildBatchNo;
+        }
+        String snapshotChildBatchNo = snapshotText(task.getRequestSnapshot(), "childBatchNo");
+        if (!snapshotChildBatchNo.isBlank()) {
+            return snapshotChildBatchNo;
+        }
+        snapshotChildBatchNo = snapshotText(task.getRequestSnapshot(), "targetBatchNo");
+        if (!snapshotChildBatchNo.isBlank()) {
+            return snapshotChildBatchNo;
+        }
+        return childBatchNo(request, parentBatchNo);
+    }
+
+    private void assertChildBatchNoAvailable(String childBatchNo, String parentBatchNo) {
+        if (childBatchNo == null || childBatchNo.isBlank()) {
+            throw new BusinessException("子批次号不能为空");
+        }
+        if (childBatchNo.equals(parentBatchNo)) {
+            throw new BusinessException("子批次号不能与母批次号相同: " + childBatchNo);
+        }
+        MaterialBatch exists = batchMapper.selectByBatchNoForUpdate(childBatchNo);
+        if (exists != null) {
+            throw new BusinessException("子批次号已存在: " + childBatchNo);
+        }
+    }
+
+    private MaterialBatch splitChildBatch(MaterialBatch parent,
+                                          String childBatchNo,
+                                          BigDecimal qty,
+                                          String targetLocation,
+                                          String operator) {
+        LocalDateTime now = LocalDateTime.now();
+        MaterialBatch child = new MaterialBatch();
+        child.setMaterialCode(parent.getMaterialCode());
+        child.setMaterialName(parent.getMaterialName());
+        child.setBatchNo(childBatchNo);
+        child.setSupplierCode(parent.getSupplierCode());
+        child.setTotalQty(qty);
+        child.setAvailableQty(qty);
+        child.setReservedQty(BigDecimal.ZERO);
+        child.setConsumedQty(BigDecimal.ZERO);
+        child.setFrozenQty(BigDecimal.ZERO);
+        child.setReturnedQty(BigDecimal.ZERO);
+        child.setUnit(parent.getUnit());
+        child.setQualityStatus(parent.getQualityStatus());
+        child.setStatus("PASS".equals(parent.getQualityStatus()) ? "AVAILABLE" : "HOLD");
+        child.setReceivedTime(now);
+        child.setExpireTime(parent.getExpireTime());
+        child.setLocation(targetLocation);
+        child.setFifoSeq(parent.getFifoSeq());
+        child.setStockVersion(1L);
+        child.setCreatedBy(operator);
+        child.setCreatedTime(now);
+        child.setUpdatedTime(now);
+        return child;
+    }
+
+    private void refreshBatchStatusAfterAvailableChange(MaterialBatch batch) {
+        BigDecimal availableQty = nvl(batch.getAvailableQty());
+        if ("PASS".equals(batch.getQualityStatus()) && availableQty.compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("AVAILABLE");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getFrozenQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("FROZEN");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getReservedQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("RESERVED");
+            return;
+        }
+        if (availableQty.compareTo(BigDecimal.ZERO) == 0 && nvl(batch.getConsumedQty()).compareTo(BigDecimal.ZERO) > 0) {
+            batch.setStatus("CONSUMED");
+            return;
+        }
+        if (!"PASS".equals(batch.getQualityStatus())) {
+            batch.setStatus("HOLD");
+        }
     }
 
     private BigDecimal locationCountQty(Map<String, Object> request) {
@@ -2667,6 +3458,78 @@ public class MaterialService {
             case "REJECT", "REJECTED", "驳回" -> "REJECTED";
             default -> throw new BusinessException("库位任务取消状态不支持: " + value);
         };
+    }
+
+    private String normalizeLocationTaskReviewResult(String value) {
+        String result = valueOr(value, "APPROVED").trim().toUpperCase(Locale.ROOT);
+        return switch (result) {
+            case "APPROVE", "APPROVED", "PASS", "OK", "通过" -> "APPROVED";
+            case "REJECT", "REJECTED", "FAIL", "FAILED", "NG", "驳回" -> "REJECTED";
+            default -> throw new BusinessException("库位任务复核结果不支持: " + value);
+        };
+    }
+
+    private String normalizeLocationTaskDispositionResult(String value) {
+        String result = valueOr(value, "ACCEPT_DEVIATION").trim().toUpperCase(Locale.ROOT);
+        return switch (result) {
+            case "ACCEPT", "ACCEPT_DEVIATION", "WAIVE", "CLOSE", "让步接收" -> "ACCEPT_DEVIATION";
+            case "ADJUST", "ADJUST_INVENTORY", "COUNT", "INVENTORY_COUNT", "库存调整" -> "ADJUST_INVENTORY";
+            case "ESCALATE", "ESCALATED", "MRB", "升级" -> "ESCALATE";
+            default -> throw new BusinessException("库位任务复核处置结果不支持: " + value);
+        };
+    }
+
+    private String defaultLocationTaskDispositionConclusion(String dispositionResult) {
+        return switch (dispositionResult) {
+            case "ADJUST_INVENTORY" -> "复核差异已按实盘数量完成库存调整";
+            case "ESCALATE" -> "复核差异已升级后续异常处置";
+            default -> "复核差异已评估并让步接收";
+        };
+    }
+
+    private String defaultLocationTaskDispositionStatus(MaterialLocationTask task) {
+        if ("REJECTED".equals(valueOr(task.getReviewResult(), ""))) {
+            return "PENDING";
+        }
+        if ("APPROVED".equals(valueOr(task.getReviewResult(), ""))) {
+            return "CLOSED";
+        }
+        return "";
+    }
+
+    private String locationTaskDispositionText(String dispositionStatus, String dispositionResult) {
+        if (dispositionStatus == null || dispositionStatus.isBlank()) {
+            return "";
+        }
+        if ("PENDING".equals(dispositionStatus)) {
+            return "待处置";
+        }
+        if ("ESCALATED".equals(dispositionStatus)) {
+            return "已升级";
+        }
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            return "已调库";
+        }
+        if ("ACCEPT_DEVIATION".equals(dispositionResult)) {
+            return "已接收";
+        }
+        return "CLOSED".equals(dispositionStatus) ? "已关闭" : dispositionStatus;
+    }
+
+    private String locationTaskDispositionType(String dispositionStatus, String dispositionResult) {
+        if ("PENDING".equals(dispositionStatus)) {
+            return "amber";
+        }
+        if ("ESCALATED".equals(dispositionStatus)) {
+            return "red";
+        }
+        if ("ADJUST_INVENTORY".equals(dispositionResult)) {
+            return "blue";
+        }
+        if ("CLOSED".equals(dispositionStatus)) {
+            return "green";
+        }
+        return "gray";
     }
 
     private MaterialLocationTask lockedLocationTask(String taskNo) {
@@ -3385,11 +4248,81 @@ public class MaterialService {
     }
 
     private void audit(String action, String bizNo, String bizType, String description, String operator) {
+        audit(action, bizNo, bizType, description, operator, null);
+    }
+
+    private void audit(String action, String bizNo, String bizType, String description, String operator, String requestSnapshot) {
         try {
-            auditLogService.record(action, bizNo, bizType, description, operator, "material-service", null);
+            auditLogService.record(action, bizNo, bizType, description, operator, "material-service", requestSnapshot);
         } catch (Exception e) {
             log.warn("物料审计日志写入失败，已降级不阻断主流程: action={}, bizNo={}, reason={}", action, bizNo, e.getMessage());
         }
+    }
+
+    private Map<String, Object> stockSnapshot(String batchNo, BigDecimal availableQty,
+                                              BigDecimal frozenQty, BigDecimal reservedQty, String status) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("batchNo", batchNo);
+        snapshot.put("availableQty", availableQty);
+        snapshot.put("frozenQty", frozenQty);
+        snapshot.put("reservedQty", reservedQty);
+        snapshot.put("status", status);
+        return snapshot;
+    }
+
+    private String auditSnapshot(Map<String, Object> before, Map<String, Object> after, Map<String, Object> request) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("before", before == null ? Map.of() : before);
+        snapshot.put("after", after == null ? Map.of() : after);
+        snapshot.put("changedFields", changedFields(before, after));
+        snapshot.put("request", request == null ? Map.of() : request);
+        return JSONUtil.toJsonStr(snapshot);
+    }
+
+    private List<String> changedFields(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> safeBefore = before == null ? Map.of() : before;
+        Map<String, Object> safeAfter = after == null ? Map.of() : after;
+        return safeAfter.keySet().stream()
+                .filter(key -> !Objects.equals(safeBefore.get(key), safeAfter.get(key)))
+                .sorted()
+                .toList();
+    }
+
+    private Map<String, Object> safeRequest(Map<String, Object> request) {
+        return request == null ? Map.of() : new LinkedHashMap<>(request);
+    }
+
+    private String snapshotText(String snapshot, String key) {
+        if (snapshot == null || snapshot.isBlank() || key == null || key.isBlank()) {
+            return "";
+        }
+        try {
+            if (JSONUtil.isTypeJSON(snapshot)) {
+                Object value = JSONUtil.parseObj(snapshot).get(key);
+                return value == null || String.valueOf(value).isBlank() ? "" : String.valueOf(value);
+            }
+        } catch (Exception ignored) {
+            // 兼容历史 Map.toString() 快照，解析失败时继续按轻量文本格式读取。
+        }
+        String marker = key + "=";
+        int start = snapshot.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        int valueStart = start + marker.length();
+        int comma = snapshot.indexOf(',', valueStart);
+        int endBrace = snapshot.indexOf('}', valueStart);
+        int valueEnd;
+        if (comma < 0 && endBrace < 0) {
+            valueEnd = snapshot.length();
+        } else if (comma < 0) {
+            valueEnd = endBrace;
+        } else if (endBrace < 0) {
+            valueEnd = comma;
+        } else {
+            valueEnd = Math.min(comma, endBrace);
+        }
+        return snapshot.substring(valueStart, valueEnd).trim();
     }
 
     private String requiredText(Map<String, Object> request, String key) {
@@ -3474,6 +4407,13 @@ public class MaterialService {
 
     private String valueOr(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String limitText(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private static class SupplierScore {
@@ -3567,5 +4507,11 @@ public class MaterialService {
 
     private record QualificationDecision(String status, String riskLevel, double score, double passRate,
                                          int nextAuditDays, String reason) {
+    }
+
+    private record BomStatusChange(Map<String, Object> before, Map<String, Object> after) {
+    }
+
+    private record LocationTaskCompletion(MaterialBatch batch, Map<String, Object> extra) {
     }
 }

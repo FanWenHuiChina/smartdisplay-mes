@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS md_recipe (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_recipe_product_step_equip_ver
 ON md_recipe(product_code, step_code, equipment_code, recipe_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_recipe_single_active_context
+ON md_recipe(product_code, step_code, equipment_code) WHERE deleted = 0 AND status = 'ACTIVE';
 
 CREATE INDEX IF NOT EXISTS idx_recipe_product ON md_recipe(product_code);
 
@@ -75,6 +77,8 @@ CREATE TABLE IF NOT EXISTS md_route (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_route_product_version
 ON md_route(product_code, route_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_route_single_active_product
+ON md_route(product_code) WHERE deleted = 0 AND status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_route_product_status ON md_route(product_code, status);
 
 -- 工艺路线工序明细
@@ -571,6 +575,8 @@ CREATE TABLE IF NOT EXISTS md_bom (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_bom_product_version
 ON md_bom(product_code, bom_version) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bom_single_active_product
+ON md_bom(product_code) WHERE deleted = 0 AND status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_bom_product_status ON md_bom(product_code, status);
 
 CREATE TABLE IF NOT EXISTS md_bom_item (

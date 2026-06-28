@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -86,6 +85,29 @@ class EapGatewayServiceTest {
     }
 
     @Test
+    void registerShadowProtocolGatewayShouldDefaultToShadowDriverMode() {
+        EapGatewayService service = service();
+        when(gatewayMapper.selectOne(any())).thenReturn(null);
+
+        service.registerGateway(Map.of(
+                "gatewayCode", "GW-SECS-01",
+                "gatewayName", "SECS/GEM影子协议网关",
+                "protocolType", "secs-gem",
+                "endpointUri", "secs://192.168.10.20:5000",
+                "equipmentCodes", List.of("EVAP_01"),
+                "operator", "ee1001"
+        ));
+
+        ArgumentCaptor<EquipmentGatewayConnection> captor = ArgumentCaptor.forClass(EquipmentGatewayConnection.class);
+        verify(gatewayMapper).insert(captor.capture());
+        EquipmentGatewayConnection gateway = captor.getValue();
+        assertThat(gateway.getProtocolType()).isEqualTo("SECS_GEM");
+        assertThat(gateway.getDriverCode()).isEqualTo("secs-gem-driver");
+        assertThat(gateway.getDriverMode()).isEqualTo("SHADOW");
+        assertThat(gateway.getDriverConfigSnapshot()).contains("protocolFrameValidation");
+    }
+
+    @Test
     void heartbeatShouldUpdateGatewayStatusAndAudit() {
         EapGatewayService service = service();
         EquipmentGatewayConnection gateway = gateway("GW-SIM-HTTP-01", "DISCONNECTED");
@@ -129,11 +151,12 @@ class EapGatewayServiceTest {
     }
 
     @Test
-    void checkHealthShouldWarnForPlaceholderRealProtocol() {
+    void checkHealthShouldWarnForShadowRealProtocol() {
         EapGatewayService service = service();
         EquipmentGatewayConnection gateway = gateway("GW-SECS-01", "DISCONNECTED");
         gateway.setProtocolType("SECS_GEM");
         gateway.setDriverCode("secs-gem-driver");
+        gateway.setDriverMode("SHADOW");
         when(gatewayMapper.selectOne(any())).thenReturn(gateway);
 
         service.checkHealth("GW-SECS-01", Map.of("operator", "ee1001"));
@@ -142,8 +165,28 @@ class EapGatewayServiceTest {
         verify(healthCheckMapper).insert(captor.capture());
         EquipmentGatewayHealthCheck check = captor.getValue();
         assertThat(check.getResultStatus()).isEqualTo("WARN");
-        assertThat(check.getErrorMessage()).contains("real equipment handshake pending");
+        assertThat(check.getErrorMessage()).contains("shadow protocol frame validation ready");
         assertThat(gateway.getStatus()).isEqualTo("DEGRADED");
+        verify(healthCheckMapper).updateById(check);
+    }
+
+    @Test
+    void checkHealthShouldFailExternalProtocolWithoutRealLinkConfig() {
+        EapGatewayService service = service();
+        EquipmentGatewayConnection gateway = gateway("GW-OPCUA-01", "CONNECTED");
+        gateway.setProtocolType("OPC_UA");
+        gateway.setDriverCode("opc-ua-driver");
+        gateway.setDriverMode("EXTERNAL");
+        when(gatewayMapper.selectOne(any())).thenReturn(gateway);
+
+        service.checkHealth("GW-OPCUA-01", Map.of("operator", "ee1001"));
+
+        ArgumentCaptor<EquipmentGatewayHealthCheck> captor = ArgumentCaptor.forClass(EquipmentGatewayHealthCheck.class);
+        verify(healthCheckMapper).insert(captor.capture());
+        EquipmentGatewayHealthCheck check = captor.getValue();
+        assertThat(check.getResultStatus()).isEqualTo("FAIL");
+        assertThat(check.getErrorMessage()).contains("external equipment link is not configured");
+        assertThat(gateway.getStatus()).isEqualTo("DISCONNECTED");
         verify(healthCheckMapper).updateById(check);
     }
 
@@ -229,22 +272,58 @@ class EapGatewayServiceTest {
         when(gatewayMapper.selectOne(any())).thenReturn(gateway);
         when(eapAdapter.handleMessage(any())).thenThrow(new BusinessException("Unsupported message"));
 
-        assertThatThrownBy(() -> service.ingestMessage(Map.of(
+        Map<String, Object> response = service.ingestMessage(Map.of(
                 "gatewayCode", "GW-SIM-HTTP-01",
                 "messageType", "UNKNOWN",
                 "payload", Map.of("equipmentCode", "COATER_01"),
                 "operator", "ee1001"
-        ), eapAdapter)).isInstanceOf(BusinessException.class);
+        ), eapAdapter);
 
         ArgumentCaptor<EquipmentGatewayMessage> captor = ArgumentCaptor.forClass(EquipmentGatewayMessage.class);
         verify(messageMapper).insert(captor.capture());
         EquipmentGatewayMessage message = captor.getValue();
         assertThat(message.getProcessStatus()).isEqualTo("FAILED");
         assertThat(message.getErrorMessage()).contains("Unsupported message");
+        assertThat(message.getResponseSnapshot()).contains("accepted", "Unsupported message");
+        assertThat(response).containsEntry("accepted", false);
+        assertThat(response.get("errorMessage")).asString().contains("Unsupported message");
         assertThat(gateway.getStatus()).isEqualTo("DEGRADED");
         assertThat(gateway.getLastError()).contains("Unsupported message");
         verify(messageMapper).updateById(message);
         verify(gatewayMapper, times(2)).updateById(gateway);
+        verify(auditLogService).recordFailure(eq("EAP_GATEWAY_MESSAGE_FAILED"), eq(message.getMessageNo()), eq("EQUIPMENT_GATEWAY_MESSAGE"), any(), eq("ee1001"), eq("equipment-gateway-service"), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void messageDetailShouldExposeSnapshotsAndDiagnostic() {
+        EapGatewayService service = service();
+        EquipmentGatewayMessage message = new EquipmentGatewayMessage();
+        message.setMessageNo("EGM-DETAIL-001");
+        message.setGatewayCode("GW-SECS-01");
+        message.setEquipmentCode("EVAP_01");
+        message.setProtocolType("SECS_GEM");
+        message.setDriverCode("secs-gem-driver");
+        message.setDirection("INBOUND");
+        message.setMessageType("UNKNOWN");
+        message.setProcessStatus("FAILED");
+        message.setErrorMessage("SECS/GEM frame is invalid: stream/function is required");
+        message.setOccurredTime(LocalDateTime.now().minusSeconds(5));
+        message.setProcessedTime(LocalDateTime.now());
+        message.setPayloadSnapshot("{\"gatewayCode\":\"GW-SECS-01\",\"payload\":{\"equipmentCode\":\"EVAP_01\"}}");
+        message.setNormalizedPayloadSnapshot("");
+        message.setResponseSnapshot("{\"accepted\":false,\"errorMessage\":\"stream/function is required\"}");
+        when(messageMapper.selectOne(any())).thenReturn(message);
+
+        Map<String, Object> detail = service.messageDetail("EGM-DETAIL-001");
+
+        assertThat(detail).containsEntry("messageNo", "EGM-DETAIL-001");
+        assertThat(detail.get("payloadSnapshot")).asString().contains("GW-SECS-01");
+        assertThat(detail.get("responseSnapshot")).asString().contains("accepted");
+        Map<String, Object> diagnostic = (Map<String, Object>) detail.get("diagnostic");
+        assertThat(diagnostic).containsEntry("canRetry", true);
+        assertThat(diagnostic).containsEntry("failureCategory", "PROTOCOL_FRAME");
+        assertThat(diagnostic.get("operatorAction")).asString().contains("协议帧字段");
     }
 
     @Test
@@ -282,6 +361,101 @@ class EapGatewayServiceTest {
     }
 
     @Test
+    void ingestSecsGemMessageShouldFailWhenFrameIdentityMissing() {
+        EapGatewayService service = service();
+        EquipmentGatewayConnection gateway = gateway("GW-SECS-01", "CONNECTED");
+        gateway.setProtocolType("SECS_GEM");
+        gateway.setDriverCode("secs-gem-driver");
+        gateway.setDriverMode("SHADOW");
+        when(gatewayMapper.selectOne(any())).thenReturn(gateway);
+
+        Map<String, Object> response = service.ingestMessage(Map.of(
+                "gatewayCode", "GW-SECS-01",
+                "payload", Map.of("equipmentCode", "EVAP_01", "status", "RUNNING"),
+                "operator", "ee1001"
+        ), eapAdapter);
+
+        ArgumentCaptor<EquipmentGatewayMessage> captor = ArgumentCaptor.forClass(EquipmentGatewayMessage.class);
+        verify(messageMapper).insert(captor.capture());
+        EquipmentGatewayMessage message = captor.getValue();
+        assertThat(message.getProcessStatus()).isEqualTo("FAILED");
+        assertThat(message.getErrorMessage()).contains("SECS/GEM frame is invalid");
+        assertThat(response).containsEntry("accepted", false);
+        assertThat(response.get("errorMessage")).asString().contains("secsMessage or stream/function is required");
+        assertThat(gateway.getStatus()).isEqualTo("DEGRADED");
+        verify(messageMapper).updateById(message);
+        verify(auditLogService).recordFailure(eq("EAP_GATEWAY_MESSAGE_FAILED"), eq(message.getMessageNo()), eq("EQUIPMENT_GATEWAY_MESSAGE"), any(), eq("ee1001"), eq("equipment-gateway-service"), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void ingestOpcUaMessageShouldNormalizeDataChangeAsParameter() {
+        EapGatewayService service = service();
+        EquipmentGatewayConnection gateway = gateway("GW-OPCUA-01", "CONNECTED");
+        gateway.setProtocolType("OPC_UA");
+        gateway.setDriverCode("opc-ua-driver");
+        gateway.setDriverMode("SHADOW");
+        when(gatewayMapper.selectOne(any())).thenReturn(gateway);
+        when(eapAdapter.handleMessage(any())).thenReturn(Map.of("adapterCode", "simulated-eap-adapter", "messageType", "PARAMETER"));
+
+        service.ingestMessage(Map.of(
+                "gatewayCode", "GW-OPCUA-01",
+                "operation", "DATA_CHANGE",
+                "nodeId", "ns=2;s=Coater01.Thickness",
+                "namespaceIndex", 2,
+                "qualityCode", "Good",
+                "payload", Map.of(
+                        "equipmentCode", "COATER_01",
+                        "paramCode", "THICKNESS",
+                        "paramName", "涂胶厚度",
+                        "paramValue", 2.05,
+                        "unit", "um"
+                ),
+                "operator", "ee1001"
+        ), eapAdapter);
+
+        ArgumentCaptor<Map<String, Object>> requestCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(eapAdapter).handleMessage(requestCaptor.capture());
+        Map<String, Object> normalized = requestCaptor.getValue();
+        assertThat(normalized.get("protocolType")).isEqualTo("OPC_UA");
+        assertThat(normalized.get("messageType")).isEqualTo("PARAMETER");
+        assertThat((Map<String, Object>) normalized.get("payload")).containsEntry("nodeId", "ns=2;s=Coater01.Thickness");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void ingestVendorHttpMessageShouldPreserveRequestMetadata() {
+        EapGatewayService service = service();
+        EquipmentGatewayConnection gateway = gateway("GW-VENDOR-01", "CONNECTED");
+        gateway.setProtocolType("VENDOR_HTTP");
+        gateway.setDriverCode("vendor-http-driver");
+        gateway.setDriverMode("SHADOW");
+        when(gatewayMapper.selectOne(any())).thenReturn(gateway);
+        when(eapAdapter.handleMessage(any())).thenReturn(Map.of("adapterCode", "simulated-eap-adapter", "messageType", "STATUS"));
+
+        service.ingestMessage(Map.of(
+                "gatewayCode", "GW-VENDOR-01",
+                "vendorMessageId", "VM-001",
+                "vendorMessageType", "STATUS_REPORT",
+                "httpMethod", "post",
+                "requestPath", "/vendor/eap/status",
+                "signature", "sha256-demo",
+                "payload", Map.of("equipmentCode", "COATER_01", "status", "RUNNING"),
+                "operator", "ee1001"
+        ), eapAdapter);
+
+        ArgumentCaptor<Map<String, Object>> requestCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(eapAdapter).handleMessage(requestCaptor.capture());
+        Map<String, Object> normalized = requestCaptor.getValue();
+        assertThat(normalized.get("protocolType")).isEqualTo("VENDOR_HTTP");
+        assertThat(normalized.get("messageType")).isEqualTo("STATUS");
+        Map<String, Object> payload = (Map<String, Object>) normalized.get("payload");
+        assertThat(payload).containsEntry("vendorMessageId", "VM-001");
+        assertThat(payload).containsEntry("httpMethod", "POST");
+        assertThat(payload).containsEntry("requestPath", "/vendor/eap/status");
+    }
+
+    @Test
     void driversShouldExposeProtocolCapabilities() {
         EapGatewayService service = service();
 
@@ -289,6 +463,12 @@ class EapGatewayServiceTest {
 
         assertThat(drivers).extracting(row -> row.get("protocolType"))
                 .contains("SIMULATED_HTTP", "SECS_GEM", "OPC_UA", "VENDOR_HTTP");
+        assertThat(drivers).anySatisfy(row -> {
+            if ("SECS_GEM".equals(row.get("protocolType"))) {
+                assertThat(row.get("driverMode")).isEqualTo("SHADOW");
+                assertThat(row.get("protocolFrameValidation")).isEqualTo(true);
+            }
+        });
     }
 
     private EquipmentGatewayConnection gateway(String gatewayCode, String status) {

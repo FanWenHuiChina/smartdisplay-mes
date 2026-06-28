@@ -178,7 +178,7 @@
                 v-model.trim="filters.bizNo"
                 class="mes-input"
                 placeholder="请输入业务对象"
-                @keyup.enter="loadAuditLogs"
+                @keyup.enter="queryAuditLogs"
               />
             </div>
             <div class="mes-field">
@@ -188,18 +188,45 @@
                 <option value="TRACK">Track In / Out</option>
                 <option value="LOT">Hold / Release</option>
                 <option value="ORDER">工单</option>
+                <option value="WMS">WMS</option>
+                <option value="QMS">QMS</option>
+                <option value="EAP">EAP</option>
                 <option value="AI">AI</option>
                 <option value="RECIPE">Recipe</option>
               </select>
             </div>
-            <button class="mes-btn primary" :disabled="loadingAudit" @click="loadAuditLogs">
+            <div class="mes-field">
+              <label>结果</label>
+              <select v-model="filters.result" class="mes-select">
+                <option value="">全部结果</option>
+                <option value="SUCCESS">SUCCESS</option>
+                <option value="FAIL">FAIL</option>
+              </select>
+            </div>
+            <div class="mes-field">
+              <label>来源</label>
+              <input v-model.trim="filters.source" class="mes-input" placeholder="service / adapter" @keyup.enter="queryAuditLogs" />
+            </div>
+            <div class="mes-field">
+              <label>操作人</label>
+              <input v-model.trim="filters.operator" class="mes-input" placeholder="账号" @keyup.enter="queryAuditLogs" />
+            </div>
+            <div class="mes-field">
+              <label>开始日期</label>
+              <input v-model="filters.startTime" type="date" class="mes-input" />
+            </div>
+            <div class="mes-field">
+              <label>结束日期</label>
+              <input v-model="filters.endTime" type="date" class="mes-input" />
+            </div>
+            <button class="mes-btn primary" :disabled="loadingAudit" @click="queryAuditLogs">
               {{ loadingAudit ? '查询中' : '查询' }}
             </button>
             <button class="mes-btn" @click="resetFilters">重置</button>
           </div>
           <table class="mes-table">
             <thead>
-              <tr><th>时间</th><th>用户</th><th>对象</th><th>操作</th><th>结果</th><th>来源</th></tr>
+              <tr><th>时间</th><th>用户</th><th>对象</th><th>操作</th><th>结果</th><th>来源</th><th>快照</th></tr>
             </thead>
             <tbody>
               <tr v-for="log in filteredAuditLogs" :key="log.key">
@@ -209,11 +236,39 @@
                 <td>{{ log.action }}</td>
                 <td><span class="status-tag" :class="log.type">{{ log.result }}</span></td>
                 <td>{{ log.source }}</td>
+                <td>
+                  <button class="mes-btn tiny" :disabled="!log.hasSnapshot" @click="showAuditSnapshot(log)">
+                    {{ log.hasSnapshot ? '查看' : '无' }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
           <div v-if="!filteredAuditLogs.length" class="audit-empty">
             暂无匹配审计日志
+          </div>
+          <div class="pager-row audit-pager">
+            <el-pagination
+              v-model:current-page="auditPagination.page"
+              v-model:page-size="auditPagination.size"
+              :total="auditPagination.total"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleAuditSizeChange"
+              @current-change="handleAuditPageChange"
+            />
+          </div>
+          <div v-if="selectedAuditLog" class="audit-snapshot-panel">
+            <div class="audit-snapshot__head">
+              <strong>{{ selectedAuditLog.object }} / {{ selectedAuditLog.action }}</strong>
+              <button class="mes-btn tiny" @click="selectedAuditLog = null">收起</button>
+            </div>
+            <div class="audit-snapshot__grid">
+              <div v-for="section in auditSnapshotSections" :key="section.key" class="snapshot-block">
+                <b>{{ section.label }}</b>
+                <pre>{{ section.value }}</pre>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -253,43 +308,54 @@ import {
 import { hasButton } from '@/utils/permissions'
 import { warnDevFallback } from '@/utils/devFallback'
 
-const fallbackAuditLogs = [
+const fallbackAuditLogs = __DEV_MOCK_FALLBACK__ ? [
   { time: '14:31:22', user: 'qe1003', object: 'LOT260606-017', action: 'Hold Release 审批', result: '通过', source: '10.12.8.41' },
   { time: '14:26:10', user: 'pe2007', object: 'RCP_COAT_65_V12', action: 'Recipe 参数变更', result: '待复核', source: '10.12.6.18' },
   { time: '14:18:44', user: 'op1007', object: 'COATER_02', action: 'Track In', result: '失败', source: 'LINE-HMI-02' },
   { time: '14:05:36', user: 'pc3002', object: 'MO20260606012', action: '工单释放', result: '成功', source: '10.12.3.22' }
-]
+] : []
 
 const filters = reactive({
   bizNo: '',
-  action: ''
+  action: '',
+  result: '',
+  source: '',
+  operator: '',
+  startTime: '',
+  endTime: ''
 })
 
 const auditLogs = ref(__DEV_MOCK_FALLBACK__ ? fallbackAuditLogs.map(mapAuditLog) : [])
+const auditPagination = reactive({
+  page: 1,
+  size: 20,
+  total: __DEV_MOCK_FALLBACK__ ? fallbackAuditLogs.length : 0
+})
 const loadingAudit = ref(false)
 const lastRefreshText = ref(__DEV_MOCK_FALLBACK__ ? '开发样例' : '待接口')
 const permissionChanges = ref([])
 const loadingPermissionChanges = ref(false)
 const loadingPermissionReload = ref(false)
 const selectedPermissionChange = ref(null)
+const selectedAuditLog = ref(null)
 const systemUsers = ref([])
 const systemSummary = ref(null)
 const ruleActionLoading = ref('')
 const disabledRuleNames = ref(new Set())
 
-const fallbackRoles = [
+const fallbackRoles = __DEV_MOCK_FALLBACK__ ? [
   { name: '生产班长', post: '线体管理', permissions: '派工、Track、Hold 申请', scope: '本基地 / 本产线', status: '启用', type: 'green' },
   { name: '质量工程师', post: '质量处置', permissions: 'Hold Release、MRB、SPC', scope: '本基地 / 全工序', status: '启用', type: 'green' },
   { name: '工艺工程师', post: '工艺维护', permissions: 'Route、Recipe、规格版本', scope: '产品族 / 工艺段', status: '审批中', type: 'amber' },
   { name: '系统管理员', post: '平台治理', permissions: '用户、角色、审计策略', scope: '租户级', status: '受控', type: 'red' }
-]
+] : []
 
-const fallbackRules = [
+const fallbackRules = __DEV_MOCK_FALLBACK__ ? [
   { name: '关键 Recipe 发布双人复核', status: '启用', type: 'green', meta: '对象：COATING / EVAP / BOND；触发：版本发布、参数范围变更；审批：工艺经理 + 质量经理' },
   { name: 'Hold 超 SLA 升级', status: '需复核', type: 'amber', meta: 'P1 超过 30 分钟推送班长、质量工程师；超过 60 分钟升级制造经理' },
   { name: '跨产线权限访问拦截', status: '启用', type: 'green', meta: '当用户访问非授权基地、产线、工序数据时拦截并写入审计日志' },
   { name: '敏感操作二次确认', status: '启用', type: 'blue', meta: 'Scrap、MRB 报废、Recipe 回退、权限变更必须记录原因码和电子签名' }
-]
+] : []
 
 const permissionForm = reactive({
   targetRole: 'QE',
@@ -351,14 +417,11 @@ const permissionDiffRows = computed(() => {
   ]
 })
 
-const filteredAuditLogs = computed(() => {
-  if (!filters.action) return auditLogs.value
-  return auditLogs.value.filter(log => actionMatches(log.action, filters.action))
-})
+const filteredAuditLogs = computed(() => auditLogs.value)
 
 const auditStatusText = computed(() => {
   if (loadingAudit.value) return '加载中'
-  return `${filteredAuditLogs.value.length} 条 / ${lastRefreshText.value}`
+  return `${auditPagination.total} 条 / ${lastRefreshText.value}`
 })
 
 const metrics = computed(() => {
@@ -369,7 +432,7 @@ const metrics = computed(() => {
   return [
     { label: '启用用户', value: String(userCount), tag: 'RBAC', type: 'blue', left: `角色 ${roles.value.length}`, right: `待审 ${permissionPending}` },
     { label: '权限点', value: String(permissionPointCount.value), tag: '按模块', type: 'green', left: `角色 ${permissionSnapshots.value.length}`, right: `敏感 ${sensitivePermissionCount.value}` },
-    { label: '审计事件', value: String(auditLogs.value.length), tag: '当前', type: 'teal', left: `成功 ${successCount}`, right: `待复核 ${reviewCount}` },
+    { label: '审计事件', value: String(auditPagination.total || auditLogs.value.length), tag: '当前', type: 'teal', left: `成功 ${successCount}`, right: `待复核 ${reviewCount}` },
     { label: '权限变更', value: String(permissionChanges.value.length), tag: `待审 ${permissionPending}`, type: permissionPending ? 'amber' : 'green', left: '审批闭环', right: '审计留痕' }
   ]
 })
@@ -390,42 +453,89 @@ function resultType(result = '') {
 }
 
 function mapAuditLog(log, index = 0) {
-  const time = log.time || log.createdTime || '-'
+  const createdTime = log.createdTime || log.time || ''
+  const time = log.time || createdTime || '-'
   const object = log.object || log.bizNo || '-'
   const action = log.action || '-'
   const result = log.result || '成功'
+  const requestSnapshot = log.requestSnapshot || ''
   return {
     key: `${time}-${object}-${action}-${index}`,
     time,
+    createdTime,
     user: log.user || log.operator || 'system',
     object,
+    bizType: log.bizType || '-',
     action,
     result,
     type: resultType(result),
-    source: log.source || '-'
+    source: log.source || '-',
+    description: log.description || '',
+    requestMethod: log.requestMethod || '',
+    requestUri: log.requestUri || '',
+    clientIp: log.clientIp || '',
+    userAgent: log.userAgent || '',
+    requestSnapshot,
+    hasSnapshot: Boolean(requestSnapshot && requestSnapshot !== '{}')
   }
 }
 
-function actionMatches(action = '', type = '') {
-  const upper = action.toUpperCase()
-  if (type === 'LOT') return upper.includes('HOLD') || upper.includes('RELEASE') || upper.includes('LOT_')
-  if (type === 'TRACK') return upper.includes('TRACK')
-  if (type === 'ORDER') return upper.includes('ORDER') || action.includes('工单')
-  if (type === 'AI') return upper.includes('AI')
-  if (type === 'RECIPE') return upper.includes('RECIPE')
-  return true
+const auditSnapshotSections = computed(() => {
+  if (!selectedAuditLog.value?.requestSnapshot) return []
+  const snapshot = parseSnapshot(selectedAuditLog.value.requestSnapshot)
+  return [
+    { key: 'before', label: '变更前', value: formatSnapshotBlock(snapshot.before) },
+    { key: 'after', label: '变更后', value: formatSnapshotBlock(snapshot.after) },
+    { key: 'changedFields', label: '变更字段', value: formatSnapshotBlock(snapshot.changedFields) },
+    { key: 'request', label: '请求参数', value: formatSnapshotBlock(snapshot.request) }
+  ]
+})
+
+function showAuditSnapshot(log) {
+  if (!log.hasSnapshot) {
+    ElMessage.info('该审计记录没有结构化快照')
+    return
+  }
+  selectedAuditLog.value = log
+}
+
+function auditQueryParams() {
+  const params = {
+    current: auditPagination.page,
+    size: auditPagination.size
+  }
+  for (const key of ['bizNo', 'action', 'result', 'source', 'operator', 'startTime', 'endTime']) {
+    if (filters[key]) {
+      params[key] = filters[key]
+    }
+  }
+  return params
+}
+
+function applyAuditPage(data) {
+  const records = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : []
+  auditLogs.value = records.map(mapAuditLog)
+  if (Array.isArray(data)) {
+    auditPagination.total = data.length
+    return
+  }
+  auditPagination.page = Number(data?.current) || auditPagination.page
+  auditPagination.size = Number(data?.size) || auditPagination.size
+  auditPagination.total = Number(data?.total) || 0
 }
 
 async function loadAuditLogs() {
   loadingAudit.value = true
   try {
-    const data = await getAuditLogs(filters.bizNo ? { bizNo: filters.bizNo } : {})
-    auditLogs.value = Array.isArray(data) ? data.map(mapAuditLog) : []
+    const data = await getAuditLogs(auditQueryParams())
+    applyAuditPage(data)
+    selectedAuditLog.value = null
     lastRefreshText.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } catch (error) {
     warnDevFallback('审计日志接口不可用', error)
     if (__DEV_MOCK_FALLBACK__) {
       auditLogs.value = fallbackAuditLogs.map(mapAuditLog)
+      auditPagination.total = auditLogs.value.length
       lastRefreshText.value = '开发样例'
     }
   } finally {
@@ -433,10 +543,28 @@ async function loadAuditLogs() {
   }
 }
 
+function queryAuditLogs() {
+  auditPagination.page = 1
+  return loadAuditLogs()
+}
+
+function handleAuditSizeChange(size) {
+  auditPagination.size = size
+  auditPagination.page = 1
+  return loadAuditLogs()
+}
+
+function handleAuditPageChange(page) {
+  auditPagination.page = page
+  return loadAuditLogs()
+}
+
 function resetFilters() {
-  filters.bizNo = ''
-  filters.action = ''
-  loadAuditLogs()
+  for (const key of Object.keys(filters)) {
+    filters[key] = ''
+  }
+  auditPagination.page = 1
+  return loadAuditLogs()
 }
 
 function exportAuditLogs() {
@@ -446,8 +574,23 @@ function exportAuditLogs() {
   }
 
   const rows = [
-    ['时间', '用户', '对象', '操作', '结果', '来源'],
-    ...filteredAuditLogs.value.map(log => [log.time, log.user, log.object, log.action, log.result, log.source])
+    ['时间', '创建时间', '用户', '对象', '业务类型', '操作', '结果', '来源', '描述', '请求方法', '请求URI', '客户端IP', 'UserAgent', '快照'],
+    ...filteredAuditLogs.value.map(log => [
+      log.time,
+      log.createdTime,
+      log.user,
+      log.object,
+      log.bizType,
+      log.action,
+      log.result,
+      log.source,
+      log.description,
+      log.requestMethod,
+      log.requestUri,
+      log.clientIp,
+      log.userAgent,
+      log.requestSnapshot
+    ])
   ]
   const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
@@ -584,7 +727,7 @@ function parseSnapshot(value) {
   try {
     return JSON.parse(value)
   } catch (error) {
-    console.warn('权限快照解析失败', error)
+    console.warn('快照解析失败', error)
     return {}
   }
 }
@@ -609,6 +752,16 @@ function formatSnapshotValue(value) {
     return '-'
   }
   return String(value)
+}
+
+function formatSnapshotBlock(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  return JSON.stringify(value, null, 2)
 }
 
 function splitPermissionCodes(value = '') {
@@ -776,7 +929,7 @@ async function runRuleSimulation() {
   try {
     filters.action = 'LOT'
     filters.bizNo = ''
-    await loadAuditLogs()
+    await queryAuditLogs()
     ElMessage.success('规则试运行完成，已切换到 Hold / Release 审计样本')
   } finally {
     ruleActionLoading.value = ''
@@ -806,10 +959,21 @@ onMounted(() => {
 <style scoped>
 .audit-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
   gap: 9px;
   align-items: end;
   padding-bottom: 12px;
+}
+
+.audit-toolbar .mes-btn {
+  justify-content: center;
+  min-width: 76px;
+}
+
+.audit-pager {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 
 .audit-empty {
@@ -818,6 +982,55 @@ onMounted(() => {
   place-items: center;
   color: var(--mes-sub);
   font-size: 13px;
+}
+
+.audit-snapshot-panel {
+  margin-top: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  background: #fff;
+  padding: 10px;
+}
+
+.audit-snapshot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.audit-snapshot__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.snapshot-block {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.74);
+  padding: 8px;
+}
+
+.snapshot-block b {
+  display: block;
+  padding-bottom: 6px;
+  color: var(--mes-text);
+  font-size: 12px;
+}
+
+.snapshot-block pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: var(--mes-sub);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .permission-change-panel {
@@ -869,6 +1082,10 @@ onMounted(() => {
 
 @media (max-width: 860px) {
   .audit-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-snapshot__grid {
     grid-template-columns: 1fr;
   }
 }

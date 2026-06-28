@@ -36,7 +36,7 @@ public class RolePermissionService {
     private static final List<String> ALL_BUTTONS = List.of(
             "order:create", "order:release",
             "lot:track-in", "lot:track-out", "lot:hold", "lot:release", "lot:rework", "lot:scrap",
-            "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close",
+            "quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close",
             "material:wms", "material:iqc", "material:supplier-manage",
             "bom:change", "bom:eco-approve",
             "recipe:publish", "equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway",
@@ -92,6 +92,12 @@ public class RolePermissionService {
         if (path.startsWith("/v1/orders") || path.startsWith("/orders")) {
             return path.contains("/release") ? buttons.contains("order:release") : buttons.contains("order:create");
         }
+        if (path.contains("/batch-hold")) {
+            return buttons.contains("lot:hold");
+        }
+        if (path.contains("/batch-release")) {
+            return buttons.contains("lot:release");
+        }
         if (path.contains("/track-in")) {
             return buttons.contains("lot:track-in");
         }
@@ -126,6 +132,9 @@ public class RolePermissionService {
         }
         if (path.contains("/quality") && path.contains("/close")) {
             return buttons.contains("quality:exception-close");
+        }
+        if (path.matches("^/v1/quality/inspections/?$") || path.matches("^/quality/inspections/?$")) {
+            return buttons.contains("quality:inspection-create");
         }
         if (path.startsWith("/v1/quality") || path.startsWith("/quality")) {
             return buttons.contains("quality:mrb-review")
@@ -289,8 +298,8 @@ public class RolePermissionService {
             case "PLANNER" -> List.of("dashboard", "order", "trace");
             case "OPERATOR" -> List.of("dashboard", "execution", "trace");
             case "QE" -> List.of("dashboard", "quality", "material", "trace", "ai");
-            case "PE" -> List.of("dashboard", "master", "recipe", "ai");
-            case "EE" -> List.of("dashboard", "equipment", "trace", "ai");
+            case "PE" -> List.of("dashboard", "master", "recipe", "quality", "ai");
+            case "EE" -> List.of("dashboard", "equipment", "quality", "trace", "ai");
             default -> List.of("dashboard", "execution");
         };
     }
@@ -302,8 +311,8 @@ public class RolePermissionService {
             case "OPERATOR" -> List.of("lot:track-in", "lot:track-out");
             case "QE" -> List.of(
                     "lot:hold", "lot:release", "lot:rework", "lot:scrap",
-                    "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "material:iqc", "material:supplier-manage", "bom:eco-approve",
-                    "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index"
+                    "quality:inspection-create", "quality:mrb-review", "quality:mrb-approve", "quality:mrb-escalate", "quality:exception-close", "material:iqc", "material:supplier-manage", "bom:eco-approve",
+                    "ai:yield-report", "ai:equipment-analyze", "ai:kb-ask", "ai:kb-import", "ai:kb-index"
             );
             case "PE" -> List.of("quality:mrb-approve", "quality:mrb-escalate", "recipe:publish", "bom:change", "bom:eco-approve", "ai:yield-report", "ai:kb-ask", "ai:kb-import", "ai:kb-index");
             case "EE" -> List.of("quality:mrb-approve", "quality:mrb-escalate", "bom:eco-approve", "equipment:event-create", "equipment:eap-ingest", "equipment:eap-gateway", "ai:equipment-analyze", "ai:kb-ask", "ai:kb-import", "ai:kb-index");

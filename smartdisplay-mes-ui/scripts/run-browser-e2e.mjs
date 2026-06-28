@@ -38,6 +38,9 @@ main().catch(async error => {
 async function main() {
   ensureChrome()
   mkdirSync(reportDir, { recursive: true })
+  const appTimeoutMs = Number(process.env.E2E_APP_TIMEOUT_MS || 120000)
+  await waitForHttpStatus(baseUrl, appTimeoutMs)
+  await waitForHttpStatus(`${baseUrl}/api/v1/auth/login`, appTimeoutMs)
   await launchChrome()
   const pageWs = await getPageWebSocket()
   client = await CdpClient.connect(pageWs)
@@ -92,31 +95,38 @@ async function main() {
     return 'overview dashboard visible'
   })
 
-  await runStep('计划与工单页面可导航并显示释放入口', async () => {
-    e2eOrderNo = `MOE2E${timestamp.replace(/\D/g, '')}`
-    await evaluate(`(async () => {
-      const token = localStorage.getItem('token')
-      const response = await fetch('/api/v1/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({
-          orderNo: '${escapeJs(e2eOrderNo)}',
-          productCode: 'AMOLED_65',
-          productName: 'AMOLED 6.5寸柔性屏',
-          plannedQty: 100,
-          priority: 9,
-          lineCode: 'LINE_01'
-        })
-      })
-      const json = await response.json()
-      if (json.code !== 200) throw new Error(json.message)
-      return json.data.orderNo
-    })()`)
+  await runStep('计划与工单页面通过 UI 下发 ERP 工单并释放', async () => {
     await clickByText('计划与工单')
     await waitForExpression(`location.pathname === '/order' && document.body.innerText.includes('计划与工单 / 工单释放')`)
     await assertLayoutClean('order')
-    assert(await textExists(e2eOrderNo), `计划与工单页面未显示 E2E 工单: ${e2eOrderNo}`)
+    assert(await textExists('下发 ERP 工单'), '计划与工单页面未显示 ERP 下发入口')
     assert(await textExists('释放工单'), '计划与工单页面未显示释放工单入口')
+    await setFieldValueByLabel('ERP 数量', '1')
+    await setFieldValueByLabel('计划数', '100')
+    await clickButtonByText('下发 ERP 工单')
+    await waitForExpression(`document.body.innerText.includes('Adapter 批次') && document.body.innerText.includes('ERP_ORDER_IMPORT')`, 15000)
+    e2eOrderNo = await evaluate(`(() => {
+      const text = document.body.innerText || ''
+      return (text.match(/MOUI\\d{14}-0001/) || [])[0] || ''
+    })()`)
+    assert(e2eOrderNo, 'ERP UI 下发后未显示样例工单号')
+    const erpBatchNo = await evaluate(`(() => {
+      const text = document.body.innerText || ''
+      return (text.match(/ERP-UI-\\d{14}/) || [])[0] || ''
+    })()`)
+    assert(erpBatchNo, 'ERP UI 下发后未显示批次号')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/system/audit-logs?bizNo=' + encodeURIComponent('${escapeJs(erpBatchNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(log => log.action === 'ERP_ORDER_IMPORT')
+    })()`, 15000)
+    await setFieldValueByLabel('工单 / 产品', e2eOrderNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eOrderNo)}')`, 10000)
+    await waitForExpression(`document.body.innerText.includes('Recipe覆盖') && document.body.innerText.includes('Lot拆分') && /\\d+\\/\\d+ 通过/.test(document.body.innerText)`, 10000)
     await clickByText('释放工单')
     await waitForExpression(`(async () => {
       const token = localStorage.getItem('token')
@@ -136,7 +146,106 @@ async function main() {
       return json.data.records[0]?.lotNo || ''
     })()`)
     assert(e2eLotNo, '工单释放后未查询到生成的 E2E Lot')
-    return `order=${e2eOrderNo} released, lot=${e2eLotNo}`
+    return `batch=${erpBatchNo}, order=${e2eOrderNo} released, lot=${e2eLotNo}`
+  })
+
+  await runStep('Lot 管理二级工作台显示真实队列和流转入口', async () => {
+    assert(e2eLotNo, '缺少 E2E Lot，无法验证 Lot 管理页')
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await assertLayoutClean('lot')
+    assert(await textExists('Lot 队列'), 'Lot 管理页缺少 Lot 队列')
+    assert(await textExists('Track In'), 'Lot 管理页缺少 Track In 入口')
+    assert(await textExists('Track Out'), 'Lot 管理页缺少 Track Out 入口')
+    assert(await textExists('Rework'), 'Lot 管理页缺少 Rework 入口')
+    assert(await textExists('Scrap'), 'Lot 管理页缺少 Scrap 入口')
+    await setFieldValueByLabel('Lot 批次', e2eLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
+    await clickTableRowByText(e2eLotNo)
+    await clickButtonByText('Hold', true)
+    await waitForExpression(`document.body.innerText.includes('Hold Lot - 暂停流转')`, 5000)
+    await setFormItemValueByLabel('Hold原因', `browser e2e hold ${timestamp}`)
+    await clickButtonByText('确认Hold')
+    await waitForExpression(`document.body.innerText.includes('确认操作')`, 5000)
+    await clickMessageBoxConfirm()
+    const heldState = await waitForLotState(`status === 'HOLD' && Number(holdFlag) === 1`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(e2eLotNo)}') && text.includes('HOLD') && text.includes('已 Hold')
+    })`, 15000)
+    await clickTableRowByText(e2eLotNo)
+    await clickButtonByText('放行', true)
+    await waitForExpression(`document.body.innerText.includes('Release Lot - 放行')`, 5000)
+    await clickButtonByText('确认Release')
+    const releasedState = await waitForLotState(`status === 'READY' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(e2eLotNo)}') && text.includes('READY') && text.includes('正常')
+    })`, 15000)
+    return `lot=${e2eLotNo}, hold=${heldState.status}, release=${releasedState.status}`
+  })
+
+  await runStep('Recipe 管理二级工作台显示版本池和参数详情', async () => {
+    await navigate(`${baseUrl}/recipe`)
+    await waitForExpression(`location.pathname === '/recipe' && document.body.innerText.includes('Recipe 管理 / 参数版本与发布校验')`)
+    await assertLayoutClean('recipe')
+    assert(await textExists('Recipe 版本池'), 'Recipe 管理页缺少版本池')
+    assert(await textExists('参数详情'), 'Recipe 管理页缺少参数详情入口')
+    assert(await textExists('发布版本'), 'Recipe 管理页缺少发布入口')
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => (row.innerText || '').includes('ACTIVE') || (row.innerText || '').includes('DRAFT'))`, 10000)
+    await clickButtonByText('参数详情')
+    await waitForExpression(`document.body.innerText.includes('参数上下限') && document.body.innerText.includes('执行约束')`, 10000)
+    await assertLayoutClean('recipe-detail')
+    return 'recipe workbench detail drawer visible'
+  })
+
+  await runStep('Lot 管理页通过 UI 执行 Rework 处置', async () => {
+    const reworkLotNo = await createHeldLot(`MORWK${timestamp.replace(/\D/g, '')}`, 'browser e2e rework hold')
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await setFieldValueByLabel('Lot 批次', reworkLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(reworkLotNo)}') && document.body.innerText.includes('已 Hold')`, 10000)
+    await clickTableRowByText(reworkLotNo)
+    await clickButtonByText('返工')
+    await waitForExpression(`document.body.innerText.includes('Rework Lot') && document.body.innerText.includes('Confirm Rework')`, 10000)
+    await waitForExpression(`document.body.innerText.includes('RTE_G6_AMOLED65_V08') || document.body.innerText.includes('RTE_G6')`, 10000)
+    await setFormItemValueByLabel('Reason', `browser e2e rework ${timestamp}`)
+    await setFormItemValueByLabel('Operator', username)
+    await clickButtonByText('Confirm Rework')
+    const reworkState = await waitForSpecificLotState(reworkLotNo, `status === 'REWORK' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(reworkLotNo)}') && text.includes('REWORK') && text.includes('正常')
+    })`, 15000)
+    await assertLayoutClean('lot-rework')
+    return `lot=${reworkLotNo}, status=${reworkState.status}, step=${reworkState.currentStepCode}`
+  })
+
+  await runStep('Lot 管理页通过 UI 执行 Scrap 二次确认处置', async () => {
+    const scrapLotNo = await createHeldLot(`MOSCP${timestamp.replace(/\D/g, '')}`, 'browser e2e scrap hold')
+    const confirmText = `SCRAP:${scrapLotNo}`
+    await navigate(`${baseUrl}/lot`)
+    await waitForExpression(`location.pathname === '/lot' && document.body.innerText.includes('Lot 管理 / 状态机与流转控制')`)
+    await setFieldValueByLabel('Lot 批次', scrapLotNo)
+    await clickButtonByText('查询')
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(scrapLotNo)}') && document.body.innerText.includes('已 Hold')`, 10000)
+    await clickTableRowByText(scrapLotNo)
+    await clickButtonByText('报废')
+    await waitForExpression(`document.body.innerText.includes('Scrap Lot') && document.body.innerText.includes('Confirm Scrap')`, 10000)
+    await setFormItemValueByLabel('Reason', `browser e2e scrap ${timestamp}`)
+    await setFormItemValueByLabel('Approver', username)
+    await setFormItemValueByLabel('Operator', username)
+    await setInputByPlaceholder(confirmText, confirmText)
+    await clickButtonByText('Confirm Scrap')
+    const scrapState = await waitForSpecificLotState(scrapLotNo, `status === 'SCRAP' && Number(holdFlag) === 0`, 15000)
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(scrapLotNo)}') && text.includes('SCRAP') && text.includes('正常')
+    })`, 15000)
+    await assertLayoutClean('lot-scrap')
+    return `lot=${scrapLotNo}, status=${scrapState.status}`
   })
 
   await runStep('生产执行页面通过 UI 完成 Track In/Out', async () => {
@@ -148,6 +257,23 @@ async function main() {
     assert(await textExists('Track Out'), '执行页面缺少 Track Out')
     await waitForExpression(`document.body.innerText.includes('${escapeJs(e2eLotNo)}')`, 10000)
     await clickTableRowByText(e2eLotNo)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/lots/' + encodeURIComponent('${escapeJs(e2eLotNo)}') + '/track-in-checks', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      const checks = json.data?.checks || []
+      return json.data?.trackInReady === true
+        && checks.some(item => item.title === 'Recipe')
+        && checks.some(item => item.title === '物料齐套')
+        && checks.some(item => item.title === '操作权限')
+        && checks.some(item => item.title === '审计留痕')
+    })()`, 15000)
+    await waitForExpression(`/\\d+\\/\\d+ 通过/.test(document.body.innerText)
+      && document.body.innerText.includes('Recipe')
+      && document.body.innerText.includes('物料齐套')
+      && document.body.innerText.includes('操作权限')`, 15000)
     await clickButtonByText('Track In')
     await waitForExpression(`(async () => {
       const token = localStorage.getItem('token')
@@ -179,6 +305,7 @@ async function main() {
   await runStep('质量页面通过 UI 提交 QMS Adapter OK 上报', async () => {
     assert(e2eLotNo, '缺少 E2E Lot，无法执行 QMS Adapter 上报')
     const qmsItemCode = `QMS_E2E_${timestamp.replace(/\D/g, '')}`
+    await setSelectValueByLabel('来源', 'QMS')
     await setFieldValueByLabel('Lot', e2eLotNo)
     await setSelectValueByLabel('检验结果', 'OK')
     await setFieldValueByLabel('检验项', qmsItemCode)
@@ -205,7 +332,7 @@ async function main() {
 
   await runStep('物料页面显示 V1.38 库位任务操作台', async () => {
     await clickByText('物料与载具')
-    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库盘点')`)
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库拆批盘点')`)
     await evaluate(`(async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/v1/material/location-tasks', {
@@ -224,7 +351,7 @@ async function main() {
       return json.data.task.taskNo
     })()`)
     await navigate(`${baseUrl}/material`)
-    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库盘点')`)
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('库位任务 / 上架移库拆批盘点')`)
     await assertLayoutClean('material')
     assert(await textExists('创建'), '物料页面缺少库位任务创建入口')
     await waitForExpression(`document.body.innerText.includes('领取') || document.body.innerText.includes('取消')`, 10000)
@@ -256,6 +383,21 @@ async function main() {
     })()`, 15000)
     await assertLayoutClean('material')
     return `wms adapter readiness and receive batch=${wmsBatchNo}`
+  })
+
+  await runStep('物料页面生成供应商到期准入复审并写入审计', async () => {
+    await waitForExpression(`location.pathname === '/material' && document.body.innerText.includes('供应商准入复审')`)
+    await clickButtonByText('生成到期复审')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/system/audit-logs?bizNo=BATCH', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(row => row.action === 'SUPPLIER_QUALIFICATION_REVIEW_GENERATE')
+    })()`, 15000)
+    await assertLayoutClean('material-supplier-review')
+    return 'supplier review due generation audited'
   })
 
   let workflowResult
@@ -313,8 +455,278 @@ async function main() {
     return `${workflowResult.completedTask}: ${workflowResult.created}->${workflowResult.assigned}->${workflowResult.completed}; ${workflowResult.cancelledTask}: CANCELLED`
   })
 
+  await runStep('浏览器会话验证库位任务自助认领', async () => {
+    const claimResult = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+      const request = async (path, body, expectOk = true) => {
+        const response = await fetch('/api/v1' + path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        })
+        const json = await response.json()
+        if (expectOk && json.code !== 200) throw new Error(json.message || ('claim request failed: ' + path))
+        return json
+      }
+      const payload = {
+        taskType: 'MOVE',
+        batchNo: 'PI260606-A',
+        targetLocation: 'WIP-A-02',
+        operator: '${escapeJs(username)}',
+        sourceLocation: 'WIP-A-01',
+        planQty: 5
+      }
+      // 1) self-claim a freshly created task
+      const created = await request('/material/location-tasks', payload)
+      const taskNo = (created.data.task || created.data).taskNo
+      const claimed = await request('/material/location-tasks/' + taskNo + '/claim', {
+        operator: '${escapeJs(username)}'
+      })
+      const claimedTask = claimed.data.task || claimed.data
+      // 2) create another task, assign to a different operator, then claim must be rejected (no preemption)
+      const created2 = await request('/material/location-tasks', payload)
+      const taskNo2 = (created2.data.task || created2.data).taskNo
+      await request('/material/location-tasks/' + taskNo2 + '/assign', {
+        assignedTo: 'other_wms_op'
+      })
+      const preempt = await request('/material/location-tasks/' + taskNo2 + '/claim', {
+        operator: '${escapeJs(username)}'
+      }, false)
+      return {
+        claimedStatus: claimedTask.status,
+        claimedAssignee: claimedTask.assignedTo,
+        preemptRejected: preempt.code !== 200
+      }
+    })()`)
+    assert(claimResult.claimedStatus === 'ASSIGNED', '认领后状态不是 ASSIGNED')
+    assert(claimResult.claimedAssignee === username, '认领人不是当前用户')
+    assert(claimResult.preemptRejected === true, '被他人领取的任务应拒绝抢占认领')
+    return `claimed=${claimResult.claimedStatus}/${claimResult.claimedAssignee}, preemptRejected=${claimResult.preemptRejected}`
+  })
+
+  await runStep('WMS 库位任务复核驳回升级并回写 MRB 关闭', async () => {
+    workflowResult = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+      const post = async (path, body) => {
+        const response = await fetch('/api/v1' + path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        })
+        const json = await response.json()
+        if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+        return json.data
+      }
+      const get = async (path) => {
+        const response = await fetch('/api/v1' + path, { headers })
+        const json = await response.json()
+        if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+        return json.data
+      }
+      const stamp = Date.now()
+      const batchNo = 'E2EREJ' + stamp
+      await post('/material/receive', {
+        batchNo,
+        materialCode: 'E2E_MAT',
+        materialName: 'E2E复核驳回物料',
+        qty: 100,
+        unit: 'EA',
+        location: 'WMS-IN',
+        reason: 'browser e2e reject escalate setup',
+        operator: '${escapeJs(username)}'
+      })
+      const created = await post('/material/location-tasks', {
+        taskType: 'COUNT',
+        batchNo,
+        actualQty: 96,
+        reason: 'browser e2e reject escalate ' + stamp,
+        operator: '${escapeJs(username)}'
+      })
+      const taskNo = created.task.taskNo
+      await post('/material/location-tasks/' + taskNo + '/assign', {
+        assignedTo: '${escapeJs(username)}',
+        operator: '${escapeJs(username)}'
+      })
+      await post('/material/location-tasks/' + taskNo + '/complete', {
+        operator: '${escapeJs(username)}',
+        actualQty: 96
+      })
+      await post('/material/location-tasks/' + taskNo + '/review', {
+        reviewResult: 'REJECTED',
+        reviewConclusion: 'E2E 复核驳回：实盘 96EA 与系统 100EA 不一致，升级 MRB',
+        exceptionReason: 'E2E 数量差异',
+        operator: '${escapeJs(username)}'
+      })
+      const escalated = await post('/material/location-tasks/' + taskNo + '/disposition', {
+        dispositionResult: 'ESCALATE',
+        dispositionConclusion: 'E2E 升级 MRB 后续处理',
+        operator: '${escapeJs(username)}'
+      })
+      const eventNo = escalated.exception && escalated.exception.eventNo
+      if (!eventNo) throw new Error('升级处置未返回异常事件号')
+      const filtered = await get('/quality/exceptions?sourceModule=WMS_LOCATION_TASK&status=OPEN')
+      const matched = (Array.isArray(filtered) ? filtered : []).some(item => item.eventNo === eventNo)
+      if (!matched) throw new Error('质量异常队列未按 WMS 来源筛到升级事件 ' + eventNo)
+      await post('/quality/exceptions/' + eventNo + '/close', {
+        dispositionAction: 'RELEASE',
+        closeConclusion: 'E2E MRB 关闭：降级使用',
+        closedBy: '${escapeJs(username)}'
+      })
+      const taskAfter = await get('/material/location-tasks?batchNo=' + encodeURIComponent(batchNo))
+      const taskRow = (Array.isArray(taskAfter) ? taskAfter : []).find(item => item.taskNo === taskNo) || {}
+      return {
+        taskNo,
+        eventNo,
+        batchNo,
+        dispositionStatus: escalated.task.dispositionStatus,
+        linkedExceptionEventNo: taskRow.linkedExceptionEventNo,
+        exceptionClosedBy: taskRow.exceptionClosedBy,
+        exceptionCloseAction: taskRow.exceptionCloseAction,
+        taskDispositionStatusAfter: taskRow.dispositionStatus
+      }
+    })()`)
+    assert(workflowResult.dispositionStatus === 'ESCALATED', '升级处置后任务状态不是 ESCALATED')
+    assert(workflowResult.linkedExceptionEventNo === workflowResult.eventNo, '库位任务未回写关联异常事件号')
+    assert(workflowResult.exceptionClosedBy === username, '库位任务未回写 MRB 关闭人')
+    assert(workflowResult.exceptionCloseAction === 'RELEASE', '库位任务未回写 MRB 关闭动作')
+    assert(workflowResult.taskDispositionStatusAfter === 'CLOSED', 'MRB 关闭后任务处置状态未联动为 CLOSED')
+    return `${workflowResult.taskNo} -> ${workflowResult.eventNo}: REJECTED -> ESCALATED -> CLOSED (writeback linked=${workflowResult.linkedExceptionEventNo})`
+  })
+
+  await runStep('设备页面通过 UI 上报 EAP 参数并执行网关健康检查', async () => {
+    const eapParamCode = `EAP_E2E_${timestamp.replace(/\D/g, '')}`
+    const healthStartedAt = Date.now()
+    await clickByText('设备与自动化')
+    await waitForExpression(`location.pathname === '/equipment' && document.body.innerText.includes('设备与自动化 / EAP')`)
+    await assertLayoutClean('equipment')
+    assert(await textExists('EAP 参数上报'), '设备页缺少 EAP 参数上报工作区')
+    assert(await textExists('EAP 网关连接'), '设备页缺少 EAP 网关连接工作区')
+    assert(await textExists('EAP 网关健康检查履历'), '设备页缺少网关健康检查履历')
+
+    await waitForExpression(`(() => {
+      const card = Array.from(document.querySelectorAll('.mes-card')).find(item => (item.innerText || '').includes('EAP 参数上报'))
+      return Boolean(card?.querySelector('select')?.value)
+    })()`, 10000)
+    await setFieldValueInCard('EAP 参数上报', 'Lot', e2eLotNo)
+    await setFieldValueInCard('EAP 参数上报', '工序', 'COATING')
+    await setFieldValueInCard('EAP 参数上报', 'Recipe', 'RCP_COAT_001')
+    await setFieldValueInCard('EAP 参数上报', '参数编码', eapParamCode)
+    await setFieldValueInCard('EAP 参数上报', '测量值', '150.1')
+    await setFieldValueInCard('EAP 参数上报', '下限', '145')
+    await setFieldValueInCard('EAP 参数上报', '上限', '155')
+    await setFieldValueInCard('EAP 参数上报', '单位', 'C')
+    await clickButtonInCard('EAP 参数上报', '模拟 EAP 上报')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/equipment/parameters', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(item => item.paramCode === '${escapeJs(eapParamCode)}' && item.result === 'OK')
+    })()`, 15000)
+    await waitForExpression(`document.body.innerText.includes('${escapeJs(eapParamCode)}') && document.body.innerText.includes('OK')`, 15000)
+
+    await clickButtonInCard('EAP 网关连接', '健康检查')
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/equipment/gateway-health-checks', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.some(item => {
+        const checkedAt = new Date(item.checkedTime || item.checkTime || item.createdTime || 0).getTime()
+        return item.checkType === 'MANUAL' && checkedAt >= ${healthStartedAt}
+      })
+    })()`, 15000)
+    await assertLayoutClean('equipment-eap')
+    return `parameter=${eapParamCode}, gateway health MANUAL recorded`
+  })
+
+  await runStep('设备页面通过 UI 留存 EAP 失败消息并打开诊断抽屉', async () => {
+    const failedCorrelationId = `UI-DIAG-${timestamp.replace(/\D/g, '')}`
+    await navigate(`${baseUrl}/equipment`)
+    await waitForExpression(`location.pathname === '/equipment' && document.body.innerText.includes('设备与自动化 / EAP')`)
+    await assertLayoutClean('equipment-eap-diagnostic-before')
+    assert(await textExists('EAP 网关消息履历'), '设备页缺少 EAP 网关消息履历')
+
+    await waitForExpression(`Array.from(document.querySelectorAll('.mes-card')).some(card => {
+      const text = card.innerText || ''
+      return text.includes('EAP 网关消息履历') && text.includes('GW-SECSGEM-SHADOW')
+    })`, 10000)
+    await setSelectValueInCard('EAP 网关消息履历', '网关', 'GW-SECSGEM-SHADOW')
+    await setSelectValueInCard('EAP 网关消息履历', '消息类型', 'STATUS')
+    await setSelectValueInCard('EAP 网关消息履历', '设备', 'EVAP_01')
+    await setSelectValueInCard('EAP 网关消息履历', '状态', 'RUNNING')
+
+    const messageNo = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/adapters/eap/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          gatewayCode: 'GW-SECSGEM-SHADOW',
+          messageType: 'STATUS',
+          correlationId: '${escapeJs(failedCorrelationId)}',
+          payload: {
+            equipmentCode: 'EVAP_01',
+            status: 'RUNNING',
+            operator: '${escapeJs(username)}'
+          },
+          operator: '${escapeJs(username)}',
+          sourceSystem: 'browser-e2e'
+        })
+      })
+      const json = await response.json()
+      if (json.code !== 200) throw new Error(json.message || 'EAP message failed')
+      if (json.data?.accepted !== false) throw new Error('EAP 失败入站未返回 accepted=false')
+      const messageNo = json.data?.message?.messageNo
+      if (!messageNo) throw new Error('EAP 失败入站未返回 messageNo')
+      return messageNo
+    })()`)
+
+    await clickButtonInCard('EAP 网关消息履历', '刷新消息')
+    await waitForExpression(`Array.from(document.querySelectorAll('tbody tr')).some(row => {
+      const text = row.innerText || ''
+      return text.includes('${escapeJs(messageNo)}') && text.includes('FAILED')
+    })`, 15000)
+    await evaluate(`(() => {
+      const row = Array.from(document.querySelectorAll('tbody tr')).find(item => (item.innerText || '').includes('${escapeJs(messageNo)}'))
+      const button = Array.from(row?.querySelectorAll('button') || []).find(item => (item.innerText || '').includes('查看'))
+      if (!button) throw new Error('未找到 EAP 失败消息诊断按钮')
+      button.click()
+      return true
+    })()`)
+    await waitForExpression(`document.body.innerText.includes('EAP 消息诊断')
+      && document.body.innerText.includes('${escapeJs(messageNo)}')
+      && document.body.innerText.includes('PROTOCOL_FRAME')
+      && document.body.innerText.includes('原始入站快照')
+      && document.body.innerText.includes('归一化消息')
+      && document.body.innerText.includes('适配器响应')`, 15000)
+    await waitForExpression(`(async () => {
+      const token = localStorage.getItem('token')
+      const detailResponse = await fetch('/api/v1/equipment/gateway-messages/${escapeJs(messageNo)}', {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const detailJson = await detailResponse.json()
+      const detail = detailJson.data || {}
+      const auditResponse = await fetch('/api/v1/system/audit-logs?bizNo=' + encodeURIComponent('${escapeJs(messageNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const auditJson = await auditResponse.json()
+      return detail.processStatus === 'FAILED'
+        && detail.diagnostic?.failureCategory === 'PROTOCOL_FRAME'
+        && Boolean(detail.payloadSnapshot)
+        && Boolean(detail.responseSnapshot)
+        && auditJson.data.some(item => item.action === 'EAP_GATEWAY_MESSAGE_FAILED' && item.result === 'FAIL')
+    })()`, 15000)
+    await assertLayoutClean('equipment-eap-diagnostic')
+    return `message=${messageNo}, category=PROTOCOL_FRAME`
+  })
+
   await runStep('追溯页面完成 Lot 查询', async () => {
-    const lotNo = await evaluate(`(async () => {
+    const lotNo = e2eLotNo || await evaluate(`(async () => {
       const token = localStorage.getItem('token')
       const response = await fetch('/api/v1/lots?current=1&size=1', {
         headers: { Authorization: 'Bearer ' + token }
@@ -347,6 +759,58 @@ async function main() {
     await assertLayoutClean('system')
     assert(await textExists('审计') || await textExists('权限'), '系统页面缺少审计或权限内容')
     return 'system audit view visible'
+  })
+
+  await runStep('操作员角色收敛菜单并拒绝越权工单释放', async () => {
+    await evaluate('localStorage.clear()')
+    await navigate(`${baseUrl}/login`)
+    await waitForText('SmartDisplay MES')
+    await setInputByPlaceholder('用户名', 'operator')
+    await setInputByPlaceholder('密码', password)
+    await clickByText('登录')
+    await waitForExpression(`location.pathname === '/overview' && document.body.innerText.includes('生产总览')`)
+    const auth = await evaluate(`(() => {
+      const permissions = JSON.parse(localStorage.getItem('permissions') || '{}')
+      const topTabs = Array.from(document.querySelectorAll('.mes-tab')).map(item => (item.innerText || '').trim())
+      const sideLinks = Array.from(document.querySelectorAll('.side-link')).map(item => ({
+        text: (item.innerText || '').trim(),
+        href: item.getAttribute('href') || ''
+      }))
+      return {
+        token: localStorage.getItem('token'),
+        role: localStorage.getItem('role'),
+        menus: permissions.menus || [],
+        buttons: permissions.buttons || [],
+        dataScope: permissions.dataScope,
+        topTabs,
+        sideLinks
+      }
+    })()`)
+    assert(auth.role === 'OPERATOR', `操作员登录角色异常: ${auth.role}`)
+    assert(auth.menus.includes('execution') && auth.menus.includes('trace'), '操作员缺少执行或追溯菜单')
+    assert(!auth.menus.includes('order') && !auth.menus.includes('system'), '操作员不应拥有工单或系统菜单')
+    assert(auth.buttons.length === 2 && auth.buttons.includes('lot:track-in') && auth.buttons.includes('lot:track-out'), '操作员按钮权限应只包含 Track In/Out')
+    assert(auth.dataScope === 'SELF_SHIFT', `操作员数据范围应为 SELF_SHIFT，实际为 ${auth.dataScope}`)
+    assert(!auth.topTabs.some(text => text.includes('计划与工单') || text.includes('系统管理')), '操作员顶部导航不应显示计划或系统入口')
+    assert(!auth.sideLinks.some(item => item.href === '/order' || item.href === '/system'), '操作员侧边树不应显示计划或系统入口')
+
+    await navigate(`${baseUrl}/order`)
+    await waitForExpression(`location.pathname === '/overview'`, 5000)
+
+    const denied = await evaluate(`(async () => {
+      const response = await fetch('/api/v1/orders/MO_FORBIDDEN_E2E/release', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('token')
+        },
+        body: JSON.stringify({ releaseBy: 'operator' })
+      })
+      return response.json()
+    })()`)
+    assert(denied.code === 403, `操作员越权释放工单未被拒绝: ${JSON.stringify(denied)}`)
+    await assertLayoutClean('operator-rbac')
+    return `role=${auth.role}, menus=${auth.menus.join(',')}, forbiddenCode=${denied.code}`
   })
 
   const status = consoleErrors.length || networkErrors.length ? 'FAIL' : 'PASS'
@@ -438,6 +902,77 @@ async function setFieldValueByLabel(labelText, value) {
   assert(ok, `未找到可输入字段: ${labelText}`)
 }
 
+async function setFieldValueInCard(cardTitle, labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const field = Array.from(card?.querySelectorAll('.mes-field') || []).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const input = el.querySelector('input, textarea')
+      return label === ${JSON.stringify(labelText)} && input && visible(input) && !input.disabled
+    })
+    const input = field?.querySelector('input, textarea')
+    if (!input) return false
+    input.focus()
+    input.value = ${JSON.stringify(value)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可输入字段: ${labelText}`)
+}
+
+async function setSelectValueInCard(cardTitle, labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const field = Array.from(card?.querySelectorAll('.mes-field') || []).find(el => {
+      const label = (el.querySelector('label')?.innerText || '').trim()
+      const select = el.querySelector('select')
+      return label === ${JSON.stringify(labelText)} && select && visible(select) && !select.disabled
+    })
+    const select = field?.querySelector('select')
+    if (!select) return false
+    select.focus()
+    select.value = ${JSON.stringify(value)}
+    select.dispatchEvent(new Event('input', { bubbles: true }))
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可选择字段: ${labelText}`)
+}
+
+async function setFormItemValueByLabel(labelText, value) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const field = Array.from(document.querySelectorAll('.el-form-item')).find(el => {
+      const label = (el.querySelector('.el-form-item__label')?.innerText || '').trim()
+      const input = el.querySelector('input, textarea')
+      return label === ${JSON.stringify(labelText)} && input && visible(input) && !input.disabled
+    })
+    const input = field?.querySelector('input, textarea')
+    if (!input) return false
+    input.focus()
+    input.value = ${JSON.stringify(value)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  assert(ok, `未找到表单字段: ${labelText}`)
+}
+
 async function setSelectValueByLabel(labelText, value) {
   const ok = await evaluate(`(() => {
     const visible = (el) => {
@@ -477,20 +1012,64 @@ async function clickByText(text) {
   assert(ok, `未找到可点击文本: ${text}`)
 }
 
-async function clickButtonByText(text) {
+async function clickButtonByText(text, exact = false) {
+  const textLiteral = JSON.stringify(text)
+  const matchExpr = exact
+    ? `value === ${textLiteral}`
+    : `value.includes(${textLiteral})`
   const ok = await evaluate(`(() => {
     const visible = (el) => {
       const rect = el.getBoundingClientRect()
       const style = window.getComputedStyle(el)
       return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
     }
+    const match = (label) => {
+      const value = (label || '').trim()
+      return ${matchExpr}
+    }
     const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
-    const target = buttons.find(el => visible(el) && (el.innerText || el.textContent || '').trim().includes(${JSON.stringify(text)}))
+    const target = buttons.find(el => visible(el) && match(el.innerText || el.textContent || ''))
     if (!target) return false
     target.click()
     return true
   })()`)
   assert(ok, `未找到可点击按钮: ${text}`)
+}
+
+async function clickButtonInCard(cardTitle, buttonText) {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const card = Array.from(document.querySelectorAll('.mes-card')).find(el => visible(el) && (el.innerText || '').includes(${JSON.stringify(cardTitle)}))
+    const target = Array.from(card?.querySelectorAll('button,[role="button"]') || []).find(el => {
+      return visible(el) && !el.disabled && (el.innerText || el.textContent || '').trim().includes(${JSON.stringify(buttonText)})
+    })
+    if (!target) return false
+    target.click()
+    return true
+  })()`)
+  assert(ok, `未在卡片 ${cardTitle} 中找到可点击按钮: ${buttonText}`)
+}
+
+async function clickMessageBoxConfirm() {
+  const ok = await evaluate(`(() => {
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const messageBox = Array.from(document.querySelectorAll('.el-message-box')).find(visible)
+    const target = Array.from(messageBox?.querySelectorAll('button') || []).find(button => {
+      return visible(button) && (button.innerText || button.textContent || '').trim() === '确认'
+    })
+    if (!target) return false
+    target.click()
+    return true
+  })()`)
+  assert(ok, '未找到二次确认按钮')
 }
 
 async function clickTableRowByText(text) {
@@ -565,6 +1144,73 @@ async function waitForLotState(condition, timeoutMs = 10000) {
   throw new Error(`等待 Lot 状态超时: ${condition}, last=${JSON.stringify(lastState)}`)
 }
 
+async function waitForSpecificLotState(lotNo, condition, timeoutMs = 10000) {
+  const started = Date.now()
+  let lastState = null
+  while (Date.now() - started < timeoutMs) {
+    lastState = await evaluate(`(async () => {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/v1/lots?current=1&size=10&lotNo=' + encodeURIComponent('${escapeJs(lotNo)}'), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      return json.data.records[0] || null
+    })()`)
+    if (lastState) {
+      const matched = Function('state', `with (state) { return ${condition}; }`)(lastState)
+      if (matched) return lastState
+    }
+    await delay(200)
+  }
+  throw new Error(`等待 Lot 状态超时: ${lotNo}, ${condition}, last=${JSON.stringify(lastState)}`)
+}
+
+async function createHeldLot(orderNo, holdReason) {
+  return evaluate(`(async () => {
+    const token = localStorage.getItem('token')
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
+    const postJson = async (path, body) => {
+      const response = await fetch('/api/v1' + path, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      })
+      const json = await response.json()
+      if (json.code !== 200) throw new Error(path + ' failed: ' + json.message)
+      return json.data
+    }
+    await postJson('/orders', {
+      orderNo: '${escapeJs(orderNo)}',
+      productCode: 'AMOLED_65',
+      productName: 'AMOLED 6.5寸柔性屏',
+      plannedQty: 60,
+      priority: 8,
+      lineCode: 'LINE_01'
+    })
+    await postJson('/orders/${escapeJs(orderNo)}/release', {
+      releaseBy: '${escapeJs(username)}'
+    })
+    const lotPrefix = '${escapeJs(orderNo)}'.replace('MO', 'LOT')
+    let lotNo = ''
+    for (let index = 0; index < 20; index += 1) {
+      const response = await fetch('/api/v1/lots?current=1&size=20&lotNo=' + encodeURIComponent(lotPrefix), {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      const json = await response.json()
+      lotNo = json.data.records[0]?.lotNo || ''
+      if (lotNo) break
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    if (!lotNo) throw new Error('released lot not found: ' + lotPrefix)
+    await postJson('/lots/' + encodeURIComponent(lotNo) + '/hold', {
+      holdReason: '${escapeJs(holdReason)}',
+      holdType: 'QUALITY',
+      holdBy: '${escapeJs(username)}'
+    })
+    return lotNo
+  })()`)
+}
+
 async function bodyText() {
   return evaluate('document.body.innerText')
 }
@@ -637,11 +1283,34 @@ function ensureChrome() {
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/opt/google/chrome/chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
   ].filter(Boolean)
   const chrome = candidates.find(path => existsSync(path))
   if (!chrome) throw new Error('未找到 Chrome 或 Edge，可设置 CHROME_PATH 后重试')
   return chrome
+}
+
+async function waitForHttpStatus(url, timeoutMs) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const response = await fetch(url, { redirect: 'manual' })
+      if (response.status > 0 && response.status < 500) {
+        return
+      }
+    } catch {
+      // 服务启动过程中连接失败是预期情况，继续等待。
+    }
+    await delay(500)
+  }
+  throw new Error(`等待 HTTP 服务就绪超时: ${url}`)
 }
 
 async function waitForHttp(url, timeoutMs) {

@@ -1,205 +1,343 @@
 <template>
-  <div>
-    <!-- 查询表单 -->
-    <el-card shadow="hover" style="margin-bottom: 20px">
-      <el-form :inline="true" :model="queryForm">
-        <el-form-item label="产品编码">
-          <el-select v-model="queryForm.productCode" placeholder="全部产品" clearable style="width: 150px">
-            <el-option label="AMOLED_65" value="AMOLED_65" />
-            <el-option label="AMOLED_67" value="AMOLED_67" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="工序编码">
-          <el-select v-model="queryForm.stepCode" placeholder="全部工序" clearable style="width: 150px">
-            <el-option label="COATING" value="COATING" />
-            <el-option label="EVAPORATION" value="EVAPORATION" />
-            <el-option label="ETCH" value="ETCH" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="设备编码">
-          <el-select v-model="queryForm.equipmentCode" placeholder="全部设备" clearable style="width: 150px">
-            <el-option label="COATER_01" value="COATER_01" />
-            <el-option label="COATER_02" value="COATER_02" />
-            <el-option label="EVAP_01" value="EVAP_01" />
-            <el-option label="ETCH_01" value="ETCH_01" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleQuery" :icon="Search">查询</el-button>
-          <el-button @click="handleReset" :icon="Refresh">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <section>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Recipe 管理 / 参数版本与发布校验</h1>
+        <p class="page-desc">维护产品、工序、设备绑定的 Recipe 版本，Track In 和 Track Out 均依赖这里的生效参数快照。</p>
+      </div>
+      <div class="page-actions">
+        <button class="mes-btn" :disabled="loading" @click="fetchRecipeList">{{ loading ? '刷新中' : '刷新' }}</button>
+        <button class="mes-btn" :disabled="!selectedRecipe" @click="openRecipeDetail(selectedRecipe)">参数详情</button>
+        <button
+          v-if="canPublishRecipe"
+          class="mes-btn primary"
+          :disabled="publishing || !firstPublishableRecipe"
+          @click="handlePublish(firstPublishableRecipe)"
+        >
+          {{ publishing ? '发布中' : '发布版本' }}
+        </button>
+      </div>
+    </div>
 
-    <!-- Recipe列表 -->
-    <el-card shadow="hover">
-      <el-table :data="recipeList" v-loading="loading" stripe>
-        <el-table-column prop="recipeCode" label="Recipe编码" width="150" />
-        <el-table-column prop="recipeName" label="Recipe名称" width="200" />
-        <el-table-column prop="productCode" label="产品编码" width="130" />
-        <el-table-column prop="stepCode" label="工序编码" width="130" />
-        <el-table-column prop="equipmentCode" label="设备编码" width="130" />
-        <el-table-column prop="recipeVersion" label="版本" width="100" />
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleViewParams(row)" :icon="View">
-              查看参数
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+    <div class="mes-grid cols-4">
+      <div v-for="metric in recipeMetrics" :key="metric.label" class="mes-card metric-card">
+        <div class="metric-label"><span>{{ metric.label }}</span><span>{{ metric.note }}</span></div>
+        <div class="metric-value">{{ metric.value }}</div>
+        <div class="metric-meta"><span>{{ metric.left }}</span><span>{{ metric.right }}</span></div>
+      </div>
+    </div>
 
-    <!-- 参数详情抽屉 -->
+    <div class="mes-card section-gap">
+      <div class="mes-card__head">
+        <div class="mes-card__title">Recipe 版本池</div>
+        <span class="status-tag blue">{{ pagination.total }} 条</span>
+      </div>
+      <div class="mes-card__body">
+        <div class="mes-filters">
+          <div class="mes-field">
+            <label>产品</label>
+            <input v-model.trim="queryForm.productCode" class="mes-input" placeholder="AMOLED_65" @keyup.enter="handleQuery" />
+          </div>
+          <div class="mes-field">
+            <label>工序</label>
+            <select v-model="queryForm.stepCode" class="mes-select">
+              <option value="">全部工序</option>
+              <option v-for="step in stepOptions" :key="step" :value="step">{{ step }}</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>设备</label>
+            <select v-model="queryForm.equipmentCode" class="mes-select">
+              <option value="">全部设备</option>
+              <option v-for="equipment in equipmentOptions" :key="equipment" :value="equipment">{{ equipment }}</option>
+            </select>
+          </div>
+          <div class="mes-field">
+            <label>状态</label>
+            <select v-model="queryForm.status" class="mes-select">
+              <option value="">全部状态</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="DRAFT">DRAFT</option>
+              <option value="INACTIVE">INACTIVE</option>
+            </select>
+          </div>
+          <button class="mes-btn primary" :disabled="loading" @click="handleQuery">
+            {{ loading ? '查询中' : '查询' }}
+          </button>
+        </div>
+
+        <table class="mes-table recipe-table">
+          <thead>
+            <tr>
+              <th>Recipe</th>
+              <th>名称</th>
+              <th>产品</th>
+              <th>工序</th>
+              <th>设备</th>
+              <th>版本</th>
+              <th>状态</th>
+              <th>说明</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="recipe in recipeList"
+              :key="recipe.id"
+              :class="{ selected: selectedRecipe?.id === recipe.id }"
+              @click="selectedRecipe = recipe"
+            >
+              <td>{{ recipe.recipeCode }}</td>
+              <td>{{ recipe.recipeName || '-' }}</td>
+              <td>{{ recipe.productCode }}</td>
+              <td>{{ recipe.stepCode }}</td>
+              <td>{{ recipe.equipmentCode }}</td>
+              <td>{{ recipe.recipeVersion || recipe.version || '-' }}</td>
+              <td><span class="status-tag" :class="statusType(recipe.status)">{{ recipe.status || '-' }}</span></td>
+              <td>{{ recipe.description || '-' }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="mes-btn tiny" @click.stop="openRecipeDetail(recipe)">参数</button>
+                  <button
+                    v-if="canPublishRecipe"
+                    class="mes-btn tiny primary"
+                    :disabled="publishing || recipe.status === 'ACTIVE'"
+                    @click.stop="handlePublish(recipe)"
+                  >
+                    发布
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!recipeList.length">
+              <td colspan="9">没有符合条件的 Recipe</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pager-row">
+          <el-pagination
+            v-model:current-page="pagination.page"
+            v-model:page-size="pagination.size"
+            :total="pagination.total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="fetchRecipeList"
+            @current-change="fetchRecipeList"
+          />
+        </div>
+      </div>
+    </div>
+
     <el-drawer
       v-model="drawerVisible"
-      :title="`Recipe参数详情 - ${selectedRecipe.recipeCode}`"
-      size="50%"
+      :title="`Recipe 参数详情 - ${detailRecipe?.recipeCode || '-'}`"
+      size="560px"
     >
-      <div v-if="selectedRecipe.recipeCode">
-        <el-descriptions :column="2" border style="margin-bottom: 20px">
-          <el-descriptions-item label="Recipe编码">{{ selectedRecipe.recipeCode }}</el-descriptions-item>
-          <el-descriptions-item label="Recipe名称">{{ selectedRecipe.recipeName }}</el-descriptions-item>
-          <el-descriptions-item label="产品编码">{{ selectedRecipe.productCode }}</el-descriptions-item>
-          <el-descriptions-item label="工序编码">{{ selectedRecipe.stepCode }}</el-descriptions-item>
-          <el-descriptions-item label="设备编码">{{ selectedRecipe.equipmentCode }}</el-descriptions-item>
-          <el-descriptions-item label="版本">{{ selectedRecipe.recipeVersion }}</el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
-            <el-tag :type="selectedRecipe.status === 'ACTIVE' ? 'success' : 'info'">
-              {{ selectedRecipe.status }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="说明" :span="2">
-            {{ selectedRecipe.description || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
+      <div v-if="detailRecipe" class="recipe-detail">
+        <div class="detail-list">
+          <div class="detail-row"><b>Recipe</b><span>{{ detailRecipe.recipeCode }}</span></div>
+          <div class="detail-row"><b>产品/工序</b><span>{{ detailRecipe.productCode }} / {{ detailRecipe.stepCode }}</span></div>
+          <div class="detail-row"><b>设备</b><span>{{ detailRecipe.equipmentCode }}</span></div>
+          <div class="detail-row"><b>版本状态</b><span>{{ detailRecipe.recipeVersion || detailRecipe.version }} / {{ detailRecipe.status }}</span></div>
+          <div class="detail-row"><b>说明</b><span>{{ detailRecipe.description || '-' }}</span></div>
+        </div>
 
-        <el-divider content-position="left">
-          <span style="font-weight: bold">Recipe参数列表</span>
-        </el-divider>
+        <div class="mes-card section-gap">
+          <div class="mes-card__head">
+            <div class="mes-card__title">参数上下限</div>
+            <span class="status-tag red">{{ keyParamCount }} 关键参数</span>
+          </div>
+          <div class="mes-card__body">
+            <table class="mes-table param-table">
+              <thead>
+                <tr><th>参数</th><th>目标</th><th>下限</th><th>上限</th><th>单位</th><th>控制</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="param in recipeParams" :key="param.paramCode || param.paramName">
+                  <td>{{ param.paramName }}</td>
+                  <td>{{ param.targetValue }}</td>
+                  <td>{{ param.lowerLimit }}</td>
+                  <td>{{ param.upperLimit }}</td>
+                  <td>{{ param.unit || '-' }}</td>
+                  <td>
+                    <span class="status-tag" :class="Number(param.isKeyParam) === 1 ? 'red' : 'gray'">
+                      {{ Number(param.isKeyParam) === 1 ? '关键' : '普通' }}
+                    </span>
+                  </td>
+                </tr>
+                <tr v-if="!recipeParams.length">
+                  <td colspan="6">当前 Recipe 暂无参数明细</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        <el-table :data="recipeParams" v-loading="paramsLoading" border>
-          <el-table-column prop="paramName" label="参数名称" width="150" />
-          <el-table-column prop="targetValue" label="目标值" width="100" align="right">
-            <template #default="{ row }">
-              <span style="font-weight: 600; color: var(--mes-ink)">{{ row.targetValue }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="upperLimit" label="上限" width="100" align="right">
-            <template #default="{ row }">
-              <span style="color: var(--mes-red)">{{ row.upperLimit }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="lowerLimit" label="下限" width="100" align="right">
-            <template #default="{ row }">
-              <span style="color: var(--mes-amber)">{{ row.lowerLimit }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="unit" label="单位" width="80" />
-          <el-table-column prop="paramType" label="参数类型" width="120" />
-          <el-table-column prop="isKeyParam" label="关键参数" width="100">
-            <template #default="{ row }">
-              <el-tag v-if="row.isKeyParam === 1" type="danger" size="small">关键</el-tag>
-              <el-tag v-else type="info" size="small">普通</el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <el-alert
-          title="Recipe参数说明"
-          type="info"
-          :closable="false"
-          style="margin-top: 20px"
-        >
-          <template #default>
-            <div style="font-size: 13px; line-height: 1.8">
-              • <span style="color: var(--mes-ink); font-weight: 600">目标值</span>：设备加工的标准参数<br />
-              • <span style="color: var(--mes-red); font-weight: 600">上限/下限</span>：参数合格范围<br />
-              • <span style="color: var(--mes-red); font-weight: 600">关键参数</span>：超出范围直接判定NG<br />
-              • Recipe版本管理：同一产品/工序/设备可有多个版本，只有ACTIVE版本生效
-            </div>
-          </template>
-        </el-alert>
+        <div class="check-cell blue section-gap">
+          <strong>执行约束</strong>
+          <span>ACTIVE Recipe 会在 Track In 校验产品、工序和设备匹配；Track Out 参数超限时会触发质量 Hold。</span>
+        </div>
       </div>
     </el-drawer>
-  </div>
+  </section>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Search, Refresh, View } from '@element-plus/icons-vue'
-import { getRecipeList, getRecipeDetail } from '@/api/recipe'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { getRecipeDetail, getRecipeList, publishRecipe } from '@/api/recipe'
+import { hasButton } from '@/utils/permissions'
 
 const loading = ref(false)
 const paramsLoading = ref(false)
+const publishing = ref(false)
 const recipeList = ref([])
-const drawerVisible = ref(false)
-const selectedRecipe = ref({})
+const selectedRecipe = ref(null)
+const detailRecipe = ref(null)
 const recipeParams = ref([])
+const drawerVisible = ref(false)
 
 const queryForm = reactive({
   productCode: '',
   stepCode: '',
-  equipmentCode: ''
+  equipmentCode: '',
+  status: ''
 })
 
-// 获取Recipe列表
-const fetchRecipeList = async () => {
+const pagination = reactive({
+  page: 1,
+  size: 10,
+  total: 0
+})
+
+const canPublishRecipe = computed(() => hasButton('recipe:publish'))
+const firstPublishableRecipe = computed(() => recipeList.value.find(recipe => recipe.status !== 'ACTIVE'))
+const stepOptions = computed(() => [...new Set(recipeList.value.map(recipe => recipe.stepCode).filter(Boolean))])
+const equipmentOptions = computed(() => [...new Set(recipeList.value.map(recipe => recipe.equipmentCode).filter(Boolean))])
+const keyParamCount = computed(() => recipeParams.value.filter(param => Number(param.isKeyParam) === 1).length)
+const recipeMetrics = computed(() => {
+  const total = recipeList.value.length
+  const active = recipeList.value.filter(recipe => recipe.status === 'ACTIVE').length
+  const draft = recipeList.value.filter(recipe => recipe.status === 'DRAFT').length
+  const inactive = recipeList.value.filter(recipe => recipe.status === 'INACTIVE').length
+  return [
+    { label: 'Recipe 总数', value: total, note: '当前筛选', left: '产品+工序+设备', right: '版本池' },
+    { label: '生效版本', value: active, note: 'ACTIVE', left: 'Track In 可用', right: '可追溯' },
+    { label: '待发布', value: draft, note: 'DRAFT', left: '需工艺发布', right: '需审计' },
+    { label: '停用版本', value: inactive, note: 'INACTIVE', left: '只读保留', right: '历史追溯' }
+  ]
+})
+
+async function fetchRecipeList() {
   loading.value = true
   try {
     const params = {
-      current: 1,
-      size: 100,
-      ...queryForm
+      current: pagination.page,
+      size: pagination.size
     }
+    Object.entries(queryForm).forEach(([key, value]) => {
+      if (value) params[key] = value
+    })
     const data = await getRecipeList(params)
-    // 后端返回IPage分页对象，取records数组
     recipeList.value = data?.records || []
+    pagination.total = data?.total || 0
+    if (!selectedRecipe.value || !recipeList.value.some(recipe => recipe.id === selectedRecipe.value?.id)) {
+      selectedRecipe.value = recipeList.value[0] || null
+    }
   } catch (error) {
-    console.error('获取Recipe列表失败:', error)
+    console.error('获取 Recipe 列表失败:', error)
   } finally {
     loading.value = false
   }
 }
 
-// 查询
-const handleQuery = () => {
+function handleQuery() {
+  pagination.page = 1
   fetchRecipeList()
 }
 
-// 重置
-const handleReset = () => {
-  queryForm.productCode = ''
-  queryForm.stepCode = ''
-  queryForm.equipmentCode = ''
-  fetchRecipeList()
-}
-
-// 查看参数详情
-const handleViewParams = async (row) => {
-  selectedRecipe.value = row
+async function openRecipeDetail(recipe) {
+  if (!recipe) {
+    ElMessage.warning('请选择 Recipe')
+    return
+  }
+  selectedRecipe.value = recipe
+  detailRecipe.value = recipe
+  recipeParams.value = []
   drawerVisible.value = true
-
   paramsLoading.value = true
   try {
-    const data = await getRecipeDetail(row.id)
-    recipeParams.value = data.params || []
+    const data = await getRecipeDetail(recipe.id)
+    detailRecipe.value = data || recipe
+    recipeParams.value = data?.params || []
   } catch (error) {
-    console.error('获取Recipe参数失败:', error)
+    console.error('获取 Recipe 参数失败:', error)
   } finally {
     paramsLoading.value = false
   }
 }
 
-onMounted(() => {
-  fetchRecipeList()
-})
+async function handlePublish(recipe) {
+  if (!recipe) {
+    ElMessage.warning('当前没有可发布的 Recipe')
+    return
+  }
+  if (!canPublishRecipe.value) {
+    ElMessage.warning('当前角色无权发布 Recipe')
+    return
+  }
+  publishing.value = true
+  try {
+    await publishRecipe(recipe.id)
+    ElMessage.success(`${recipe.recipeCode} 已发布`)
+    await fetchRecipeList()
+  } catch (error) {
+    console.error('Recipe 发布失败:', error)
+  } finally {
+    publishing.value = false
+  }
+}
+
+function statusType(status) {
+  if (status === 'ACTIVE') return 'green'
+  if (status === 'DRAFT') return 'blue'
+  if (status === 'INACTIVE') return 'gray'
+  return 'amber'
+}
+
+onMounted(fetchRecipeList)
 </script>
+
+<style scoped>
+.recipe-table th:nth-child(8),
+.recipe-table td:nth-child(8) {
+  width: 220px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pager-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+.recipe-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.mes-table tbody tr {
+  cursor: pointer;
+}
+
+.mes-table tbody tr.selected td {
+  background: var(--mes-paper-muted);
+  box-shadow: inset 0 1px 0 var(--mes-line-soft), inset 0 -1px 0 var(--mes-line-soft);
+}
+</style>

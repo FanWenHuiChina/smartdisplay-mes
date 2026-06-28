@@ -1,41 +1,50 @@
 :root {
-  --mes-page: #f7f7f4;
-  --mes-paper: #ffffff;
-  --mes-paper-muted: #fbfbf9;
-  --mes-soft: #f2f2ef;
-  --mes-soft-2: #e9e9e4;
-  --mes-line: #ddddd7;
-  --mes-line-soft: #eeeeea;
-  --mes-text: #20201d;
-  --mes-sub: #63635d;
-  --mes-muted: #777771;
-  --mes-weak: #96968f;
-  --mes-ink: #242421;
-  --mes-ink-soft: #eeeeeb;
-  --mes-control: #fbfbfa;
-  --mes-control-hover: #f4f4f1;
-  --mes-control-active: #eeeeeb;
-  --mes-blue: #596473;
-  --mes-blue-dark: #47515d;
-  --mes-blue-soft: #f1f3f5;
-  --mes-teal: #58716d;
-  --mes-teal-soft: #f0f5f3;
-  --mes-green: #5b735f;
-  --mes-green-soft: #f0f5f0;
-  --mes-amber: #8a7148;
-  --mes-amber-soft: #f8f1e4;
-  --mes-red: #9a5954;
-  --mes-red-soft: #f8eeee;
-  --mes-purple: #6d687e;
-  --mes-purple-soft: #f1f0f5;
-  --mes-orange: #876951;
-  --mes-orange-soft: #f7f1ec;
-  --mes-shadow: 0 1px 2px rgba(25, 25, 24, 0.03);
+  /* 背景层级（ISA-101 推荐浅灰而非纯白，减少眩光） */
+  --mes-page: #F0F2F5;
+  --mes-paper: #FFFFFF;
+  --mes-paper-muted: #FAFBFC;
+  --mes-soft: #F5F6F8;
+  --mes-soft-2: #EBEDF0;
+  --mes-line: #DEE0E3;
+  --mes-line-soft: #EBEDF0;
+  /* 文字层级 */
+  --mes-text: #1F2329;
+  --mes-sub: #646A73;
+  --mes-muted: #8F959E;
+  --mes-weak: #C0C4CC;
+  --mes-ink: #1F2329;
+  --mes-ink-soft: #F5F6F8;
+  /* 控件底色 */
+  --mes-control: #FAFBFC;
+  --mes-control-hover: #F5F6F8;
+  --mes-control-active: #EBEDF0;
+  /* 状态色（ISA-101 高饱和语义色，稀缺使用） */
+  --mes-blue: #3370FF;
+  --mes-blue-dark: #245BDB;
+  --mes-blue-soft: #E8F0FF;
+  --mes-teal: #0FBFCC;
+  --mes-teal-soft: #E8FAFB;
+  --mes-green: #00B42A;
+  --mes-green-soft: #E8FFEA;
+  --mes-amber: #FF7D00;
+  --mes-amber-soft: #FFF7E8;
+  --mes-red: #F53F3F;
+  --mes-red-soft: #FFECE8;
+  --mes-purple: #7B61FF;
+  --mes-purple-soft: #F0EDFF;
+  --mes-orange: #FA8C16;
+  --mes-orange-soft: #FFF2E8;
+  /* 字体 */
+  --font-sans: "Inter", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  /* 阴影（增强层次感） */
+  --mes-shadow: 0 1px 3px rgba(31, 35, 41, 0.08);
   color: var(--mes-text);
   background: var(--mes-page);
-  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
+  font-variant-numeric: tabular-nums;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -47,7 +56,7 @@
 }
 
 * {
-  scrollbar-color: #b8b8b4 transparent;
+  scrollbar-color: #C0C4CC transparent;
   scrollbar-width: thin;
 }
 
@@ -61,14 +70,14 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #c2c2be;
+  background: #C0C4CC;
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a4;
+  background: #8F959E;
   border: 3px solid transparent;
   background-clip: content-box;
 }
@@ -209,6 +218,20 @@ textarea {
   font-weight: 700;
   line-height: 1.12;
   color: var(--mes-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--mes-weak);
+  padding: 24px 0;
+  font-size: 13px;
 }
 
 .metric-meta {
@@ -534,43 +557,43 @@ textarea {
 .status-tag.blue {
   background: var(--mes-blue-soft);
   color: var(--mes-blue);
-  border-color: #dce2e8;
+  border-color: #B3D0FF;
 }
 
 .status-tag.teal {
   background: var(--mes-teal-soft);
   color: var(--mes-teal);
-  border-color: #d9e5e1;
+  border-color: #B0F0EC;
 }
 
 .status-tag.green {
   background: var(--mes-green-soft);
   color: var(--mes-green);
-  border-color: #dbe6dc;
+  border-color: #BAF0C2;
 }
 
 .status-tag.amber {
   background: var(--mes-amber-soft);
   color: var(--mes-amber);
-  border-color: #eadfc8;
+  border-color: #FFD6A8;
 }
 
 .status-tag.red {
   background: var(--mes-red-soft);
   color: var(--mes-red);
-  border-color: #ead6d4;
+  border-color: #FFBDBA;
 }
 
 .status-tag.purple {
   background: var(--mes-purple-soft);
   color: var(--mes-purple);
-  border-color: #dedbe8;
+  border-color: #D9D0FF;
 }
 
 .status-tag.orange {
   background: var(--mes-orange-soft);
   color: var(--mes-orange);
-  border-color: #e7dbd1;
+  border-color: #FFD8B0;
 }
 
 .status-tag.gray {
@@ -635,16 +658,20 @@ textarea {
   font-weight: 600;
 }
 
+.mes-table tbody tr:nth-child(even) td {
+  background: var(--mes-soft);
+}
+
 .mes-table tbody tr:hover td {
-  background: var(--mes-paper-muted);
+  background: var(--mes-soft-2);
 }
 
 .mes-table tr.hot td {
-  background: #fbf5ea;
+  background: var(--mes-amber-soft);
 }
 
 .mes-table tr.danger td {
-  background: #fbf1f1;
+  background: var(--mes-red-soft);
 }
 
 .route-line {
@@ -764,6 +791,20 @@ textarea {
   padding: 9px;
   display: grid;
   gap: 6px;
+}
+
+.mini-card.alarm {
+  border-left: 4px solid var(--mes-red);
+  animation: pulse-alarm 1.4s ease-in-out infinite;
+}
+
+.mini-card.caution {
+  border-left: 4px solid var(--mes-amber);
+}
+
+@keyframes pulse-alarm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 63, 63, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(245, 63, 63, 0.12); }
 }
 
 .mini-top {

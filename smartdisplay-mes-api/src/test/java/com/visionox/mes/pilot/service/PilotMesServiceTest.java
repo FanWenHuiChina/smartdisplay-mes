@@ -1,5 +1,8 @@
 package com.visionox.mes.pilot.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.visionox.mes.ai.service.AiKbIndexService;
 import com.visionox.mes.ai.service.AiKnowledgeService;
@@ -11,6 +14,7 @@ import com.visionox.mes.common.BusinessException;
 import com.visionox.mes.equipment.adapter.EapAdapter;
 import com.visionox.mes.equipment.service.EapGatewayService;
 import com.visionox.mes.equipment.service.EquipmentService;
+import com.visionox.mes.lot.entity.Equipment;
 import com.visionox.mes.lot.entity.HoldRecord;
 import com.visionox.mes.lot.entity.Lot;
 import com.visionox.mes.lot.entity.LotStepRecord;
@@ -29,18 +33,23 @@ import com.visionox.mes.order.entity.ProductionOrder;
 import com.visionox.mes.order.mapper.ProductionOrderMapper;
 import com.visionox.mes.order.service.ErpOrderAdapterService;
 import com.visionox.mes.quality.service.QualityService;
+import com.visionox.mes.recipe.entity.Recipe;
 import com.visionox.mes.recipe.mapper.RecipeMapper;
 import com.visionox.mes.recipe.mapper.RecipeParamMapper;
 import com.visionox.mes.route.entity.Route;
 import com.visionox.mes.route.entity.RouteStep;
 import com.visionox.mes.route.service.RouteService;
+import com.visionox.mes.system.entity.AuditLog;
 import com.visionox.mes.system.service.AuditLogService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,6 +58,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -137,6 +147,12 @@ class PilotMesServiceTest {
     @InjectMocks
     private PilotMesService pilotMesService;
 
+    @BeforeEach
+    void enablePilotFallbackForExistingDemoScenarios() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", true);
+        ReflectionTestUtils.setField(pilotMesService, "traceAssembler", new LotTraceAssembler());
+    }
+
     @Test
     void createOrderShouldPersistCreatedOrderAndWriteAudit() {
         ProductionOrder order = pilotMesService.createOrder(Map.of(
@@ -169,6 +185,29 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void createOrderShouldRejectMissingProductCode() {
+        assertThatThrownBy(() -> pilotMesService.createOrder(Map.of(
+                "orderNo", "MO-MISSING-PRODUCT",
+                "plannedQty", 100
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("产品编码");
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderShouldRejectNonPositivePlannedQty() {
+        assertThatThrownBy(() -> pilotMesService.createOrder(Map.of(
+                "orderNo", "MO-ZERO-QTY",
+                "productCode", "OLED_PANEL",
+                "plannedQty", 0
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("计划数量");
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
     void importErpOrdersShouldDelegateToSimulatedErpAdapter() {
         Map<String, Object> request = Map.of("count", 2, "batchNo", "ERP-BATCH-001");
         Map<String, Object> response = Map.of("batchNo", "ERP-BATCH-001", "createdCount", 2);
@@ -178,6 +217,160 @@ class PilotMesServiceTest {
 
         assertThat(result).isEqualTo(response);
         verify(erpOrderAdapterService).importOrders(request, "system");
+    }
+
+    @Test
+    void auditLogsShouldExposeRequestSnapshotForUiReview() {
+        AuditLog log = new AuditLog();
+        log.setAction("MATERIAL_LOCATION_TASK_COMPLETE");
+        log.setBizNo("MLT-001");
+        log.setOperator("wms1001");
+        log.setResult("SUCCESS");
+        log.setSource("material-service");
+        log.setCreatedTime(LocalDateTime.of(2026, 6, 9, 21, 46, 39));
+        log.setRequestSnapshot("{\"before\":{\"status\":\"ASSIGNED\"},\"after\":{\"status\":\"DONE\"},\"changedFields\":[\"status\"],\"request\":{\"operator\":\"wms1001\"}}");
+        when(auditLogService.list("MLT-001", 50)).thenReturn(List.of(log));
+
+        List<Map<String, Object>> rows = pilotMesService.auditLogs("MLT-001");
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("object", "MLT-001")
+                .containsEntry("action", "MATERIAL_LOCATION_TASK_COMPLETE")
+                .containsEntry("result", "SUCCESS")
+                .containsEntry("source", "material-service");
+        assertThat(rows.get(0).get("requestSnapshot").toString())
+                .contains("\"before\"")
+                .contains("\"after\"")
+                .contains("\"changedFields\"")
+                .contains("\"operator\":\"wms1001\"");
+    }
+
+    @Test
+    void pageAuditLogsShouldMapPagedRowsAndParseDateRange() {
+        AuditLog log = new AuditLog();
+        log.setAction("MATERIAL_LOCATION_TASK_CREATE");
+        log.setBizNo("MLT-001");
+        log.setBizType("MATERIAL_LOCATION_TASK");
+        log.setOperator("wms1001");
+        log.setResult("SUCCESS");
+        log.setSource("material-service");
+        log.setDescription("创建库位任务");
+        log.setRequestMethod("POST");
+        log.setRequestUri("/api/v1/material/location-tasks");
+        log.setClientIp("10.10.1.9");
+        log.setUserAgent("MES-Console/1.0");
+        log.setCreatedTime(LocalDateTime.of(2026, 6, 9, 21, 46, 39));
+        log.setRequestSnapshot("{\"before\":{},\"after\":{\"status\":\"CREATED\"},\"changedFields\":[\"status\"],\"request\":{\"operator\":\"wms1001\"}}");
+        Page<AuditLog> sourcePage = new Page<>(2, 5, 12);
+        sourcePage.setRecords(List.of(log));
+        when(auditLogService.page(
+                eq(2L),
+                eq(5L),
+                eq("MLT"),
+                eq("WMS"),
+                eq("SUCCESS"),
+                eq("material-service"),
+                eq("wms1001"),
+                eq(LocalDateTime.of(2026, 6, 9, 0, 0)),
+                eq(LocalDateTime.of(2026, 6, 9, 23, 59, 59))
+        )).thenReturn(sourcePage);
+
+        Page<Map<String, Object>> result = pilotMesService.pageAuditLogs(
+                2L,
+                5L,
+                "MLT",
+                "WMS",
+                "SUCCESS",
+                "material-service",
+                "wms1001",
+                "2026-06-09",
+                "2026-06-09"
+        );
+
+        assertThat(result.getCurrent()).isEqualTo(2);
+        assertThat(result.getSize()).isEqualTo(5);
+        assertThat(result.getTotal()).isEqualTo(12);
+        assertThat(result.getRecords()).hasSize(1);
+        assertThat(result.getRecords().get(0))
+                .containsEntry("object", "MLT-001")
+                .containsEntry("bizType", "MATERIAL_LOCATION_TASK")
+                .containsEntry("action", "MATERIAL_LOCATION_TASK_CREATE")
+                .containsEntry("result", "SUCCESS")
+                .containsEntry("source", "material-service")
+                .containsEntry("requestMethod", "POST")
+                .containsEntry("requestUri", "/api/v1/material/location-tasks")
+                .containsEntry("clientIp", "10.10.1.9");
+        assertThat(result.getRecords().get(0).get("requestSnapshot").toString())
+                .contains("\"before\"")
+                .contains("\"changedFields\"");
+    }
+
+    @Test
+    void pageAuditLogsShouldRejectInvalidDateRange() {
+        assertThatThrownBy(() -> pilotMesService.pageAuditLogs(
+                1L,
+                20L,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "bad-date",
+                ""
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("审计时间");
+
+        verify(auditLogService, never()).page(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bomsShouldReturnEmptyWhenFormalQueryEmptyAndFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(materialService.boms()).thenReturn(List.of());
+
+        assertThat(pilotMesService.boms()).isEmpty();
+    }
+
+    @Test
+    void bomsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(materialService.boms()).thenThrow(new RuntimeException("db down"));
+
+        assertThatThrownBy(() -> pilotMesService.boms())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("BOM正式数据读取失败")
+                .hasMessageContaining("未启用试点fallback");
+    }
+
+    @Test
+    void auditLogsShouldReturnEmptyWhenFormalQueryEmptyAndFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(auditLogService.list("LOT001", 50)).thenReturn(List.of());
+
+        assertThat(pilotMesService.auditLogs("LOT001")).isEmpty();
+    }
+
+    @Test
+    void auditLogsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(auditLogService.list("LOT001", 50)).thenThrow(new RuntimeException("audit table unavailable"));
+
+        assertThatThrownBy(() -> pilotMesService.auditLogs("LOT001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统审计正式数据读取失败")
+                .hasMessageContaining("未启用试点fallback");
+    }
+
+    @Test
+    void equipmentEventsShouldRejectFormalQueryFailureWhenFallbackDisabled() {
+        ReflectionTestUtils.setField(pilotMesService, "pilotFallbackEnabled", false);
+        when(equipmentService.events("EVAP_01", "OPEN")).thenThrow(new RuntimeException("event table unavailable"));
+
+        assertThatThrownBy(() -> pilotMesService.equipmentEvents("EVAP_01", "OPEN"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未启用试点fallback");
     }
 
     @Test
@@ -196,6 +389,27 @@ class PilotMesServiceTest {
                 .containsEntry("result", "NG")
                 .containsEntry("sourceSystem", "qms-adapter")
                 .containsEntry("adapterCode", "simulated-qms-adapter");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createQualityInspectionShouldDelegateToManualQualityInspection() {
+        Map<String, Object> response = Map.of("messageType", "MANUAL_INSPECTION", "lotNo", "LOT001");
+        when(qualityService.createManualInspection(any())).thenReturn(response);
+
+        Map<String, Object> result = pilotMesService.createQualityInspection(Map.of(
+                "lotNo", "LOT001",
+                "result", "NG",
+                "operator", "qe1001"
+        ));
+
+        assertThat(result).isEqualTo(response);
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).createManualInspection(payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue())
+                .containsEntry("lotNo", "LOT001")
+                .containsEntry("result", "NG")
+                .containsEntry("operator", "qe1001");
     }
 
     @Test
@@ -247,7 +461,24 @@ class PilotMesServiceTest {
     void releaseOrderShouldSplitOrderIntoReadyLotsAndWriteAudit() {
         ProductionOrder order = order("MO20260607001", 250);
         when(orderMapper.selectOne(any())).thenReturn(order);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
         when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN", "COATING", "EXPOSURE"));
+        when(materialService.activeBomSummary("OLED_PANEL")).thenReturn(Map.of(
+                "bomCode", "BOM_OLED_V1",
+                "bomVersion", "V1",
+                "status", "ACTIVE",
+                "keyItems", 3
+        ));
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(
+                equipment("CLEANER_01", "CLEAN"),
+                equipment("COATER_01", "COATING"),
+                equipment("EXPOSURE_01", "EXPOSURE")
+        ));
+        when(recipeMapper.selectList(any())).thenReturn(List.of(
+                recipe("RCP_CLEAN_V1", "CLEAN", "CLEANER_01"),
+                recipe("RCP_COATING_V1", "COATING", "COATER_01"),
+                recipe("RCP_EXPOSURE_V1", "EXPOSURE", "EXPOSURE_01")
+        ));
         when(lotMapper.selectCount(any())).thenReturn(0L);
 
         Map<String, Object> result = pilotMesService.releaseOrder("MO20260607001", Map.of("lotQty", 100));
@@ -313,6 +544,26 @@ class PilotMesServiceTest {
     }
 
     @Test
+    void releaseOrderShouldRejectWhenActiveBomMissing() {
+        ProductionOrder order = order("MO20260607001", 250);
+        when(orderMapper.selectOne(any())).thenReturn(order);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN"));
+        when(materialService.activeBomSummary("OLED_PANEL")).thenReturn(Map.of());
+        when(equipmentMapper.selectList(any())).thenReturn(List.of(equipment("CLEANER_01", "CLEAN")));
+        when(recipeMapper.selectList(any())).thenReturn(List.of(recipe("RCP_CLEAN_V1", "CLEAN", "CLEANER_01")));
+
+        assertThatThrownBy(() -> pilotMesService.releaseOrder("MO20260607001", Map.of("lotQty", 100)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工单释放预校验未通过")
+                .hasMessageContaining("BOM");
+
+        verify(lotMapper, never()).insert(any());
+        verify(orderMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void pageLotsShouldApplyLineDataScope() {
         when(rolePermissionService.dataScopeCondition(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RolePermissionService.DataScopeCondition("LINE", "line_code = {0}", List.of("LINE_01")));
@@ -322,6 +573,26 @@ class PilotMesServiceTest {
 
         verify(rolePermissionService).dataScopeCondition(any(), any(), eq(""), eq("line_code"), isNull(), isNull());
         verify(lotMapper).selectPage(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void pageRecipesShouldApplyProductStepEquipmentAndStatusFilters() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Recipe.class);
+        when(recipeMapper.selectPage(any(), any())).thenReturn(new Page<>(1, 20));
+
+        pilotMesService.pageRecipes(1, 20, "AMOLED_65", "COATING", "COATER_01", "ACTIVE");
+
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(recipeMapper).selectPage(any(), wrapperCaptor.capture());
+        LambdaQueryWrapper<Recipe> wrapper = wrapperCaptor.getValue();
+        assertThat(wrapper.getSqlSegment())
+                .contains("product_code")
+                .contains("step_code")
+                .contains("equipment_code")
+                .contains("status");
+        assertThat(wrapper.getParamNameValuePairs().values())
+                .contains("AMOLED_65", "COATING", "COATER_01", "ACTIVE");
     }
 
     @Test
@@ -387,6 +658,7 @@ class PilotMesServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of(Map.of(
                 "lotNo", "LOT001",
                 "itemCode", "THICKNESS",
@@ -425,6 +697,7 @@ class PilotMesServiceTest {
         when(lotMapper.selectOne(any())).thenReturn(lot);
         when(stepRecordMapper.selectList(any())).thenReturn(List.of(stepRecord));
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
+        stubTraceRoute();
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
@@ -457,6 +730,7 @@ class PilotMesServiceTest {
         when(serialNumberMapper.selectList(any())).thenReturn(List.of(first, second));
         when(serialNumberMapper.selectCount(any())).thenReturn(2L);
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
         when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
@@ -475,6 +749,8 @@ class PilotMesServiceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> carriers = (List<Map<String, Object>>) trace.get("carriers");
         @SuppressWarnings("unchecked")
+        Map<String, Object> route = (Map<String, Object>) trace.get("route");
+        @SuppressWarnings("unchecked")
         Map<String, Object> impactSummary = (Map<String, Object>) trace.get("impactSummary");
         @SuppressWarnings("unchecked")
         Map<String, Object> relatedDimensions = (Map<String, Object>) trace.get("relatedDimensions");
@@ -483,6 +759,10 @@ class PilotMesServiceTest {
                 .containsExactly("LOT001-SN001", "LOT001-SN002");
         assertThat(carriers).hasSize(1);
         assertThat(carriers.get(0)).containsEntry("carrierNo", "CST-001");
+        assertThat(route)
+                .containsEntry("routeCode", "RTE_OLED_V1")
+                .containsEntry("productCode", "OLED_PANEL");
+        assertThat((List<String>) route.get("steps")).containsExactly("CLEAN", "COATING");
         assertThat(summary)
                 .containsEntry("totalCount", 2L)
                 .containsEntry("returnedCount", 2)
@@ -506,6 +786,7 @@ class PilotMesServiceTest {
         when(stepRecordMapper.selectList(any())).thenReturn(List.of());
         when(holdRecordMapper.selectList(any())).thenReturn(List.of());
         when(orderMapper.selectOne(any())).thenReturn(order("MO20260607001", 100));
+        stubTraceRoute();
         when(qualityService.inspectionRows("LOT001")).thenReturn(List.of());
         when(qualityService.exceptionRows("LOT001")).thenReturn(List.of());
         when(materialService.materialConsumptions("LOT001")).thenReturn(List.of());
@@ -537,6 +818,84 @@ class PilotMesServiceTest {
         Map<String, Object> result = pilotMesService.dashboardYield();
 
         assertThat(result.get("defectTopN")).isEqualTo(List.of());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aiEquipmentAnalyzeShouldRecordMesEvidenceSnapshotAndAudit() {
+        Lot lot = lot("LOT001", "PROCESSING");
+        lot.setCurrentEquipmentCode("EVAP_01");
+        when(equipmentService.events("EVAP_01", null)).thenReturn(List.of(Map.of(
+                "eventNo", "EVE-001",
+                "equipmentCode", "EVAP_01",
+                "eventLevel", "P1",
+                "eventType", "ALARM"
+        )));
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(lotMapper.selectList(any())).thenReturn(List.of(lot));
+        when(qualityService.defectTopN(5)).thenReturn(List.of(Map.of(
+                "defectCode", "D-MURA",
+                "defectName", "Mura",
+                "qty", 12
+        )));
+        when(aiKnowledgeService.searchSources(any(), eq(2))).thenReturn(List.of(Map.of(
+                "chunkNo", "SOP-EVAP-001-001",
+                "chunkTitle", "蒸镀真空波动排查",
+                "score", 0.91,
+                "evidenceLevel", "HIGH"
+        )));
+
+        Map<String, Object> result = pilotMesService.aiEquipmentAnalyze(Map.of(
+                "equipmentCode", "EVAP_01",
+                "lotNo", "LOT001"
+        ));
+
+        assertThat(result)
+                .containsEntry("reportType", "EQUIPMENT_ANALYSIS")
+                .containsEntry("equipmentCode", "EVAP_01")
+                .containsEntry("riskLevel", "P1")
+                .containsEntry("eventCount", 1)
+                .containsEntry("lotCount", 1)
+                .containsEntry("defectCount", 12)
+                .containsEntry("writeActionAllowed", false)
+                .containsEntry("evidenceLevel", "MEDIUM");
+        assertThat((List<Map<String, Object>>) result.get("lotContexts"))
+                .first()
+                .satisfies(row -> assertThat(row)
+                        .containsEntry("lotNo", "LOT001")
+                        .containsEntry("currentEquipmentCode", "EVAP_01"));
+        assertThat((List<Map<String, Object>>) result.get("recentDefects"))
+                .first()
+                .satisfies(row -> assertThat(row).containsEntry("defectCode", "D-MURA"));
+
+        ArgumentCaptor<Object> inputCaptor = ArgumentCaptor.forClass(Object.class);
+        ArgumentCaptor<Object> outputCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(aiRecordService).record(any(), eq("EQUIPMENT_ANALYSIS"), eq("EVAP_01"), eq("EQUIPMENT"),
+                eq("equipment-analyze-v2"), eq("mock-structured-output"), inputCaptor.capture(), outputCaptor.capture(),
+                eq("system"), any());
+        Map<String, Object> inputSnapshot = (Map<String, Object>) inputCaptor.getValue();
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("events")).hasSize(1);
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("lots")).hasSize(1);
+        assertThat((List<Map<String, Object>>) inputSnapshot.get("recentDefects")).hasSize(1);
+        assertThat((Map<String, Object>) outputCaptor.getValue())
+                .containsEntry("riskLevel", "P1")
+                .containsEntry("writeActionAllowed", false);
+        ArgumentCaptor<String> auditSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("AI_EQUIPMENT_ANALYZE"), eq("EVAP_01"), eq("AI_REPORT"), any(),
+                eq("system"), eq("smartdisplay-mes-api"), auditSnapshotCaptor.capture());
+        assertThat(auditSnapshotCaptor.getValue())
+                .contains("\"reportType\":\"EQUIPMENT_ANALYSIS\"")
+                .contains("\"promptTemplateVersion\":\"equipment-analyze-v2\"")
+                .contains("\"model\":\"mock-structured-output\"")
+                .contains("\"request\"");
+    }
+
+    @Test
+    void aiEquipmentAnalyzeShouldRejectMissingEquipmentCode() {
+        assertThatThrownBy(() -> pilotMesService.aiEquipmentAnalyze(Map.of("lotNo", "LOT001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("设备编码");
+        verify(aiRecordService, never()).record(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -609,6 +968,82 @@ class PilotMesServiceTest {
         verify(lotMapper, never()).insert(any());
         verify(orderMapper, never()).updateById(any());
         verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void batchHoldShouldReturnPerLotSummaryAndWriteBatchAudit() {
+        Lot lot = lot("LOT001", "READY");
+        when(lotMapper.selectOne(any())).thenReturn(lot, lot, null);
+
+        Map<String, Object> result = pilotMesService.batchHold(Map.of(
+                "lotNos", List.of("LOT001", "LOT_MISSING"),
+                "holdReason", "批量质量Hold",
+                "holdBy", "qe1001",
+                "batchNo", "LOT-BATCH-HOLD-001"
+        ));
+
+        assertThat(result)
+                .containsEntry("batchNo", "LOT-BATCH-HOLD-001")
+                .containsEntry("action", "HOLD")
+                .containsEntry("total", 2)
+                .containsEntry("successCount", 1L)
+                .containsEntry("failedCount", 1L);
+        assertThat((List<Map<String, Object>>) result.get("results"))
+                .extracting(row -> row.get("lotNo") + ":" + row.get("success"))
+                .containsExactly("LOT001:true", "LOT_MISSING:false");
+        verify(holdService).holdLot(any());
+        verify(auditLogService).record(eq("LOT_HOLD"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_BATCH_HOLD"), eq("LOT-BATCH-HOLD-001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"successCount\":1")
+                .contains("\"failedCount\":1")
+                .contains("LOT_MISSING");
+    }
+
+    @Test
+    void batchReleaseShouldRejectEmptyLotSelection() {
+        assertThatThrownBy(() -> pilotMesService.batchRelease(Map.of("lotNos", List.of())))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("至少需要选择1个Lot");
+
+        verify(holdService, never()).releaseLot(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void batchReleaseShouldReturnPerLotSummaryAndWriteBatchAudit() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot, lot, null);
+
+        Map<String, Object> result = pilotMesService.batchRelease(Map.of(
+                "lotNos", List.of("LOT001", "LOT_MISSING"),
+                "disposition", "批量复判通过",
+                "releaseBy", "qe1001",
+                "batchNo", "LOT-BATCH-RELEASE-001"
+        ));
+
+        assertThat(result)
+                .containsEntry("batchNo", "LOT-BATCH-RELEASE-001")
+                .containsEntry("action", "RELEASE")
+                .containsEntry("total", 2)
+                .containsEntry("successCount", 1L)
+                .containsEntry("failedCount", 1L);
+        assertThat((List<Map<String, Object>>) result.get("results"))
+                .extracting(row -> row.get("lotNo") + ":" + row.get("success"))
+                .containsExactly("LOT001:true", "LOT_MISSING:false");
+        verify(holdService).releaseLot(any());
+        verify(auditLogService).record(eq("LOT_RELEASE"), eq("LOT001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), any());
+        ArgumentCaptor<String> batchSnapshotCaptor = ArgumentCaptor.forClass(String.class);
+        verify(auditLogService).record(eq("LOT_BATCH_RELEASE"), eq("LOT-BATCH-RELEASE-001"), eq("LOT"), any(), eq("qe1001"),
+                eq("smartdisplay-mes-api"), batchSnapshotCaptor.capture());
+        assertThat(batchSnapshotCaptor.getValue())
+                .contains("\"successCount\":1")
+                .contains("\"failedCount\":1")
+                .contains("LOT_MISSING");
     }
 
     @Test
@@ -717,6 +1152,138 @@ class PilotMesServiceTest {
         verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    void reworkShouldRejectRouteThatDoesNotMatchActiveProductRoute() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+
+        assertThatThrownBy(() -> pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V2",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Rework route must match active product route");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(holdRecordMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reworkShouldRejectStepThatIsNotConfiguredInActiveRoute() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("COATING", 1)));
+
+        assertThatThrownBy(() -> pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Rework step is not configured in active route");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reworkShouldSkipHoldReleaseWhenLotIsNotOnHold() {
+        Lot lot = lot("LOT001", "RUNNING");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
+
+        pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("REWORK");
+        verify(holdRecordMapper, never()).selectOne(any());
+        verify(holdRecordMapper, never()).updateById(any());
+        verify(qualityService, never()).closeException(any(), any());
+    }
+
+    @Test
+    void reworkShouldCloseLinkedExceptionWhenEventNoProvided() {
+        Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeSteps("OLED_PANEL")).thenReturn(List.of(routeStep("ETCH", 1)));
+
+        pilotMesService.rework("LOT001", Map.of(
+                "reworkRouteCode", "RTE_OLED_V1",
+                "reworkStepCode", "ETCH",
+                "eventNo", "EX-20260626-0001",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("REWORK");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> closeCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).closeException(eq("EX-20260626-0001"), closeCaptor.capture());
+        Map<String, Object> closeRequest = closeCaptor.getValue();
+        assertThat(closeRequest).containsEntry("lotNo", "LOT001");
+        assertThat(closeRequest).containsEntry("dispositionAction", "REWORK");
+        assertThat(closeRequest).containsEntry("closedBy", "qe1001");
+        assertThat(closeRequest.get("closeConclusion")).asString().contains("RTE_OLED_V1", "ETCH");
+    }
+
+    @Test
+    void scrapShouldCloseLinkedExceptionWhenEventNoProvided() {
+        Lot lot = lot("LOT001", "HOLD");
+        HoldRecord holdRecord = holdRecord("LOT001");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+        when(holdRecordMapper.selectOne(any())).thenReturn(holdRecord);
+
+        pilotMesService.scrap("LOT001", Map.of(
+                "scrapConfirmed", true,
+                "confirmText", "SCRAP:LOT001",
+                "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
+                "eventNo", "EX-20260626-0002",
+                "operator", "qe1001"
+        ));
+
+        assertThat(lot.getStatus()).isEqualTo("SCRAP");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> closeCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(qualityService).closeException(eq("EX-20260626-0002"), closeCaptor.capture());
+        Map<String, Object> closeRequest = closeCaptor.getValue();
+        assertThat(closeRequest).containsEntry("lotNo", "LOT001");
+        assertThat(closeRequest).containsEntry("dispositionAction", "SCRAP");
+        assertThat(closeRequest).containsEntry("closeConclusion", "MRB scrap");
+        assertThat(closeRequest).containsEntry("closedBy", "qe1001");
+    }
+
+    @Test
+    void scrapShouldRejectWhenConfirmTextDoesNotMatchLot() {
+        Lot lot = lot("LOT001", "HOLD");
+        when(lotMapper.selectOne(any())).thenReturn(lot);
+
+        assertThatThrownBy(() -> pilotMesService.scrap("LOT001", Map.of(
+                "scrapConfirmed", true,
+                "confirmText", "SCRAP:LOT999",
+                "reason", "MRB scrap",
+                "responsibilityModule", "QUALITY",
+                "approver", "mrb_lead",
+                "operator", "qe1001"
+        )))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("second confirmation");
+
+        verify(lotMapper, never()).updateById(any());
+        verify(qualityService, never()).closeException(any(), any());
+    }
+
     private ProductionOrder order(String orderNo, int plannedQty) {
         ProductionOrder order = new ProductionOrder();
         order.setOrderNo(orderNo);
@@ -759,8 +1326,33 @@ class PilotMesServiceTest {
         Route route = new Route();
         route.setRouteCode(routeCode);
         route.setProductCode("OLED_PANEL");
+        route.setRouteVersion("V1");
         route.setStatus("ACTIVE");
         return route;
+    }
+
+    private void stubTraceRoute() {
+        when(routeService.findActiveRoute("OLED_PANEL")).thenReturn(route("RTE_OLED_V1"));
+        when(routeService.activeStepCodes("OLED_PANEL")).thenReturn(List.of("CLEAN", "COATING"));
+    }
+
+    private Equipment equipment(String equipmentCode, String stepCode) {
+        Equipment equipment = new Equipment();
+        equipment.setEquipmentCode(equipmentCode);
+        equipment.setLineCode("LINE_01");
+        equipment.setStatus("IDLE");
+        equipment.setCapabilitySteps("[\"" + stepCode + "\"]");
+        return equipment;
+    }
+
+    private Recipe recipe(String recipeCode, String stepCode, String equipmentCode) {
+        Recipe recipe = new Recipe();
+        recipe.setRecipeCode(recipeCode);
+        recipe.setProductCode("OLED_PANEL");
+        recipe.setStepCode(stepCode);
+        recipe.setEquipmentCode(equipmentCode);
+        recipe.setStatus("ACTIVE");
+        return recipe;
     }
 
     private RouteStep routeStep(String stepCode, int allowRework) {
