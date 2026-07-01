@@ -64,13 +64,10 @@ public class AuthService {
         if (rawPassword == null || storedPassword == null) {
             return false;
         }
-        if (storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2y$")) {
-            try {
-                return BCrypt.checkpw(rawPassword, storedPassword);
-            } catch (Exception ignored) {
-                return false;
-            }
+        try {
+            return BCrypt.checkpw(rawPassword, storedPassword);
+        } catch (Exception ignored) {
+            return false;
         }
-        return storedPassword.equals(rawPassword);
     }
 }

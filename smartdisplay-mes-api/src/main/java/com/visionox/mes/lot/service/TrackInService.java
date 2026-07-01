@@ -417,23 +417,6 @@ public class TrackInService {
                 "命中ACTIVE班次 " + shifts.size() + " 个");
     }
 
-    private void validateActiveShift(Lot lot) {
-        String lineCode = lot.getLineCode();
-        if (lineCode == null || lineCode.isBlank()) {
-            throw new BusinessException("Track In班次校验失败: Lot未绑定产线 " + lot.getLotNo());
-        }
-        List<WorkShift> shifts = workShiftMapper.selectList(new LambdaQueryWrapper<WorkShift>()
-                .eq(WorkShift::getLineCode, lineCode)
-                .eq(WorkShift::getStatus, "ACTIVE"));
-        if (shifts == null || shifts.isEmpty()) {
-            throw new BusinessException("Track In班次校验失败: 产线无ACTIVE班次 " + lineCode);
-        }
-        LocalTime now = LocalTime.now();
-        boolean matched = shifts.stream().anyMatch(shift -> isWithinShift(now, shift));
-        if (!matched) {
-            throw new BusinessException("Track In班次校验失败: 当前时间不在产线ACTIVE班次窗口 " + lineCode);
-        }
-    }
 
     private boolean isWithinShift(LocalTime now, WorkShift shift) {
         LocalTime start = shift.getStartTime();
